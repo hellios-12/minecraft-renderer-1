@@ -11,17 +11,17 @@
         "src"
     ],
     "scripts": {
-        "build": "tsc",
+        "build": "pnpm build:all",
+        "build:all": "run-s build:lib build-mesher build:playground",
         "build:lib": "node scripts/buildLib.mjs",
         "build:lib:minify": "node scripts/buildLib.mjs --minify",
         "watch:lib": "node scripts/buildLib.mjs -w",
         "build-mesher": "node scripts/buildMesherWorker.mjs",
         "watch-mesher": "pnpm build-mesher -w",
+        "build:playground": "rsbuild build --config rsbuild.config.ts",
         "dev": "run-p watch-mesher dev:playground",
         "dev:playground": "rsbuild dev --config rsbuild.config.ts",
-        "build:playground": "rsbuild build --config rsbuild.config.ts",
-        "typecheck": "tsc --noEmit",
-        "build:all": "run-s build build:lib build-mesher"
+        "typecheck": "tsc --noEmit"
     },
     "keywords": [
         "minecraft",
