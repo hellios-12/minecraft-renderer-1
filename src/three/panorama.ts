@@ -1,19 +1,19 @@
 import { join } from 'path'
 import * as THREE from 'three'
-import { getSyncWorld } from 'renderer/playground/shared'
+import { getSyncWorld } from '../playground/shared'
 import { Vec3 } from 'vec3'
 import * as tweenJs from '@tweenjs/tween.js'
-import type { GraphicsInitOptions } from '../../../src/appViewer'
-import { WorldDataEmitter } from '../lib/worldDataEmitter'
+import type { GraphicsInitOptions } from '../graphicsBackend/types'
 import { defaultWorldRendererConfig, WorldRendererCommon } from '../lib/worldrendererCommon'
-import { getDefaultRendererState } from '../baseGraphicsBackend'
-import { ResourcesManager } from '../../../src/resourcesManager'
-import { getInitialPlayerStateRenderer } from '../lib/basePlayerState'
+import { getDefaultRendererState } from '../graphicsBackend/config'
+import { ResourcesManager } from '../resourcesManager/resourcesManager'
+import { getInitialPlayerStateRenderer } from '../graphicsBackend/playerState'
 import { loadThreeJsTextureFromUrl, loadThreeJsTextureFromUrlSync } from './threeJsUtils'
-import { WorldRendererThree } from './worldrendererThree'
+import { WorldRendererThree } from './worldRendererThree'
 import { EntityMesh } from './entity/EntityMesh'
 import { DocumentRenderer } from './documentRenderer'
 import { PANORAMA_VERSION } from './panoramaShared'
+import { WorldView } from '../worldView'
 
 const date = new Date()
 const isChristmas = date.getMonth() === 11 && date.getDate() >= 24 && date.getDate() <= 26
@@ -39,7 +39,7 @@ export class PanoramaRenderer {
   public WorldRendererClass = WorldRendererThree
   public startTimes = new Map<THREE.MeshBasicMaterial, number>()
 
-  constructor (private readonly documentRenderer: DocumentRenderer, private readonly options: GraphicsInitOptions, private readonly doWorldBlocksPanorama = false) {
+  constructor(private readonly documentRenderer: DocumentRenderer, private readonly options: GraphicsInitOptions, private readonly doWorldBlocksPanorama = false) {
     this.scene = new THREE.Scene()
     // #324568
     this.scene.background = new THREE.Color(0x32_45_68)
@@ -59,7 +59,7 @@ export class PanoramaRenderer {
     this.camera.rotation.set(0, 0, 0)
   }
 
-  async start () {
+  async start() {
     if (this.doWorldBlocksPanorama) {
       await this.worldBlocksPanorama()
     } else {
@@ -76,7 +76,7 @@ export class PanoramaRenderer {
     }
   }
 
-  async debugImageInFrontOfCamera () {
+  async debugImageInFrontOfCamera() {
     const image = await loadThreeJsTextureFromUrl(join('background', 'panorama_0.webp'))
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.MeshBasicMaterial({ map: image }))
     mesh.position.set(0, 0, -500)
@@ -84,7 +84,7 @@ export class PanoramaRenderer {
     this.scene.add(mesh)
   }
 
-  addClassicPanorama () {
+  addClassicPanorama() {
     const panorGeo = new THREE.BoxGeometry(1000, 1000, 1000)
     const panorMaterials = [] as THREE.MeshBasicMaterial[]
     const fadeInDuration = 200
@@ -161,18 +161,19 @@ export class PanoramaRenderer {
     this.panoramaGroup = group
   }
 
-  async worldBlocksPanorama () {
+  async worldBlocksPanorama() {
     const version = PANORAMA_VERSION
     const fullResourceManager = this.options.resourcesManager
     fullResourceManager.currentConfig = { version, noInventoryGui: true, }
-    await fullResourceManager.updateAssetsData({ })
+    await fullResourceManager.updateAssetsData?.({})
     if (this.abortController.signal.aborted) return
     console.time('load panorama scene')
     const world = getSyncWorld(version)
     const PrismarineBlock = require('prismarine-block')
     const Block = PrismarineBlock(version)
-    const fullBlocks = loadedData.blocksArray.filter(block => {
-    // if (block.name.includes('leaves')) return false
+    const mcData = (globalThis as any).mcData
+    const fullBlocks = mcData.blocksArray.filter(block => {
+      // if (block.name.includes('leaves')) return false
       if (/* !block.name.includes('wool') &&  */!block.name.includes('stained_glass')/*  && !block.name.includes('terracotta') */) return false
       const b = Block.fromStateId(block.defaultState, 0)
       if (b.shapes?.length !== 1) return false
@@ -192,7 +193,7 @@ export class PanoramaRenderer {
     this.camera.position.set(0.5, sizeY / 2 + 0.5, 0.5)
     this.camera.rotation.set(0, 0, 0)
     const initPos = new Vec3(...this.camera.position.toArray())
-    const worldView = new WorldDataEmitter(world, 2, initPos)
+    const worldView = new WorldView(world, 2, initPos)
     // worldView.addWaitTime = 0
     if (this.abortController.signal.aborted) return
 
@@ -243,7 +244,7 @@ export class PanoramaRenderer {
     console.timeEnd('load panorama scene')
   }
 
-  dispose () {
+  dispose() {
     this.scene.clear()
     this.worldRenderer?.destroy()
     this.abortController.abort()

@@ -3,10 +3,10 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js'
 import { buttonMap as standardButtonsMap } from 'contro-max/build/gamepad'
 import * as THREE from 'three'
-import { WorldRendererThree } from '../worldrendererThree'
+import { WorldRendererThree } from '../worldRendererThree'
 import { DocumentRenderer } from '../documentRenderer'
 
-export async function initVR (worldRenderer: WorldRendererThree, documentRenderer: DocumentRenderer) {
+export async function initVR(worldRenderer: WorldRendererThree, documentRenderer: DocumentRenderer) {
   if (!('xr' in navigator) || !worldRenderer.worldRendererConfig.vrSupport) return
   const { renderer } = worldRenderer
 
@@ -25,13 +25,13 @@ export async function initVR (worldRenderer: WorldRendererThree, documentRendere
 
   worldRenderer.onRender.push(updateVrButtons)
 
-  function enableVr () {
+  function enableVr() {
     renderer.xr.enabled = true
     // renderer.xr.setReferenceSpaceType('local-floor')
     worldRenderer.reactiveState.preventEscapeMenu = true
   }
 
-  function disableVr () {
+  function disableVr() {
     renderer.xr.enabled = false
     worldRenderer.cameraGroupVr = undefined
     worldRenderer.reactiveState.preventEscapeMenu = false
@@ -39,7 +39,7 @@ export async function initVR (worldRenderer: WorldRendererThree, documentRendere
     vrButtonContainer.hidden = true
   }
 
-  function createVrButtonContainer (renderer) {
+  function createVrButtonContainer(renderer) {
     const container = document.createElement('div')
     const vrButton = VRButton.createButton(renderer)
     styleContainer(container)
@@ -53,7 +53,7 @@ export async function initVR (worldRenderer: WorldRendererThree, documentRendere
     return container
   }
 
-  function styleContainer (container: HTMLElement) {
+  function styleContainer(container: HTMLElement) {
     typedAssign(container.style, {
       position: 'absolute',
       bottom: '80px',
@@ -66,7 +66,7 @@ export async function initVR (worldRenderer: WorldRendererThree, documentRendere
     })
   }
 
-  function createCloseButton (container: HTMLElement) {
+  function createCloseButton(container: HTMLElement) {
     const closeButton = document.createElement('button')
     closeButton.textContent = 'X'
     typedAssign(closeButton.style, {
@@ -90,7 +90,7 @@ export async function initVR (worldRenderer: WorldRendererThree, documentRendere
   }
 
 
-  async function checkVRSupport () {
+  async function checkVRSupport() {
     try {
       const supported = await navigator.xr?.isSessionSupported('immersive-vr')
       return supported && !!XRSession.prototype.updateRenderState
@@ -252,6 +252,6 @@ const remapAxes = (axesRight, axesLeft) => {
   ]
 }
 
-function typedAssign<T extends Record<string, any>> (target: T, source: Partial<T>) {
+function typedAssign<T extends Record<string, any>>(target: T, source: Partial<T>) {
   Object.assign(target, source)
 }

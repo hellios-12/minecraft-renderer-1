@@ -71,10 +71,10 @@ export * from './modules'
 // ============================================================================
 // Three.js Backend (re-exported for convenience)
 // ============================================================================
-// export {
-//   createGraphicsBackend,
-//   createGraphicsBackendBase
-// } from './three/graphicsBackend'
+export {
+  createGraphicsBackend,
+  createGraphicsBackendBase
+} from './three/graphicsBackend'
 
 export {
   DocumentRenderer,
@@ -89,3 +89,9 @@ export {
 // } from './three/worldGeometryHandler'
 
 export { StarField } from './three/starField'
+
+// ============================================================================
+// Examples (for reference and testing)
+// ============================================================================
+export { AppViewerExample, runExample } from './examples/appViewerExample'
+export { appViewer, initialMenuStart, initialize } from './examples/initialMenuStart'

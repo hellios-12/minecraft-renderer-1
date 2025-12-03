@@ -4,6 +4,7 @@ import { polyfillNode } from 'esbuild-plugin-polyfill-node'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import fs from 'fs'
+import { dynamicMcDataFiles } from '../src/lib/buildSharedConfig.mjs'
 
 const __dirname = path.dirname(fileURLToPath(new URL(import.meta.url)))
 const rootDir = path.join(__dirname, '..')
@@ -11,7 +12,6 @@ const rootDir = path.join(__dirname, '..')
 const watch = process.argv.includes('-w')
 
 // Files that need to be dynamically loaded
-const dynamicMcDataFiles = ['blocks', 'blockCollisionShapes', 'biomes', 'version']
 const allowedBundleFiles = ['legacy', 'versions', 'protocolVersions', 'features']
 
 /** @type {import('esbuild').BuildOptions} */

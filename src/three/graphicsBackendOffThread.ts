@@ -1,16 +1,14 @@
 import * as THREE from 'three'
-import { GraphicsBackend, GraphicsBackendLoader } from '../../../src/appViewer'
-import { loadMinecraftData } from '../../../src/connect'
-import { useWorkerProxy, deepPrepareForTransfer, findProblemTransfer } from '../lib/workerProxy'
-import { initMesherWorker, meshersSendMcData } from '../lib/worldrendererCommon'
-import { dynamicMcDataFiles } from '../../buildMesherConfig.mjs'
-import { addNewStat } from '../lib/ui/newStats'
+import { GraphicsBackend, GraphicsBackendLoader } from '@/graphicsBackend'
+import { useWorkerProxy, deepPrepareForTransfer, findProblemTransfer } from '@/lib/workerProxy'
+import { initMesherWorker, meshersSendMcData } from '@/lib/worldrendererCommon'
+import { dynamicMcDataFiles } from '@/lib/buildSharedConfig.mjs'
+import { addNewStat } from '@/lib/ui/newStats'
 import { createGraphicsBackendBase, type ThreeJsBackendMethods } from './graphicsBackend'
-import type { ThreeRendererMainData } from './documentRenderer'
 import { addCanvasForWorker } from './documentRenderer'
 
 export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (initOptions) => {
-  const worker = initMesherWorker(() => {})
+  const worker = initMesherWorker(() => { })
   const promise = new Promise(resolve => {
     worker.onmessage = ({ data }) => {
       if (data.type === 'sideControlTookOver') {
@@ -37,11 +35,11 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
   }
 
   const backendMethodsProxy = new Proxy({} as ThreeJsBackendMethods, {
-    get (_target, prop) {
+    get(_target, prop) {
       if (typeof prop !== 'string') {
         return undefined
       }
-      return async (...args: any[]) => proxy.callBackendMethod(prop, ...args)
+      return async (...args: any[]) => proxy.callBackendMethod(prop as any, ...args)
     }
   })
 
@@ -49,17 +47,22 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
     id: 'threejs',
     displayName: `three.js ${THREE.REVISION}`,
     // startPanorama: proxy.startPanorama,
-    startPanorama () { },
-    async startWorld (options) {
-      await loadMinecraftData(options.version)
+    async startPanorama() { },
+    async startWorld(options) {
       meshersSendMcData([worker], options.version, [...dynamicMcDataFiles, 'items', 'itemsArray', 'entitiesByName', 'blocksByStateId'])
 
       options.inWorldRenderingConfig['__syncToWorker'] = true
 
-      options.playerStateReactive['__syncToWorker'] = true
+      if (options.playerStateReactive) {
+        options.playerStateReactive['__syncToWorker'] = true
+      }
 
-      options.rendererState['__syncFromWorker'] = true
-      options.nonReactiveState['__syncFromWorker'] = true
+      if (options.rendererState) {
+        options.rendererState['__syncFromWorker'] = true
+      }
+      if (options.nonReactiveState) {
+        options.nonReactiveState['__syncFromWorker'] = true
+      }
       options.nonReactiveState['__syncFromWorkerInterval'] = 200
       const prepared = deepPrepareForTransfer(options, worker)
       try {
@@ -79,15 +82,15 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
         options.nonReactiveState.fps = 0
       }, 1000)
     },
-    disconnect () {
+    disconnect() {
       canvas.destroy()
       proxy.disconnect()
       worker.terminate()
     },
-    setRendering (rendering) {
+    setRendering(rendering) {
       proxy.setRendering(rendering)
     },
-    updateCamera (pos, yaw, pitch) {
+    updateCamera(pos, yaw, pitch) {
       proxy.updateCamera(pos ? { x: pos.x, y: pos.y, z: pos.z } : null, yaw, pitch)
     },
     soundSystem: undefined,

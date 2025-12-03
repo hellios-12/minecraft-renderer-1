@@ -1,7 +1,7 @@
 import { proxy, getVersion, subscribe } from 'valtio'
 import { Vec3 } from 'vec3'
 
-export function createWorkerProxy<T extends Record<string, (...args: any[]) => void | Promise<any>>> (handlers: T, channel?: MessagePort): { __workerProxy: T } {
+export function createWorkerProxy<T extends Record<string, (...args: any[]) => void | Promise<any>>>(handlers: T, channel?: MessagePort): { __workerProxy: T } {
   const target = channel ?? globalThis
   target.addEventListener('message', (event: any) => {
     const { type, args, msgId } = event.data
@@ -32,17 +32,17 @@ export function createWorkerProxy<T extends Record<string, (...args: any[]) => v
  * const workerChannel = useWorkerProxy<typeof importedTypeWorkerProxy>(worker)
  * ```
  */
-export const useWorkerProxy = <T extends { __workerProxy: Record<string, (...args: any[]) => void> }> (worker: Worker | MessagePort, autoTransfer = true): T['__workerProxy'] & {
+export const useWorkerProxy = <T extends { __workerProxy: Record<string, (...args: any[]) => void> }>(worker: Worker | MessagePort, autoTransfer = true): T['__workerProxy'] & {
   transfer: (...args: Transferable[]) => T['__workerProxy']
 } => {
   let messageId = 0
   // in main thread
   return new Proxy({} as any, {
-    get (target, prop) {
+    get(target, prop) {
       if (prop === 'transfer') {
         return (...transferable: Transferable[]) => {
           return new Proxy({}, {
-            get (target, prop) {
+            get(target, prop) {
               return (...args: any[]) => {
                 worker.postMessage({
                   type: prop,
@@ -68,7 +68,7 @@ export const useWorkerProxy = <T extends { __workerProxy: Record<string, (...arg
         }, transfer)
         return {
           // eslint-disable-next-line unicorn/no-thenable
-          then (onfulfilled: (value: any) => void) {
+          then(onfulfilled: (value: any) => void) {
             const handler = ({ data }: MessageEvent): void => {
               if (data.type === 'result' && data.msgId === msgId) {
                 onfulfilled(data.args[0])
@@ -106,7 +106,7 @@ const currentWorkerSyncStats = { toWorker: 0, fromWorker: 0 }
 
 if (typeof window !== 'undefined') {
   setInterval(() => {
-    window.debugWorkerSyncStats = { ...currentWorkerSyncStats }
+    globalThis.debugWorkerSyncStats = { ...currentWorkerSyncStats }
     currentWorkerSyncStats.toWorker = 0
     currentWorkerSyncStats.fromWorker = 0
   }, 1000)
@@ -276,13 +276,13 @@ const receiveSyncedObject = (obj: any, worker: Worker, debugKey: string) => {
 const defaultRestorers = [
   {
     restorerName: 'Set',
-    restoreTransferred (obj, worker: Worker) {
+    restoreTransferred(obj, worker: Worker) {
       return new Set(obj)
     }
   },
   {
     restorerName: 'Vec3',
-    restoreTransferred (obj, worker: Worker) {
+    restoreTransferred(obj, worker: Worker) {
       return new Vec3(obj.x, obj.y, obj.z)
     }
   }

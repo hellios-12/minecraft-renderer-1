@@ -17,16 +17,17 @@ import type {
   GraphicsBackendLoader,
   GraphicsInitOptions,
   DisplayWorldOptions,
-  WorldRendererConfig,
   RendererReactiveState,
   NonReactiveState,
-  PlayerStateReactive,
   ResourcesManagerLike,
   WorldViewLike
 } from './types'
 import { WorldView, WorldProvider } from '../worldView'
 import { getInitialPlayerState } from './playerState'
 import { defaultWorldRendererConfig, defaultGraphicsBackendConfig, getDefaultRendererState } from './config'
+import type { WorldRendererConfig } from '../lib/worldrendererCommon'
+import { PlayerStateReactive } from '@/playerState/playerState'
+import { ResourcesManager } from '@/resourcesManager'
 
 export interface AppViewerOptions {
   config?: Partial<GraphicsBackendConfig>
@@ -40,9 +41,6 @@ export interface AppViewerOptions {
  */
 export class AppViewer {
   waitBackendLoadPromises: Promise<void>[] = []
-
-  // Resources manager - must be provided by implementation
-  resourcesManager?: ResourcesManagerLike
 
   // World view
   worldView?: WorldView
@@ -75,7 +73,10 @@ export class AppViewer {
   worldReady!: Promise<void>
   private resolveWorldReady!: () => void
 
-  constructor(options: AppViewerOptions = {}) {
+  // Timing
+  lastCamUpdate = 0
+
+  constructor(options: AppViewerOptions = {}, public resourcesManager: ResourcesManager = new ResourcesManager()) {
     this.config = {
       ...defaultGraphicsBackendConfig,
       ...options.config
@@ -129,7 +130,8 @@ export class AppViewer {
       rendererSpecificSettings: {}
     }
 
-    this.backend = loader(loaderOptions)
+    const backendResult = loader(loaderOptions)
+    this.backend = await Promise.resolve(backendResult)
 
     // Execute queued action if exists
     if (this.currentState) {
@@ -242,6 +244,50 @@ export class AppViewer {
    */
   setRendering(rendering: boolean): void {
     this.backend?.setRendering(rendering)
+  }
+
+  /**
+   * Start world with bot (convenience method).
+   */
+  async startWithBot(bot: any, renderDistance: number): Promise<void> {
+    await this.startWorld(bot.world, renderDistance)
+    if (this.worldView) {
+      // Listen to bot events if worldView supports it
+      if (typeof (this.worldView as any).listenToBot === 'function') {
+        (this.worldView as any).listenToBot(bot)
+      }
+    }
+  }
+
+  /**
+   * Destroy all resources including resource manager.
+   */
+  destroyAll(): void {
+    this.disconnectBackend(true)
+    if (this.resourcesManager && typeof (this.resourcesManager as any).destroy === 'function') {
+      (this.resourcesManager as any).destroy()
+    }
+  }
+
+  /**
+   * Get utility methods.
+   */
+  get utils() {
+    const backend = this.backend
+    return {
+      async waitingForChunks(): Promise<void> {
+        if ((backend as any)?.worldState?.allChunksLoaded) return
+
+        return new Promise<void>((resolve) => {
+          const interval = setInterval(() => {
+            if ((backend as any)?.worldState?.allChunksLoaded) {
+              clearInterval(interval)
+              resolve()
+            }
+          }, 100)
+        })
+      }
+    }
   }
 
   /**

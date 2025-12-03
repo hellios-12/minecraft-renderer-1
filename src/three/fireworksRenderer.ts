@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { Vec3 } from 'vec3'
-import type { WorldRendererThree } from './worldrendererThree'
+import type { WorldRendererThree } from './worldRendererThree'
 
 interface FireworkExplosion {
   id: string
@@ -40,7 +40,7 @@ export class FireworksRenderer {
   private testModeTimer?: NodeJS.Timeout
   private explosionCounter = 0
 
-  constructor (private readonly worldRenderer: WorldRendererThree) {
+  constructor(private readonly worldRenderer: WorldRendererThree) {
     // Create reusable box geometry for pixelated particles
     this.particleGeometry = new THREE.BoxGeometry(
       FireworksRenderer.DEFAULT_PARTICLE_SIZE,
@@ -55,7 +55,7 @@ export class FireworksRenderer {
     // this.startTestMode() // Disabled for debugging
   }
 
-  private createParticleMaterials () {
+  private createParticleMaterials() {
     const colors = [
       0xff_00_00, // Red
       0x00_ff_00, // Green
@@ -79,11 +79,11 @@ export class FireworksRenderer {
     }
   }
 
-  private getRandomMaterial (): THREE.MeshBasicMaterial {
+  private getRandomMaterial(): THREE.MeshBasicMaterial {
     return this.particleMaterials[Math.floor(Math.random() * this.particleMaterials.length)]
   }
 
-  private createExplosion (position: Vec3, size = 1, color?: number, duration = FireworksRenderer.DEFAULT_EXPLOSION_DURATION): FireworkExplosion {
+  private createExplosion(position: Vec3, size = 1, color?: number, duration = FireworksRenderer.DEFAULT_EXPLOSION_DURATION): FireworkExplosion {
     const explosionId = `firework_${this.explosionCounter++}_${Date.now()}`
     const particles: FireworkParticle[] = []
     const particleCount = Math.floor(FireworksRenderer.DEFAULT_PARTICLE_COUNT * size)
@@ -173,7 +173,7 @@ export class FireworksRenderer {
     return explosion
   }
 
-  private createExplosionFacingCamera (position: Vec3, size = 1, color?: number, duration = FireworksRenderer.DEFAULT_EXPLOSION_DURATION): FireworkExplosion {
+  private createExplosionFacingCamera(position: Vec3, size = 1, color?: number, duration = FireworksRenderer.DEFAULT_EXPLOSION_DURATION): FireworkExplosion {
     const explosionId = `firework_${this.explosionCounter++}_${Date.now()}`
     const particles: FireworkParticle[] = []
     const particleCount = Math.floor(FireworksRenderer.DEFAULT_PARTICLE_COUNT * size)
@@ -277,7 +277,7 @@ export class FireworksRenderer {
    * @param color Optional specific color for all particles (default: random colors)
    * @param duration Duration of the explosion in milliseconds (default: DEFAULT_EXPLOSION_DURATION)
    */
-  explode (position: Vec3, size = 1, color?: number, duration?: number): string {
+  explode(position: Vec3, size = 1, color?: number, duration?: number): string {
     const explosion = this.createExplosion(position, size, color, duration)
     return explosion.id
   }
@@ -289,12 +289,12 @@ export class FireworksRenderer {
    * @param color Optional specific color for all particles (default: random colors)
    * @param duration Duration of the explosion in milliseconds (default: DEFAULT_EXPLOSION_DURATION)
    */
-  explodeFacingCamera (position: Vec3, size = 1, color?: number, duration?: number): string {
+  explodeFacingCamera(position: Vec3, size = 1, color?: number, duration?: number): string {
     const explosion = this.createExplosionFacingCamera(position, size, color, duration)
     return explosion.id
   }
 
-  private startTestMode () {
+  private startTestMode() {
     const cameraPos = this.worldRenderer.getCameraPosition()
     const fireworkPos = new Vec3(cameraPos.x, cameraPos.y + 10, cameraPos.z)
     this.testModeTimer = setInterval(() => {
@@ -308,7 +308,7 @@ export class FireworksRenderer {
     }, FireworksRenderer.TEST_INTERVAL)
   }
 
-  private updateParticle (particle: FireworkParticle, deltaTime: number, explosionDuration: number) {
+  private updateParticle(particle: FireworkParticle, deltaTime: number, explosionDuration: number) {
     // DEBUG: Log first few updates to see what's happening
     const isFirstParticle = particle.mesh.position.x === particle.position.x &&
       particle.mesh.position.y === particle.position.y &&
@@ -348,7 +348,7 @@ export class FireworksRenderer {
     return particle.life > 0
   }
 
-  render () {
+  render() {
     const currentTime = Date.now()
     const deltaTime = 16.67 // Assume ~60fps for physics calculations
 
@@ -383,7 +383,7 @@ export class FireworksRenderer {
     }
   }
 
-  private removeExplosion (explosionId: string) {
+  private removeExplosion(explosionId: string) {
     const explosion = this.explosions.get(explosionId)
     if (!explosion) return
 
@@ -408,14 +408,14 @@ export class FireworksRenderer {
     this.explosions.delete(explosionId)
   }
 
-  stopTestMode () {
+  stopTestMode() {
     if (this.testModeTimer) {
       clearInterval(this.testModeTimer)
       this.testModeTimer = undefined
     }
   }
 
-  destroy () {
+  destroy() {
     this.stopTestMode()
 
     // Clean up all explosions

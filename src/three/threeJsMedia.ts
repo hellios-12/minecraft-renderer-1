@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { WorldRendererThree } from './worldrendererThree'
+import { WorldRendererThree } from './worldRendererThree'
 import { ThreeJsSound } from './threeJsSound'
 
 type ControlModeConfig = {
@@ -47,7 +47,7 @@ interface MediaData {
 export class ThreeJsMedia {
   customMedia = new Map<string, MediaData>()
 
-  constructor (private readonly worldRenderer: WorldRendererThree) {
+  constructor(private readonly worldRenderer: WorldRendererThree) {
     this.worldRenderer.onWorldSwitched.push(() => {
       this.onWorldGone()
     })
@@ -66,19 +66,19 @@ export class ThreeJsMedia {
     })
   }
 
-  onWorldGone () {
+  onWorldGone() {
     for (const [id, videoData] of this.customMedia.entries()) {
       this.destroyMedia(id)
     }
   }
 
-  onWorldStop () {
+  onWorldStop() {
     for (const [id, videoData] of this.customMedia.entries()) {
       this.setVideoPlaying(id, false)
     }
   }
 
-  private createErrorTexture (width: number, height: number, background = 0xff_ff_ff, error = 'Failed to load'): THREE.CanvasTexture {
+  private createErrorTexture(width: number, height: number, background = 0xff_ff_ff, error = 'Failed to load'): THREE.CanvasTexture {
     const canvas = new OffscreenCanvas(100, 100)
     const MAX_DIMENSION = 100
 
@@ -108,7 +108,7 @@ export class ThreeJsMedia {
     return texture
   }
 
-  private createBackgroundTexture (width: number, height: number, color = 0x00_00_00, opacity = 1): THREE.CanvasTexture {
+  private createBackgroundTexture(width: number, height: number, color = 0x00_00_00, opacity = 1): THREE.CanvasTexture {
     const canvas = new OffscreenCanvas(1, 1)
     canvas.width = 1
     canvas.height = 1
@@ -130,14 +130,14 @@ export class ThreeJsMedia {
     return texture
   }
 
-  validateOrigin (src: string, allowOrigins: string[] | boolean) {
+  validateOrigin(src: string, allowOrigins: string[] | boolean) {
     if (allowOrigins === true) return true
     if (allowOrigins === false) return false
     const url = new URL(src)
     return allowOrigins.some(origin => url.origin.endsWith(origin))
   }
 
-  onPageInteraction () {
+  onPageInteraction() {
     for (const [id, videoData] of this.customMedia.entries()) {
       if (videoData.hadAutoPlayError) {
         videoData.hadAutoPlayError = false
@@ -146,7 +146,7 @@ export class ThreeJsMedia {
     }
   }
 
-  addMedia (id: string, props: MediaProperties) {
+  addMedia(id: string, props: MediaProperties) {
     // if (!props.imageOverride && this.customMedia.has(id)) {
     //   console.warn('Media already exists, destroying it', id)
     //   debugger
@@ -336,10 +336,11 @@ export class ThreeJsMedia {
       hadAutoPlayError: false,
       pausedBecuaseHidden: false,
       ended: false,
-      handleError (err: Error) {
+      handleError(err: Error) {
         if (videoData.destroyed) return
         console.error(`Failed to play video ${id}:`, err)
-        const t = translate ?? (txt => txt)
+        // TODO!
+        const t = /* translate ??  */(txt => txt)
         handleError(err.name === 'NotAllowedError' || err.name === 'AbortError' ? t('Waiting for user interaction') : t('Failed to auto play'))
       }
     }
@@ -354,7 +355,7 @@ export class ThreeJsMedia {
     return id
   }
 
-  playVideo (id: string, fromAutoPlay = false) {
+  playVideo(id: string, fromAutoPlay = false) {
     const videoData = this.customMedia.get(id)
     if (videoData?.video) {
       // TODO! resolve issue with time
@@ -384,7 +385,7 @@ export class ThreeJsMedia {
     }
   }
 
-  render () {
+  render() {
     for (const [id, videoData] of this.customMedia.entries()) {
       const currentVisible = videoData.mesh.visible
       videoData.mesh.visible = this.worldRenderer.shouldObjectVisible(videoData.mesh) && !videoData.mesh['forceHide']
@@ -403,7 +404,7 @@ export class ThreeJsMedia {
     }
   }
 
-  setVideoPlaying (id: string, playing: boolean) {
+  setVideoPlaying(id: string, playing: boolean) {
     const videoData = this.customMedia.get(id)
     if (videoData?.video) {
       if (playing) {
@@ -414,28 +415,28 @@ export class ThreeJsMedia {
     }
   }
 
-  setVideoSeeking (id: string, seconds: number) {
+  setVideoSeeking(id: string, seconds: number) {
     const videoData = this.customMedia.get(id)
     if (videoData?.video) {
       videoData.video.currentTime = seconds
     }
   }
 
-  setVideoVolume (id: string, volume: number) {
+  setVideoVolume(id: string, volume: number) {
     const videoData = this.customMedia.get(id)
     if (videoData?.video) {
       videoData.video.volume = volume
     }
   }
 
-  setVideoSpeed (id: string, speed: number) {
+  setVideoSpeed(id: string, speed: number) {
     const videoData = this.customMedia.get(id)
     if (videoData?.video) {
       videoData.video.playbackRate = speed
     }
   }
 
-  setControlMode (id: string, mouseButton: 'both' | 'left' | 'right', controlMode: 'play_pause' | 'play_if_ended') {
+  setControlMode(id: string, mouseButton: 'both' | 'left' | 'right', controlMode: 'play_pause' | 'play_if_ended') {
     const videoData = this.customMedia.get(id)
     if (videoData?.video) {
       videoData.props.controlMode = {
@@ -445,7 +446,7 @@ export class ThreeJsMedia {
     }
   }
 
-  destroyMedia (id: string) {
+  destroyMedia(id: string) {
     const { scene } = this.worldRenderer
     const mediaData = this.customMedia.get(id)
     if (mediaData) {
@@ -489,7 +490,7 @@ export class ThreeJsMedia {
    * @param depth Depth of the mesh (default: 1)
    * @returns The positioned mesh for chaining
    */
-  positionMeshExact (
+  positionMeshExact(
     mesh: THREE.Mesh,
     rotation: number,
     startPosition: { x: number, y: number, z: number },
@@ -603,7 +604,7 @@ export class ThreeJsMedia {
     }
   }
 
-  createTestCanvasTexture () {
+  createTestCanvasTexture() {
     const canvas = new OffscreenCanvas(100, 100)
     canvas.width = 100
     canvas.height = 100
@@ -618,33 +619,33 @@ export class ThreeJsMedia {
   /**
    * Creates a test mesh that demonstrates the exact positioning
    */
-  addTestMeshExact (rotationNum: number) {
-    const pos = window.cursorBlockRel().position
-    console.log('Creating exact positioned test mesh at:', pos)
+  // addTestMeshExact(rotationNum: number) {
+  //   const pos = window.cursorBlockRel().position
+  //   console.log('Creating exact positioned test mesh at:', pos)
 
-    // Create a plane mesh with a wireframe to visualize boundaries
-    const plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(1, 1),
-      new THREE.MeshBasicMaterial({
-        // side: THREE.DoubleSide,
-        map: this.createTestCanvasTexture()
-      })
-    )
+  //   // Create a plane mesh with a wireframe to visualize boundaries
+  //   const plane = new THREE.Mesh(
+  //     new THREE.PlaneGeometry(1, 1),
+  //     new THREE.MeshBasicMaterial({
+  //       // side: THREE.DoubleSide,
+  //       map: this.createTestCanvasTexture()
+  //     })
+  //   )
 
-    const width = 2
-    const height = 1
-    const rotation = THREE.MathUtils.degToRad(rotationNum * 90) // 90 degrees in radians
+  //   const width = 2
+  //   const height = 1
+  //   const rotation = THREE.MathUtils.degToRad(rotationNum * 90) // 90 degrees in radians
 
-    // Position the mesh exactly where we want it
-    const { debugGroup } = this.positionMeshExact(plane, rotation, pos, width, height)
+  //   // Position the mesh exactly where we want it
+  //   const { debugGroup } = this.positionMeshExact(plane, rotation, pos, width, height)
 
-    this.worldRenderer.scene.add(debugGroup)
-    console.log('Exact test mesh added with dimensions:', width, height, 'and rotation:', rotation)
-  }
+  //   this.worldRenderer.scene.add(debugGroup)
+  //   console.log('Exact test mesh added with dimensions:', width, height, 'and rotation:', rotation)
+  // }
 
   lastCheck = 0
   THROTTLE_TIME = 100
-  tryIntersectMedia () {
+  tryIntersectMedia() {
     // hack: need to optimize this by pulling only in distance of interaction instead and throttle
     if (Date.now() - this.lastCheck < this.THROTTLE_TIME) return
     if (this.customMedia.size === 0) {
@@ -697,7 +698,7 @@ export class ThreeJsMedia {
     this.worldRenderer.cursorBlock.cursorLinesHidden = false
   }
 
-  handleUserClick (button: 'left' | 'right') {
+  handleUserClick(button: 'left' | 'right') {
     const intersecting = this.worldRenderer.reactiveState.world.intersectMedia
     if (intersecting) {
       const { id, x, y } = intersecting
@@ -722,7 +723,7 @@ export class ThreeJsMedia {
 
             break
           }
-        // No default
+          // No default
         }
       }
     }

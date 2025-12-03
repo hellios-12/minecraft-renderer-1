@@ -1,31 +1,31 @@
 import * as THREE from 'three'
-import { WorldRendererThree } from './worldrendererThree'
+import { WorldRendererThree } from './worldRendererThree'
 
 export class CameraShake {
   private rollAngle = 0
-  private get damageRollAmount () { return 5 }
-  private get damageAnimDuration () { return 200 }
+  private get damageRollAmount() { return 5 }
+  private get damageAnimDuration() { return 200 }
   private rollAnimation?: { startTime: number, startRoll: number, targetRoll: number, duration: number, returnToZero?: boolean }
   private basePitch = 0
   private baseYaw = 0
 
-  constructor (public worldRenderer: WorldRendererThree, public onRenderCallbacks: Array<() => void>) {
+  constructor(public worldRenderer: WorldRendererThree, public onRenderCallbacks: Array<() => void>) {
     onRenderCallbacks.push(() => {
       this.update()
     })
   }
 
-  setBaseRotation (pitch: number, yaw: number) {
+  setBaseRotation(pitch: number, yaw: number) {
     this.basePitch = pitch
     this.baseYaw = yaw
     this.update()
   }
 
-  getBaseRotation () {
+  getBaseRotation() {
     return { pitch: this.basePitch, yaw: this.baseYaw }
   }
 
-  shakeFromDamage (yaw?: number) {
+  shakeFromDamage(yaw?: number) {
     // Add roll animation
     const startRoll = this.rollAngle
     const targetRoll = startRoll + (yaw ?? (Math.random() < 0.5 ? -1 : 1)) * this.damageRollAmount
@@ -38,7 +38,7 @@ export class CameraShake {
     }
   }
 
-  update () {
+  update() {
     if (this.worldRenderer.playerStateUtils.isSpectatingEntity()) {
       // Remove any shaking when spectating
       this.rollAngle = 0
@@ -93,15 +93,15 @@ export class CameraShake {
     }
   }
 
-  private easeOut (t: number): number {
+  private easeOut(t: number): number {
     return 1 - (1 - t) * (1 - t)
   }
 
-  private easeInOut (t: number): number {
+  private easeInOut(t: number): number {
     return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2
   }
 
-  private addAntiZfightingOffset (angle: number): number {
+  private addAntiZfightingOffset(angle: number): number {
     const offset = 0.001 // Very small offset in radians (about 0.057 degrees)
 
     // Check if the angle is close to ideal angles (0, π/2, π, 3π/2)

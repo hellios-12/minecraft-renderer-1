@@ -1,36 +1,33 @@
 // eslint-disable-next-line import/no-named-as-default
 import GUI, { Controller } from 'lil-gui'
 import * as THREE from 'three'
-import JSZip from 'jszip'
 import { BasePlaygroundScene } from '../baseScene'
-import { TWEEN_DURATION } from '../../viewer/three/entities'
-import { EntityMesh } from '../../viewer/three/entity/EntityMesh'
-import supportedVersions from '../../../src/supportedVersions.mjs'
+import { TWEEN_DURATION } from '@/three/entities'
+import { EntityMesh } from '@/three/entity/EntityMesh'
 
-const includedVersions = globalThis.includedVersions ?? supportedVersions
+const includedVersions = globalThis.includedVersions
 
 class MainScene extends BasePlaygroundScene {
   // eslint-disable-next-line @typescript-eslint/no-useless-constructor
-  constructor (...args) {
+  constructor(...args) {
     super(...args)
   }
 
-  override initGui (): void {
+  override initGui(): void {
     // initial values
     this.params = {
-      version: includedVersions.at(-1),
       skipQs: '',
       block: '',
       metadata: 0,
       supportBlock: false,
       entity: '',
-      removeEntity () {
+      removeEntity() {
         this.entity = ''
       },
       entityRotate: false,
       camera: '',
-      playSound () { },
-      blockIsomorphicRenderBundle () { },
+      playSound() { },
+      blockIsomorphicRenderBundle() { },
       modelVariant: 0
     }
     this.metadataGui = this.gui.add(this.params, 'metadata')
@@ -40,10 +37,10 @@ class MainScene extends BasePlaygroundScene {
         hide: false
       },
       block: {
-        options: mcData.blocksArray.map(b => b.name).sort((a, b) => a.localeCompare(b))
+        options: this.mcData.blocksArray.map(b => b.name).sort((a, b) => a.localeCompare(b))
       },
       entity: {
-        options: mcData.entitiesArray.map(b => b.name).sort((a, b) => a.localeCompare(b))
+        options: this.mcData.entitiesArray.map(b => b.name).sort((a, b) => a.localeCompare(b))
       },
       camera: {
         hide: true,
@@ -54,10 +51,10 @@ class MainScene extends BasePlaygroundScene {
 
   blockProps = {}
   metadataFolder: GUI | undefined
-  metadataGui: Controller
+  metadataGui!: Controller
 
   override onParamUpdate = {
-    version () {
+    version() {
       // if (initialUpdate) return
       // viewer.world.texturesVersion = params.version
       // viewer.world.updateTexturesData()
@@ -66,11 +63,11 @@ class MainScene extends BasePlaygroundScene {
     block: () => {
       this.blockProps = {}
       this.metadataFolder?.destroy()
-      const block = mcData.blocksByName[this.params.block]
+      const block = this.mcData.blocksByName[this.params.block]
       if (!block) return
       console.log('block', block.name)
       const props = new this.Block(block.id, 0, 0).getProperties()
-      const { states } = mcData.blocksByStateId[this.getBlock()?.minStateId] ?? {}
+      const { states } = this.mcData.blocksByStateId[this.getBlock()?.minStateId] ?? {}
       this.metadataFolder = this.gui.addFolder('metadata')
       if (states) {
         for (const state of states) {
@@ -137,7 +134,7 @@ class MainScene extends BasePlaygroundScene {
     }
   }
 
-  entityUpdateShared () {
+  entityUpdateShared() {
     this.worldRenderer.entities.clear()
     if (!this.params.entity) return
     this.worldView!.emit('entity', {
@@ -160,12 +157,12 @@ class MainScene extends BasePlaygroundScene {
     }, TWEEN_DURATION)
   }
 
-  getBlock () {
+  getBlock() {
     return mcData.blocksByName[this.params.block || 'air']
   }
 
   // applyChanges (metadataUpdate = false, skipQs = false) {
-  override onParamsUpdate (paramName: string, object: any) {
+  override onParamsUpdate(paramName: string, object: any) {
     const metadataUpdate = paramName === 'metadata'
 
     const blockId = this.getBlock()?.id
@@ -192,7 +189,7 @@ class MainScene extends BasePlaygroundScene {
     this.metadataGui.updateDisplay()
   }
 
-  override renderFinish () {
+  override renderFinish() {
     for (const update of Object.values(this.onParamUpdate)) {
       // update(true)
       update()
@@ -201,7 +198,7 @@ class MainScene extends BasePlaygroundScene {
     this.gui.openAnimated()
   }
 
-  blockIsomorphicRenderBundle () {
+  blockIsomorphicRenderBundle() {
     const { renderer } = this.worldRenderer
 
     const canvas = renderer.domElement
@@ -281,7 +278,7 @@ class MainScene extends BasePlaygroundScene {
       this.worldRenderer.renderUpdateEmitter.removeListener('update', onWorldUpdate)
     }
 
-    async function onWorldUpdate () {
+    async function onWorldUpdate() {
       // await new Promise(resolve => {
       //   setTimeout(resolve, 50)
       // })

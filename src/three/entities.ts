@@ -6,8 +6,6 @@ import * as THREE from 'three'
 import { PlayerAnimation, PlayerObject } from 'skinview3d'
 import { inferModelType, loadCapeToCanvas, loadEarsToCanvasFromSkin } from 'skinview-utils'
 // todo replace with url
-import { degreesToRadians } from '@nxg-org/mineflayer-tracker/lib/mathUtils'
-import { NameTagObject } from 'skinview3d/libs/nametag'
 import { flat, fromFormattedString } from '@xmcl/text-component'
 import mojangson from 'mojangson'
 import { snakeCase } from 'change-case'
@@ -15,8 +13,6 @@ import { Item } from 'prismarine-item'
 import { isEntityAttackable } from 'mineflayer-mouse/dist/attackableEntity'
 import { Team } from 'mineflayer'
 import PrismarineChatLoader from 'prismarine-chat'
-import { EntityMetadataVersions } from '../../../src/mcDataTypes'
-import { ItemSpecificContextProperties } from '../lib/basePlayerState'
 import { loadSkinFromUsername, loadSkinImage, stevePngUrl } from '../lib/utils/skins'
 import { renderComponent } from '../sign-renderer'
 import { createCanvas } from '../lib/utils'
@@ -28,20 +24,29 @@ import { getMesh } from './entity/EntityMesh'
 import { WalkingGeneralSwing } from './entity/animations'
 import { disposeObject, loadTexture, loadThreeJsTextureFromUrl } from './threeJsUtils'
 import { armorModel, armorTextures, elytraTexture } from './entity/armorModels'
-import { WorldRendererThree } from './worldrendererThree'
+import { WorldRendererThree } from './worldRendererThree'
+import { IndexedData } from 'minecraft-data'
+import { ItemSpecificContextProperties } from '@/playerState/types'
+
+// Type for entity metadata - simplified version
+type EntityMetadataVersions = {
+  [key: string]: any
+}
 
 export const steveTexture = loadThreeJsTextureFromUrl(stevePngUrl)
 
 export const TWEEN_DURATION = 120
 
-function convert2sComplementToHex (complement: number) {
+const degreesToRadians = (degrees: number) => degrees * (Math.PI / 180)
+
+function convert2sComplementToHex(complement: number) {
   if (complement < 0) {
     complement = (0xFF_FF_FF_FF + complement + 1) >>> 0
   }
   return complement.toString(16)
 }
 
-function toRgba (color: string | undefined) {
+function toRgba(color: string | undefined) {
   if (color === undefined) {
     return undefined
   }
@@ -56,7 +61,7 @@ function toRgba (color: string | undefined) {
   }
 }
 
-function toQuaternion (quaternion: any, defaultValue?: THREE.Quaternion) {
+function toQuaternion(quaternion: any, defaultValue?: THREE.Quaternion) {
   if (quaternion === undefined) {
     return defaultValue
   }
@@ -69,7 +74,7 @@ function toQuaternion (quaternion: any, defaultValue?: THREE.Quaternion) {
   return new THREE.Quaternion(quaternion.x, quaternion.y, quaternion.z, quaternion.w)
 }
 
-function poseToEuler (pose: any, defaultValue?: THREE.Euler) {
+function poseToEuler(pose: any, defaultValue?: THREE.Euler) {
   if (pose === undefined) {
     return defaultValue ?? new THREE.Euler()
   }
@@ -89,7 +94,7 @@ function poseToEuler (pose: any, defaultValue?: THREE.Euler) {
   return defaultValue ?? new THREE.Euler()
 }
 
-function getUsernameTexture ({
+function getUsernameTexture({
   username,
   nameTagBackgroundColor = 'rgba(0, 0, 0, 0.3)',
   nameTagTextOpacity = 255
@@ -176,7 +181,7 @@ const nametags = {}
 
 const isFirstUpperCase = (str) => str.charAt(0) === str.charAt(0).toUpperCase()
 
-function getEntityMesh (entity: import('prismarine-entity').Entity & { delete?: any; pos?: any; name?: any }, world: WorldRendererThree, options: { fontFamily: string }, overrides) {
+function getEntityMesh(mcData: IndexedData | undefined, entity: import('prismarine-entity').Entity & { delete?: any; pos?: any; name?: any }, world: WorldRendererThree, options: { fontFamily: string }, overrides) {
   if (entity.name) {
     try {
       // https://github.com/PrismarineJS/prismarine-viewer/pull/410
@@ -192,7 +197,7 @@ function getEntityMesh (entity: import('prismarine-entity').Entity & { delete?: 
     }
   }
 
-  if (!isEntityAttackable(loadedData, entity)) return
+  if (!mcData || !isEntityAttackable(mcData, entity)) return
   const geometry = new THREE.BoxGeometry(entity.width, entity.height, entity.width)
   geometry.translate(0, entity.height / 2, 0)
   const material = new THREE.MeshBasicMaterial({ color: 0xff_00_ff })
@@ -229,7 +234,7 @@ export class Entities {
   itemFrameMaps = {} as Record<number, Array<THREE.Mesh<THREE.PlaneGeometry, THREE.MeshLambertMaterial>>>
   pendingModelOverrides = new Map<string, { modelPath: string, modelType: Entity.EntityModelType, metadata: any }>()
 
-  get entitiesByName (): Record<string, SceneEntity[]> {
+  get entitiesByName(): Record<string, SceneEntity[]> {
     const byName: Record<string, SceneEntity[]> = {}
     for (const entity of Object.values(this.entities)) {
       if (!entity['realName']) continue
@@ -239,11 +244,11 @@ export class Entities {
     return byName
   }
 
-  get entitiesRenderingCount (): number {
+  get entitiesRenderingCount(): number {
     return Object.values(this.entities).filter(entity => entity.visible).length
   }
 
-  getDebugString (): string {
+  getDebugString(): string {
     const totalEntities = Object.keys(this.entities).length
     const visibleEntities = this.entitiesRenderingCount
 
@@ -253,13 +258,13 @@ export class Entities {
     return `${visibleEntities}/${totalEntities} ${visiblePlayerEntities.length}/${playerEntities.length}`
   }
 
-  constructor (public worldRenderer: WorldRendererThree) {
+  constructor(public worldRenderer: WorldRendererThree, public mcData?: IndexedData) {
     this.debugMode = 'none'
     this.onSkinUpdate = () => { }
     this.watchResourcesUpdates()
   }
 
-  handlePlayerEntity (playerData: SceneEntity['originalEntity']) {
+  handlePlayerEntity(playerData: SceneEntity['originalEntity']) {
     // Create player entity if it doesn't exist
     if (!this.playerEntity) {
       // Create the player entity similar to how normal entities are created
@@ -277,6 +282,7 @@ export class Entities {
 
       void this.updatePlayerSkin(playerData.id, playerData.username, playerData.uuid ?? undefined, stevePngUrl)
     }
+    this.playerEntity.originalEntity = { ...playerData, name: 'player' } as SceneEntity['originalEntity']
 
     // Update position and rotation
     if (playerData.position) {
@@ -289,12 +295,13 @@ export class Entities {
     this.updateEntityEquipment(this.playerEntity, playerData)
   }
 
-  clear () {
+  clear() {
     for (const mesh of Object.values(this.entities)) {
       this.worldRenderer.scene.remove(mesh)
       disposeObject(mesh)
     }
     this.entities = {}
+    this.currentSkinUrls = {}
 
     // Clean up player entity
     if (this.playerEntity) {
@@ -304,7 +311,7 @@ export class Entities {
     }
   }
 
-  reloadEntities () {
+  reloadEntities() {
     for (const entity of Object.values(this.entities)) {
       // update all entities textures like held items, armour, etc
       // todo update entity textures itself
@@ -313,12 +320,12 @@ export class Entities {
     }
   }
 
-  watchResourcesUpdates () {
+  watchResourcesUpdates() {
     this.worldRenderer.resourcesManager.on('assetsTexturesUpdated', () => this.reloadEntities())
     this.worldRenderer.resourcesManager.on('assetsInventoryReady', () => this.reloadEntities())
   }
 
-  setDebugMode (mode: string, entity: THREE.Object3D | null = null) {
+  setDebugMode(mode: string, entity: THREE.Object3D | null = null) {
     this.debugMode = mode
     for (const mesh of entity ? [entity] : Object.values(this.entities)) {
       const boxHelper = mesh.children.find(c => c.name === 'debug')!
@@ -330,7 +337,7 @@ export class Entities {
     }
   }
 
-  setRendering (rendering: boolean, entity: THREE.Object3D | null = null) {
+  setRendering(rendering: boolean, entity: THREE.Object3D | null = null) {
     this.currentlyRendering = rendering
     for (const ent of entity ? [entity] : Object.values(this.entities)) {
       if (rendering) {
@@ -341,7 +348,7 @@ export class Entities {
     }
   }
 
-  playEntityModelAnimation (entityId: string, animationName: string, loop = false) {
+  playEntityModelAnimation(entityId: string, animationName: string, loop = false) {
     const entity = this.entities[entityId]
     if (!entity) return
 
@@ -352,7 +359,7 @@ export class Entities {
     })
   }
 
-  render () {
+  render() {
     const renderEntitiesConfig = this.worldRenderer.worldRendererConfig.renderEntities
     if (renderEntitiesConfig !== this.currentlyRendering) {
       this.setRendering(renderEntitiesConfig)
@@ -420,7 +427,7 @@ export class Entities {
     }
   }
 
-  private syncArmorPositions (entity: SceneEntity) {
+  private syncArmorPositions(entity: SceneEntity) {
     if (!entity.playerObject) return
 
     // todo-low use property access for less loop iterations (small performance gain)
@@ -493,15 +500,16 @@ export class Entities {
     })
   }
 
-  getPlayerObject (entityId: string | number) {
+  getPlayerObject(entityId: string | number) {
     if (this.playerEntity?.originalEntity.id === entityId) return this.playerEntity?.playerObject
     const playerObject = this.entities[entityId]?.playerObject
     return playerObject
   }
 
   uuidPerSkinUrlsCache = {} as Record<string, { skinUrl?: string, capeUrl?: string }>
+  currentSkinUrls = {} as Record<string, string>
 
-  private isCanvasBlank (canvas: HTMLCanvasElement): boolean {
+  private isCanvasBlank(canvas: HTMLCanvasElement): boolean {
     return !canvas.getContext('2d')
       ?.getImageData(0, 0, canvas.width, canvas.height).data
       .some(channel => channel !== 0)
@@ -509,7 +517,7 @@ export class Entities {
 
   // todo true/undefined doesnt reset the skin to the default one
   // eslint-disable-next-line max-params
-  async updatePlayerSkin (entityId: string | number, username: string | undefined, uuidCache: string | undefined, skinUrl: string | true, capeUrl: string | true | undefined = undefined) {
+  async updatePlayerSkin(entityId: string | number, username: string | undefined, uuidCache: string | undefined, skinUrl: string | true, capeUrl: string | true | undefined = undefined) {
     const isCustomSkin = skinUrl !== stevePngUrl
     if (isCustomSkin) {
       this.loadedSkinEntityIds.add(String(entityId))
@@ -536,6 +544,27 @@ export class Entities {
     }
 
     if (typeof skinUrl !== 'string') throw new Error('Invalid skin url')
+
+    // Skip if same skin URL is already loaded for this entity
+    if (this.currentSkinUrls[String(entityId)] === skinUrl) {
+      // Still handle cape if needed
+      if (capeUrl) {
+        if (capeUrl === true && username) {
+          const newCapeUrl = await loadSkinFromUsername(username, 'cape')
+          if (!this.getPlayerObject(entityId)) return
+          if (!newCapeUrl) return
+          capeUrl = newCapeUrl
+        }
+        if (typeof capeUrl === 'string') {
+          void this.loadAndApplyCape(entityId, capeUrl)
+        }
+      }
+      return
+    }
+
+    if (skinUrl !== stevePngUrl) {
+      this.currentSkinUrls[String(entityId)] = skinUrl
+    }
     const renderEars = this.worldRenderer.worldRendererConfig.renderEars || username === 'deadmau5'
     void this.loadAndApplySkin(entityId, skinUrl, renderEars).then(async () => {
       if (capeUrl) {
@@ -563,7 +592,7 @@ export class Entities {
     }
   }
 
-  private async loadAndApplySkin (entityId: string | number, skinUrl: string, renderEars: boolean) {
+  private async loadAndApplySkin(entityId: string | number, skinUrl: string, renderEars: boolean) {
     let playerObject = this.getPlayerObject(entityId)
     if (!playerObject) return
 
@@ -621,7 +650,7 @@ export class Entities {
     }
   }
 
-  private async loadAndApplyCape (entityId: string | number, capeUrl: string) {
+  private async loadAndApplyCape(entityId: string | number, capeUrl: string) {
     let playerObject = this.getPlayerObject(entityId)
     if (!playerObject) return
 
@@ -651,29 +680,35 @@ export class Entities {
     }
   }
 
-  debugSwingArm () {
-    const playerObject = Object.values(this.entities).find(entity => entity.playerObject?.animation instanceof WalkingGeneralSwing)
-    if (!playerObject) return
-    (playerObject.playerObject!.animation as WalkingGeneralSwing).swingArm()
+  debugSwingArm() {
+    const playerObject = Object.values(this.entities).find(entity => entity.playerObject?.animation)
+    if (!playerObject || !playerObject.playerObject?.animation) return
+    const anim = playerObject.playerObject.animation as any
+    if (anim.swingArm) {
+      anim.swingArm()
+    }
   }
 
-  playAnimation (entityPlayerId, animation: 'walking' | 'running' | 'oneSwing' | 'idle' | 'crouch' | 'crouchWalking') {
+  playAnimation(entityPlayerId, animation: 'walking' | 'running' | 'oneSwing' | 'idle' | 'crouch' | 'crouchWalking') {
     // TODO CLEANUP!
     // Handle special player entity ID for bot entity in third person
     if (entityPlayerId === 'player_entity' && this.playerEntity?.playerObject) {
       const { playerObject } = this.playerEntity
       if (animation === 'oneSwing') {
-        if (!(playerObject.animation instanceof WalkingGeneralSwing)) throw new Error('Expected WalkingGeneralSwing')
-        playerObject.animation.swingArm()
+        if (playerObject.animation && (playerObject.animation as any).swingArm) {
+          (playerObject.animation as any).swingArm()
+        }
         return
       }
 
-      if (playerObject.animation instanceof WalkingGeneralSwing) {
-        playerObject.animation.switchAnimationCallback = () => {
-          if (!(playerObject.animation instanceof WalkingGeneralSwing)) throw new Error('Expected WalkingGeneralSwing')
-          playerObject.animation.isMoving = animation === 'walking' || animation === 'running' || animation === 'crouchWalking'
-          playerObject.animation.isRunning = animation === 'running'
-          playerObject.animation.isCrouched = animation === 'crouch' || animation === 'crouchWalking'
+      if (playerObject.animation && (playerObject.animation as any).switchAnimationCallback !== undefined) {
+        (playerObject.animation as any).switchAnimationCallback = () => {
+          const anim = playerObject.animation as any
+          if (anim) {
+            anim.isMoving = animation === 'walking' || animation === 'running' || animation === 'crouchWalking'
+            anim.isRunning = animation === 'running'
+            anim.isCrouched = animation === 'crouch' || animation === 'crouchWalking'
+          }
         }
       }
       return
@@ -683,17 +718,20 @@ export class Entities {
     const playerObject = this.getPlayerObject(entityPlayerId)
     if (playerObject) {
       if (animation === 'oneSwing') {
-        if (!(playerObject.animation instanceof WalkingGeneralSwing)) throw new Error('Expected WalkingGeneralSwing')
-        playerObject.animation.swingArm()
+        if (playerObject.animation && (playerObject.animation as any).swingArm) {
+          (playerObject.animation as any).swingArm()
+        }
         return
       }
 
-      if (playerObject.animation instanceof WalkingGeneralSwing) {
-        playerObject.animation.switchAnimationCallback = () => {
-          if (!(playerObject.animation instanceof WalkingGeneralSwing)) throw new Error('Expected WalkingGeneralSwing')
-          playerObject.animation.isMoving = animation === 'walking' || animation === 'running' || animation === 'crouchWalking'
-          playerObject.animation.isRunning = animation === 'running'
-          playerObject.animation.isCrouched = animation === 'crouch' || animation === 'crouchWalking'
+      if (playerObject.animation && (playerObject.animation as any).switchAnimationCallback !== undefined) {
+        (playerObject.animation as any).switchAnimationCallback = () => {
+          const anim = playerObject.animation as any
+          if (anim) {
+            anim.isMoving = animation === 'walking' || animation === 'running' || animation === 'crouchWalking'
+            anim.isRunning = animation === 'running'
+            anim.isCrouched = animation === 'crouch' || animation === 'crouchWalking'
+          }
         }
       }
       return
@@ -703,23 +741,26 @@ export class Entities {
     if (this.playerEntity?.playerObject) {
       const { playerObject: playerEntityObject } = this.playerEntity
       if (animation === 'oneSwing') {
-        if (!(playerEntityObject.animation instanceof WalkingGeneralSwing)) throw new Error('Expected WalkingGeneralSwing')
-        playerEntityObject.animation.swingArm()
+        if (playerEntityObject.animation && (playerEntityObject.animation as any).swingArm) {
+          (playerEntityObject.animation as any).swingArm()
+        }
         return
       }
 
-      if (playerEntityObject.animation instanceof WalkingGeneralSwing) {
-        playerEntityObject.animation.switchAnimationCallback = () => {
-          if (!(playerEntityObject.animation instanceof WalkingGeneralSwing)) throw new Error('Expected WalkingGeneralSwing')
-          playerEntityObject.animation.isMoving = animation === 'walking' || animation === 'running' || animation === 'crouchWalking'
-          playerEntityObject.animation.isRunning = animation === 'running'
-          playerEntityObject.animation.isCrouched = animation === 'crouch' || animation === 'crouchWalking'
+      if (playerEntityObject.animation && (playerEntityObject.animation as any).switchAnimationCallback !== undefined) {
+        (playerEntityObject.animation as any).switchAnimationCallback = () => {
+          const anim = playerEntityObject.animation as any
+          if (anim) {
+            anim.isMoving = animation === 'walking' || animation === 'running' || animation === 'crouchWalking'
+            anim.isRunning = animation === 'running'
+            anim.isCrouched = animation === 'crouch' || animation === 'crouchWalking'
+          }
         }
       }
     }
   }
 
-  parseEntityLabel (jsonLike) {
+  parseEntityLabel(jsonLike) {
     if (!jsonLike) return
     try {
       if (jsonLike.type === 'string') {
@@ -733,11 +774,11 @@ export class Entities {
     }
   }
 
-  private textFromComponent (component) {
+  private textFromComponent(component) {
     return typeof component === 'string' ? component : component.text ?? ''
   }
 
-  getItemMesh (item, specificProps: ItemSpecificContextProperties, faceCamera = false, previousModel?: string) {
+  getItemMesh(item, specificProps: ItemSpecificContextProperties, faceCamera = false, previousModel?: string) {
     if (!item.nbt && item.nbtData) item.nbt = item.nbtData
     const textureUv = this.worldRenderer.getItemRenderData(item, specificProps)
     if (previousModel && previousModel === textureUv?.modelName) return undefined
@@ -795,7 +836,7 @@ export class Entities {
     }
   }
 
-  setVisible (mesh: THREE.Object3D, visible: boolean) {
+  setVisible(mesh: THREE.Object3D, visible: boolean) {
     //mesh.visible = visible
     //TODO: Fix workaround for visibility setting
     if (visible) {
@@ -805,7 +846,7 @@ export class Entities {
     }
   }
 
-  update (entity: SceneEntity['originalEntity'], overrides) {
+  update(entity: SceneEntity['originalEntity'], overrides) {
     const isPlayerModel = entity.name === 'player'
     if (entity.name === 'zombie_villager' || entity.name === 'husk') {
       overrides.texture = `textures/1.16.4/entity/${entity.name === 'zombie_villager' ? 'zombie_villager/zombie_villager.png' : `zombie/${entity.name}.png`}`
@@ -912,7 +953,7 @@ export class Entities {
           }
         }
       } else {
-        mesh = getEntityMesh(entity, this.worldRenderer, this.entitiesOptions, { ...overrides, customModel: entity['customModel'] })
+        mesh = getEntityMesh(this.mcData, entity, this.worldRenderer, this.entitiesOptions, { ...overrides, customModel: entity['customModel'] })
       }
       if (!mesh) return
       mesh.name = 'mesh'
@@ -953,7 +994,7 @@ export class Entities {
     // Update equipment
     this.updateEntityEquipment(e, entity)
 
-    const meta = getGeneralEntitiesMetadata(entity)
+    const meta = getGeneralEntitiesMetadata(entity, this.mcData)
 
     const isInvisible = ((entity.metadata?.[0] ?? 0) as unknown as number) & 0x20 || (this.worldRenderer.playerStateReactive.cameraSpectatingEntity === entity.id && this.worldRenderer.playerStateUtils.isSpectator())
     for (const child of mesh!.children ?? []) {
@@ -969,7 +1010,7 @@ export class Entities {
       e.scale.set(1, 1, 1)
     }
     // entity specific meta
-    const textDisplayMeta = getSpecificEntityMetadata('text_display', entity)
+    const textDisplayMeta = getSpecificEntityMetadata('text_display', entity, this.mcData)
     const displayTextRaw = textDisplayMeta?.text || meta.custom_name_visible && meta.custom_name
     if (entity.name !== 'player' && displayTextRaw) {
       const nameTagFixed = textDisplayMeta && (textDisplayMeta.billboard_render_constraints === 'fixed' || !textDisplayMeta.billboard_render_constraints)
@@ -980,17 +1021,19 @@ export class Entities {
         nameTagTextOpacity = rawOpacity > 0 ? rawOpacity : 256 - rawOpacity
       }
       addNametag(
-        { ...entity, username: typeof displayTextRaw === 'string' ? mojangson.simplify(mojangson.parse(displayTextRaw)) : nbt.simplify(displayTextRaw),
+        {
+          ...entity, username: typeof displayTextRaw === 'string' ? mojangson.simplify(mojangson.parse(displayTextRaw)) : nbt.simplify(displayTextRaw),
           nameTagBackgroundColor, nameTagTextOpacity, nameTagFixed,
           nameTagScale: textDisplayMeta?.scale, nameTagTranslation: textDisplayMeta && (textDisplayMeta.translation || new THREE.Vector3(0, 0, 0)),
-          nameTagRotationLeft: toQuaternion(textDisplayMeta?.left_rotation), nameTagRotationRight: toQuaternion(textDisplayMeta?.right_rotation) },
+          nameTagRotationLeft: toQuaternion(textDisplayMeta?.left_rotation), nameTagRotationRight: toQuaternion(textDisplayMeta?.right_rotation)
+        },
         this.entitiesOptions,
         mesh,
         this.worldRenderer.version
       )
     }
 
-    const armorStandMeta = getSpecificEntityMetadata('armor_stand', entity)
+    const armorStandMeta = getSpecificEntityMetadata('armor_stand', entity, this.mcData)
     if (armorStandMeta) {
       const isSmall = (parseInt(armorStandMeta.client_flags, 10) & 0x01) !== 0
       const hasArms = (parseInt(armorStandMeta.client_flags, 10) & 0x04) !== 0
@@ -1058,9 +1101,9 @@ export class Entities {
     }
 
     // todo handle map, map_chunks events
-    let itemFrameMeta = getSpecificEntityMetadata('item_frame', entity)
+    let itemFrameMeta = getSpecificEntityMetadata('item_frame', entity, this.mcData)
     if (!itemFrameMeta) {
-      itemFrameMeta = getSpecificEntityMetadata('glow_item_frame', entity)
+      itemFrameMeta = getSpecificEntityMetadata('glow_item_frame', entity, this.mcData)
     }
     if (itemFrameMeta) {
       // TODO: fix type
@@ -1129,7 +1172,7 @@ export class Entities {
     this.updateEntityPosition(entity, justAdded, overrides)
   }
 
-  updateEntityPosition (entity: import('prismarine-entity').Entity, justAdded: boolean, overrides: { rotation?: { head?: { y: number, x: number } } }) {
+  updateEntityPosition(entity: import('prismarine-entity').Entity, justAdded: boolean, overrides: { rotation?: { head?: { y: number, x: number } } }) {
     const e = this.entities[entity.id]
     if (!e) return
     const ANIMATION_DURATION = justAdded ? 0 : TWEEN_DURATION
@@ -1150,10 +1193,10 @@ export class Entities {
     }
   }
 
-  afterAddEntity (entity: import('prismarine-entity').Entity) {
+  afterAddEntity(entity: import('prismarine-entity').Entity) {
   }
 
-  beforeEntityAdded (entity: import('prismarine-entity').Entity) {
+  beforeEntityAdded(entity: import('prismarine-entity').Entity) {
     const override = this.pendingModelOverrides.get(entity.id.toString())
     if (override) {
       const { modelPath, modelType, metadata } = override
@@ -1163,7 +1206,7 @@ export class Entities {
   }
 
   loadedSkinEntityIds = new Set<string>()
-  maybeRenderPlayerSkin (entityId: string) {
+  maybeRenderPlayerSkin(entityId: string) {
     let mesh = this.entities[entityId]
     if (entityId === 'player_entity') {
       mesh = this.playerEntity!
@@ -1183,11 +1226,12 @@ export class Entities {
   }
 
   playerPerAnimation = {} as Record<number, string>
-  onRemoveEntity (entity: import('prismarine-entity').Entity) {
+  onRemoveEntity(entity: import('prismarine-entity').Entity) {
     this.loadedSkinEntityIds.delete(entity.id.toString())
+    delete this.currentSkinUrls[entity.id.toString()]
   }
 
-  updateMap (mapNumber: string | number, data: string) {
+  updateMap(mapNumber: string | number, data: string) {
     this.cachedMapsImages[mapNumber] = data
     let itemFrameMeshes = this.itemFrameMaps[mapNumber]
     if (!itemFrameMeshes) return
@@ -1202,7 +1246,7 @@ export class Entities {
     }
   }
 
-  updateNameTagVisibility (entity: SceneEntity) {
+  updateNameTagVisibility(entity: SceneEntity) {
     const playerTeam = this.worldRenderer.playerStateReactive.team
     const entityTeam = entity.originalEntity.team
     const nameTagVisibility = entityTeam?.nameTagVisibility || 'always'
@@ -1216,7 +1260,7 @@ export class Entities {
     })
   }
 
-  addMapModel (entityMesh: THREE.Object3D, mapNumber: number, rotation: number) {
+  addMapModel(entityMesh: THREE.Object3D, mapNumber: number, rotation: number) {
     const imageData = this.cachedMapsImages?.[mapNumber]
     let texture: THREE.Texture | null = null
     if (imageData) {
@@ -1260,7 +1304,7 @@ export class Entities {
     this.itemFrameMaps[mapNumber].push(mapMesh)
   }
 
-  loadMap (data: any) {
+  loadMap(data: any) {
     const texture = new THREE.TextureLoader().load(data)
     if (texture) {
       texture.magFilter = THREE.NearestFilter
@@ -1270,7 +1314,7 @@ export class Entities {
     return texture
   }
 
-  addItemModel (entityMesh: SceneEntity, hand: 'left' | 'right', item: Item, isPlayer = false) {
+  addItemModel(entityMesh: SceneEntity, hand: 'left' | 'right', item: Item, isPlayer = false) {
     const bedrockParentName = `bone_${hand}item`
     const itemName = `custom_item_${hand}`
 
@@ -1323,7 +1367,7 @@ export class Entities {
     }
   }
 
-  handleDamageEvent (entityId, damageAmount) {
+  handleDamageEvent(entityId, damageAmount) {
     const entityMesh = this.entities[entityId]?.children.find(c => c.name === 'mesh')
     if (entityMesh) {
       entityMesh.traverse((child) => {
@@ -1341,7 +1385,7 @@ export class Entities {
     }
   }
 
-  raycastSceneDebug () {
+  raycastSceneDebug() {
     // return any object from scene. raycast from camera
     const raycaster = new THREE.Raycaster()
     raycaster.setFromCamera(new THREE.Vector2(0, 0), this.worldRenderer.camera)
@@ -1349,7 +1393,7 @@ export class Entities {
     return intersects[0]?.object
   }
 
-  updateEntityModel (entityId: string, modelPath: string, modelType: Entity.EntityModelType, metadata?: any) {
+  updateEntityModel(entityId: string, modelPath: string, modelType: Entity.EntityModelType, metadata?: any) {
     // Store override data for future entities
     this.pendingModelOverrides.set(entityId, { modelPath, modelType, metadata })
 
@@ -1362,7 +1406,7 @@ export class Entities {
     this.update(entity.originalEntity, {})
   }
 
-  private setupPlayerObject (entity: SceneEntity['originalEntity'], wrapper: THREE.Group, overrides: { texture?: string }): PlayerObjectType {
+  private setupPlayerObject(entity: SceneEntity['originalEntity'], wrapper: THREE.Group, overrides: { texture?: string }): PlayerObjectType {
     const playerObject = new PlayerObject() as PlayerObjectType
     playerObject.realPlayerUuid = entity.uuid ?? ''
     playerObject.realUsername = entity.username ?? ''
@@ -1388,7 +1432,7 @@ export class Entities {
     return playerObject
   }
 
-  private updateEntityEquipment (entityMesh: SceneEntity, entity: SceneEntity['originalEntity']) {
+  private updateEntityEquipment(entityMesh: SceneEntity, entity: SceneEntity['originalEntity']) {
     if (!entityMesh || !entity.equipment) return
 
     const isPlayer = entity.type === 'player'
@@ -1413,10 +1457,10 @@ export class Entities {
   }
 }
 
-function getGeneralEntitiesMetadata (entity: { name; metadata }): Partial<UnionToIntersection<EntityMetadataVersions[keyof EntityMetadataVersions]>> {
-  const entityData = loadedData.entitiesByName[entity.name]
+function getGeneralEntitiesMetadata(entity: { name; metadata }, mcData?: IndexedData): Partial<UnionToIntersection<EntityMetadataVersions[keyof EntityMetadataVersions]>> {
+  const entityData = mcData?.entitiesByName[entity.name]
   return new Proxy({}, {
-    get (target, p, receiver) {
+    get(target, p, receiver) {
       if (typeof p !== 'string' || !entityData) return
       const index = entityData.metadataKeys?.indexOf(p)
       return entity.metadata?.[index ?? -1]
@@ -1424,12 +1468,12 @@ function getGeneralEntitiesMetadata (entity: { name; metadata }): Partial<UnionT
   })
 }
 
-function getSpecificEntityMetadata<T extends keyof EntityMetadataVersions> (name: T, entity): EntityMetadataVersions[T] | undefined {
+function getSpecificEntityMetadata<T extends keyof EntityMetadataVersions>(name: T, entity, mcData?: IndexedData): EntityMetadataVersions[T] | undefined {
   if (entity.name !== name) return
-  return getGeneralEntitiesMetadata(entity) as any
+  return getGeneralEntitiesMetadata(entity, mcData) as any
 }
 
-function addArmorModel (worldRenderer: WorldRendererThree, entityMesh: THREE.Object3D, slotType: string, item: Item, layer = 1, overlay = false) {
+function addArmorModel(worldRenderer: WorldRendererThree, entityMesh: THREE.Object3D, slotType: string, item: Item, layer = 1, overlay = false) {
   if (!item) {
     removeArmorModel(entityMesh, slotType)
     return
@@ -1451,7 +1495,7 @@ function addArmorModel (worldRenderer: WorldRendererThree, entityMesh: THREE.Obj
         if (textureData) {
           const decodedData = JSON.parse(Buffer.from(textureData, 'base64').toString())
           texturePath = decodedData.textures?.SKIN?.url
-          const { skinTexturesProxy } = this.worldRenderer.worldRendererConfig
+          const { skinTexturesProxy } = worldRenderer.worldRendererConfig
           if (skinTexturesProxy) {
             texturePath = texturePath?.replace('http://textures.minecraft.net/', skinTexturesProxy)
               .replace('https://textures.minecraft.net/', skinTexturesProxy)
@@ -1527,7 +1571,7 @@ function addArmorModel (worldRenderer: WorldRendererThree, entityMesh: THREE.Obj
   entityMesh.add(mesh)
 }
 
-function removeArmorModel (entityMesh: THREE.Object3D, slotType: string) {
+function removeArmorModel(entityMesh: THREE.Object3D, slotType: string) {
   for (const c of entityMesh.children) {
     if (c.name === `geometry_armor_${slotType}` || c.name === `geometry_armor_${slotType}_overlay`) {
       c.removeFromParent()

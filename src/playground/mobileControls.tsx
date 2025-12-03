@@ -16,24 +16,24 @@ export const handleMovementStickDelta = (e?: { clientX: number, clientY: number 
   const max = 32
   let x = 0
   let y = 0
-  
+
   if (e && joystickPointer.pointer) {
     x = e.clientX - joystickPointer.pointer.x
     y = e.clientY - joystickPointer.pointer.y
     x = Math.min(Math.max(x, -max), max)
     y = Math.min(Math.max(y, -max), max)
   }
-  
+
   if (joystickPointer.joystickInner) {
     joystickPointer.joystickInner.style.transform = `translate(${x}px, ${y}px)`
   }
-  
+
   const vector = {
     x: x / max,
     y: 0,
     z: y / max,
   }
-  
+
   console.log('Movement vector:', vector)
 }
 
@@ -47,7 +47,7 @@ export const MobileControls = () => {
   const joystickInner = useRef<HTMLDivElement>(null)
   const { pointer: movementPointer } = useSnapshot(joystickPointer)
   const { pointer: cameraPointerState } = useSnapshot(cameraPointer)
-  
+
   const joystickSize = 80
   const Z_INDEX_INTERACTIBLE = 8
 
@@ -181,19 +181,19 @@ export const MobileControls = () => {
       }}
       onPointerDown={(e) => {
         if (joystickPointer.pointer) return
-        
+
         joystickPointer.pointer = {
           x: e.clientX,
           y: e.clientY,
           pointerId: e.pointerId,
         }
-        
+
         const elem = e.currentTarget as HTMLElement
         elem.setPointerCapture(e.pointerId)
       }}
       onPointerMove={(e) => {
         if (!joystickPointer.pointer || e.pointerId !== joystickPointer.pointer.pointerId) return
-        
+
         handleMovementStickDelta({
           clientX: e.clientX,
           clientY: e.clientY,
@@ -201,16 +201,16 @@ export const MobileControls = () => {
       }}
       onPointerUp={(e) => {
         if (!joystickPointer.pointer || e.pointerId !== joystickPointer.pointer.pointerId) return
-        
+
         joystickPointer.pointer = null
         handleMovementStickDelta() // Reset position
-        
+
         const elem = e.currentTarget as HTMLElement
         elem.releasePointerCapture(e.pointerId)
       }}
       onLostPointerCapture={(e) => {
         if (!joystickPointer.pointer || e.pointerId !== joystickPointer.pointer.pointerId) return
-        
+
         joystickPointer.pointer = null
         handleMovementStickDelta() // Reset position
       }}
@@ -228,39 +228,39 @@ export const MobileControls = () => {
       }}
       onPointerDown={(e) => {
         if (cameraPointer.pointer) return
-        
+
         cameraPointer.pointer = {
           x: e.clientX,
           y: e.clientY,
           pointerId: e.pointerId,
         }
-        
+
         const elem = e.currentTarget as HTMLElement
         elem.setPointerCapture(e.pointerId)
       }}
       onPointerMove={(e) => {
         if (!cameraPointer.pointer || e.pointerId !== cameraPointer.pointer.pointerId) return
-        
+
         const deltaX = e.clientX - cameraPointer.pointer.x
         const deltaY = e.clientY - cameraPointer.pointer.y
-        
+
         handleCameraRotation(deltaX, deltaY)
-        
+
         // Update pointer position for continuous rotation
         cameraPointer.pointer.x = e.clientX
         cameraPointer.pointer.y = e.clientY
       }}
       onPointerUp={(e) => {
         if (!cameraPointer.pointer || e.pointerId !== cameraPointer.pointer.pointerId) return
-        
+
         cameraPointer.pointer = null
-        
+
         const elem = e.currentTarget as HTMLElement
         elem.releasePointerCapture(e.pointerId)
       }}
       onLostPointerCapture={(e) => {
         if (!cameraPointer.pointer || e.pointerId !== cameraPointer.pointer.pointerId) return
-        
+
         cameraPointer.pointer = null
       }}
     />

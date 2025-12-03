@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { Vec3 } from 'vec3'
 import { createCanvas } from '../lib/utils'
-import type { WorldRendererThree } from './worldrendererThree'
+import type { WorldRendererThree } from './worldRendererThree'
 
 type BannerBlockEntity = {
   Patterns?: Array<{
@@ -55,7 +55,7 @@ const BANNER_COLORS: Record<number, string> = {
 }
 
 // Extract base color from banner block name
-function getBannerBaseColor (blockName: string): number {
+function getBannerBaseColor(blockName: string): number {
   // Remove _wall_banner suffix if present
   const baseName = blockName.replace('_wall_banner', '_banner')
   return BANNER_NAME_TO_COLOR[baseName] ?? 15 // Default to white
@@ -116,7 +116,7 @@ const renderPattern = (
 }
 
 // Create a cache key from banner content (base color + patterns)
-function createBannerCacheKey (baseColor: number, patterns: Array<{ Color?: number, Pattern?: string }> | undefined): string {
+function createBannerCacheKey(baseColor: number, patterns: Array<{ Color?: number, Pattern?: string }> | undefined): string {
   if (!patterns || patterns.length === 0) {
     return `banner_${baseColor}_empty`
   }
@@ -175,7 +175,7 @@ export const renderBanner = (
 // Banner texture cache with reference counting
 const bannerTextureCache = new Map<string, { texture: THREE.Texture, refCount: number }>()
 
-export function getBannerTexture (
+export function getBannerTexture(
   worldRenderer: WorldRendererThree,
   blockName: string,
   blockEntity: any
@@ -207,7 +207,7 @@ export function getBannerTexture (
   return tex
 }
 
-export function releaseBannerTexture (texture: THREE.Texture): void {
+export function releaseBannerTexture(texture: THREE.Texture): void {
   // Find and decrement reference count
   for (const [key, cached] of bannerTextureCache.entries()) {
     if (cached.texture === texture) {
@@ -222,7 +222,7 @@ export function releaseBannerTexture (texture: THREE.Texture): void {
   }
 }
 
-export function createBannerMesh (
+export function createBannerMesh(
   position: Vec3,
   rotation: number,
   isWall: boolean,

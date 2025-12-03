@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { WorldRendererThree } from './worldrendererThree'
+import { WorldRendererThree } from './worldRendererThree'
 import { createWaypointSprite, type WaypointSprite } from './waypointSprite'
 
 interface Waypoint {
@@ -29,7 +29,7 @@ export class WaypointsRenderer {
   private lastUpdateTime = 0
   private readonly UPDATE_THROTTLE_MS = 16 // ~60fps max update rate
 
-  constructor (
+  constructor(
     private readonly worldRenderer: WorldRendererThree
   ) {
     if (process.env.NODE_ENV !== 'production') {
@@ -37,7 +37,7 @@ export class WaypointsRenderer {
     }
   }
 
-  private updateWaypoints () {
+  private updateWaypoints() {
     const currentTime = performance.now()
     const playerPos = this.worldRenderer.cameraObject.position
 
@@ -70,7 +70,7 @@ export class WaypointsRenderer {
     }
   }
 
-  render () {
+  render() {
     if (this.waypoints.size === 0) return
 
     // Update waypoint scaling
@@ -82,7 +82,7 @@ export class WaypointsRenderer {
 
   // Removed sprite/label texture creation. Use utils/waypointSprite.ts
 
-  addWaypoint (
+  addWaypoint(
     id: string,
     x: number,
     y: number,
@@ -114,7 +114,7 @@ export class WaypointsRenderer {
     })
   }
 
-  removeWaypoint (id: string) {
+  removeWaypoint(id: string) {
     const waypoint = this.waypoints.get(id)
     if (waypoint) {
       this.waypointScene.remove(waypoint.sprite.group)
@@ -123,13 +123,13 @@ export class WaypointsRenderer {
     }
   }
 
-  clear () {
+  clear() {
     for (const id of this.waypoints.keys()) {
       this.removeWaypoint(id)
     }
   }
 
-  testWaypoint () {
+  testWaypoint() {
     this.addWaypoint('Test Point', 0, 70, 0, { color: 0x00_FF_00, label: 'Test Point' })
     this.addWaypoint('Spawn', 0, 64, 0, { color: 0xFF_FF_00, label: 'Spawn' })
     this.addWaypoint('Far Point', 100, 70, 100, { color: 0x00_00_FF, label: 'Far Point' })
@@ -137,15 +137,15 @@ export class WaypointsRenderer {
     this.addWaypoint('Far Point 3', 1000, 100, 1000, { color: 0x00_00_FF, label: 'Far Point 3' })
   }
 
-  getWaypoint (id: string): Waypoint | undefined {
+  getWaypoint(id: string): Waypoint | undefined {
     return this.waypoints.get(id)
   }
 
-  getAllWaypoints (): Waypoint[] {
+  getAllWaypoints(): Waypoint[] {
     return [...this.waypoints.values()]
   }
 
-  setWaypointColor (id: string, color: number) {
+  setWaypointColor(id: string, color: number) {
     const waypoint = this.waypoints.get(id)
     if (waypoint) {
       waypoint.sprite.setColor(color)
@@ -153,7 +153,7 @@ export class WaypointsRenderer {
     }
   }
 
-  setWaypointLabel (id: string, label?: string) {
+  setWaypointLabel(id: string, label?: string) {
     const waypoint = this.waypoints.get(id)
     if (waypoint) {
       waypoint.label = label

@@ -4,11 +4,20 @@
  * Core types for the graphics backend system.
  */
 
+import { WorldRendererConfig } from '@/lib/worldrendererCommon'
+import { PlayerStateReactive } from '@/playerState/playerState'
 import { Vec3 } from 'vec3'
 
 // ============================================================================
 // Graphics Backend Configuration
 // ============================================================================
+
+export type MaybePromise<T> = Promise<T> | T
+
+export interface SoundSystem {
+  playSound: (position: { x: number, y: number, z: number }, path: string, volume?: number, pitch?: number, timeout?: number) => void
+  destroy: () => void
+}
 
 /** Graphics backend configuration */
 export interface GraphicsBackendConfig {
@@ -22,53 +31,6 @@ export interface GraphicsBackendConfig {
 // ============================================================================
 // World Renderer Configuration
 // ============================================================================
-
-/** World renderer configuration */
-export interface WorldRendererConfig {
-  paused: boolean
-
-  // Debug settings
-  showChunkBorders: boolean
-  enableDebugOverlay: boolean
-  debugModelVariant?: number[]
-
-  // Performance settings
-  mesherWorkers: number
-  addChunksBatchWaitTime: number
-  _experimentalSmoothChunkLoading: boolean
-  _renderByChunks: boolean
-
-  // Rendering engine settings
-  dayCycle: boolean
-  smoothLighting: boolean
-  enableLighting: boolean
-  starfield: boolean
-  defaultSkybox: boolean
-  renderEntities: boolean
-  extraBlockRenderers: boolean
-  foreground: boolean
-  fov: number
-  volume: number
-
-  // Camera visual related settings
-  showHand: boolean
-  viewBobbing: boolean
-  renderEars: boolean
-  highlightBlockColor: string
-
-  // Player models
-  fetchPlayerSkins: boolean
-  skinTexturesProxy?: string
-
-  // VR settings
-  vrSupport: boolean
-  vrPageGameRendering: boolean
-
-  // World settings
-  clipWorldBelowY?: number
-  isPlayground: boolean
-  instantCameraUpdate: boolean
-}
 
 // ============================================================================
 // State Types
@@ -117,49 +79,6 @@ export interface RendererReactiveState {
 // Player State Types
 // ============================================================================
 
-/** Player state reactive proxy type */
-export interface PlayerStateReactive {
-  playerSkin?: string
-  inWater: boolean
-  waterBreathing: boolean
-  backgroundColor: [number, number, number]
-  ambientLight: number
-  directionalLight: number
-  eyeHeight: number
-  gameMode?: string
-  lookingAtBlock?: {
-    x: number
-    y: number
-    z: number
-    face?: number
-    shapes: any
-  }
-  diggingBlock?: {
-    x: number
-    y: number
-    z: number
-    stage: number
-    face?: number
-    mergedShape: any
-  }
-  movementState: string
-  onGround: boolean
-  sneaking: boolean
-  flying: boolean
-  sprinting: boolean
-  itemUsageTicks: number
-  username: string
-  onlineMode: boolean
-  lightingDisabled: boolean
-  shouldHideHand: boolean
-  heldItemMain?: any
-  heldItemOff?: any
-  perspective: string
-  onFire: boolean
-  cameraSpectatingEntity?: number
-  team?: any
-}
-
 // ============================================================================
 // Graphics Backend Interfaces
 // ============================================================================
@@ -205,7 +124,9 @@ export interface GraphicsBackend {
 }
 
 /** Graphics backend loader function type */
-export type GraphicsBackendLoader = (initOptions: GraphicsInitOptions) => GraphicsBackend
+export type GraphicsBackendLoader = ((options: GraphicsInitOptions) => MaybePromise<GraphicsBackend>) & {
+  id: string
+}
 
 // ============================================================================
 // Resource Manager Interface
@@ -215,6 +136,7 @@ export type GraphicsBackendLoader = (initOptions: GraphicsInitOptions) => Graphi
 export interface ResourcesManagerLike {
   currentConfig?: {
     version: string
+    noInventoryGui?: boolean
   }
   currentResources?: any
   loadSourceData?(version: string): Promise<void>

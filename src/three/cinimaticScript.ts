@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import * as tweenJs from '@tweenjs/tween.js'
 import { Vec3 } from 'vec3'
-import { WorldRendererThree } from './worldrendererThree'
+import { WorldRendererThree } from './worldRendererThree'
 
 export interface CinimaticPoint {
   x: number
@@ -36,14 +36,14 @@ export class CinimaticScriptRunner {
   private currentRotation = { yaw: 0, pitch: 0 }
   private currentFov = 75
 
-  constructor (
+  constructor(
     private readonly worldRenderer: WorldRendererThree,
     private readonly updateCamera: (pos: Vec3, yaw: number, pitch: number) => void,
     private readonly updateFov: (fov: number) => void,
     private readonly getInitialState: () => { position: Vec3, yaw: number, pitch: number, fov: number }
-  ) {}
+  ) { }
 
-  startScript (script: CinimaticScript): boolean {
+  startScript(script: CinimaticScript): boolean {
     if (this.isRunning) {
       console.warn('Cinematic script already running. Stop current script first.')
       return false
@@ -83,7 +83,7 @@ export class CinimaticScriptRunner {
     return true
   }
 
-  stopScript (): void {
+  stopScript(): void {
     if (!this.isRunning) return
 
     // Stop all active tweens
@@ -95,7 +95,7 @@ export class CinimaticScriptRunner {
     this.currentPointIndex = 0
   }
 
-  runExampleScripts (index: number) {
+  runExampleScripts(index: number) {
     const { cameraObject } = this.worldRenderer
     const playerPos = new Vec3(cameraObject.position.x, cameraObject.position.y, cameraObject.position.z)
 
@@ -124,7 +124,7 @@ export class CinimaticScriptRunner {
     return { circular, spiral, buildingTour }
   }
 
-  private moveToPoint (pointIndex: number): void {
+  private moveToPoint(pointIndex: number): void {
     if (!this.currentScript || pointIndex >= this.currentScript.points.length) {
       this.handleScriptComplete()
       return
@@ -211,7 +211,7 @@ export class CinimaticScriptRunner {
     })
   }
 
-  private wrapRotation (target: { yaw: number, pitch: number }): { yaw: number, pitch: number } {
+  private wrapRotation(target: { yaw: number, pitch: number }): { yaw: number, pitch: number } {
     // Handle yaw wrapping to take shortest path
     let targetYaw = target.yaw
     const yawDiff = targetYaw - this.currentRotation.yaw
@@ -228,7 +228,7 @@ export class CinimaticScriptRunner {
     return { yaw: targetYaw, pitch: targetPitch }
   }
 
-  private getEasingFunction (easing: string): (t: number) => number {
+  private getEasingFunction(easing: string): (t: number) => number {
     switch (easing) {
       case 'linear': return tweenJs.Easing.Linear.None
       case 'easeIn': return tweenJs.Easing.Quadratic.In
@@ -240,7 +240,7 @@ export class CinimaticScriptRunner {
     }
   }
 
-  private handleScriptComplete (): void {
+  private handleScriptComplete(): void {
     if (!this.currentScript) return
 
     const script = this.currentScript
@@ -258,22 +258,22 @@ export class CinimaticScriptRunner {
   }
 
   // Public getters
-  get running (): boolean {
+  get running(): boolean {
     return this.isRunning
   }
 
-  get progress (): number {
+  get progress(): number {
     if (!this.isRunning || this.totalDuration === 0) return 0
     const elapsed = performance.now() - this.startTime
     return Math.min(elapsed / this.totalDuration, 1)
   }
 
-  get currentScriptName (): string | undefined {
+  get currentScriptName(): string | undefined {
     return this.currentScript?.name
   }
 
   // Static helper methods for creating common scripts
-  static createCircularFlyby (center: Vec3, radius: number, height: number, duration: number): CinimaticScript {
+  static createCircularFlyby(center: Vec3, radius: number, height: number, duration: number): CinimaticScript {
     const points: CinimaticPoint[] = []
     const numPoints = 8
 
@@ -300,7 +300,7 @@ export class CinimaticScriptRunner {
     }
   }
 
-  static createSpiralDescent (start: Vec3, end: Vec3, spirals: number, duration: number): CinimaticScript {
+  static createSpiralDescent(start: Vec3, end: Vec3, spirals: number, duration: number): CinimaticScript {
     const points: CinimaticPoint[] = []
     const numPoints = spirals * 8
     const radius = 20
@@ -329,7 +329,7 @@ export class CinimaticScriptRunner {
     }
   }
 
-  static createBuildingTour (waypoints: Array<{ pos: Vec3, lookAt?: Vec3, duration?: number }>): CinimaticScript {
+  static createBuildingTour(waypoints: Array<{ pos: Vec3, lookAt?: Vec3, duration?: number }>): CinimaticScript {
     const points: CinimaticPoint[] = waypoints.map((wp, i) => ({
       x: wp.pos.x,
       y: wp.pos.y,

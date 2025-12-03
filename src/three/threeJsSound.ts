@@ -1,10 +1,6 @@
 import * as THREE from 'three'
-import { WorldRendererThree } from './worldrendererThree'
-
-export interface SoundSystem {
-  playSound: (position: { x: number, y: number, z: number }, path: string, volume?: number, pitch?: number, timeout?: number) => void
-  destroy: () => void
-}
+import { WorldRendererThree } from './worldRendererThree'
+import { SoundSystem } from '@/graphicsBackend/types'
 
 export class ThreeJsSound implements SoundSystem {
   audioListener: THREE.AudioListener | undefined
@@ -13,7 +9,7 @@ export class ThreeJsSound implements SoundSystem {
   private readonly soundVolumes = new Map<THREE.PositionalAudio, number>()
   baseVolume = 1
 
-  constructor (public worldRenderer: WorldRendererThree) {
+  constructor(public worldRenderer: WorldRendererThree) {
     worldRenderer.onWorldSwitched.push(() => {
       this.stopAll()
     })
@@ -23,13 +19,13 @@ export class ThreeJsSound implements SoundSystem {
     })
   }
 
-  initAudioListener () {
+  initAudioListener() {
     if (this.audioListener) return
     this.audioListener = new THREE.AudioListener()
     this.worldRenderer.camera.add(this.audioListener)
   }
 
-  playSound (position: { x: number, y: number, z: number }, path: string, volume = 1, pitch = 1, timeout = 500) {
+  playSound(position: { x: number, y: number, z: number }, path: string, volume = 1, pitch = 1, timeout = 500) {
     this.initAudioListener()
 
     const sound = new THREE.PositionalAudio(this.audioListener!)
@@ -64,7 +60,7 @@ export class ThreeJsSound implements SoundSystem {
     })
   }
 
-  stopAll () {
+  stopAll() {
     for (const sound of this.activeSounds) {
       if (!sound) continue
       sound.stop()
@@ -77,14 +73,14 @@ export class ThreeJsSound implements SoundSystem {
     this.soundVolumes.clear()
   }
 
-  changeVolume (volume: number) {
+  changeVolume(volume: number) {
     this.baseVolume = volume
     for (const [sound, individualVolume] of this.soundVolumes) {
       sound.setVolume(individualVolume * this.baseVolume)
     }
   }
 
-  destroy () {
+  destroy() {
     this.stopAll()
     // Remove and cleanup audio listener
     if (this.audioListener) {
@@ -93,7 +89,7 @@ export class ThreeJsSound implements SoundSystem {
     }
   }
 
-  playTestSound () {
+  playTestSound() {
     this.playSound(this.worldRenderer.camera.position, '/sound.mp3')
   }
 }

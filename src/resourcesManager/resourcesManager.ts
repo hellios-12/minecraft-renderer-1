@@ -9,11 +9,14 @@
  */
 
 import { EventEmitter } from 'events'
+import type { IndexedData } from 'minecraft-data'
 import TypedEmitter from 'typed-emitter'
 
 // ============================================================================
 // Types
 // ============================================================================
+
+export type McData = IndexedData
 
 export type ResourceManagerEvents = {
   assetsTexturesUpdated: () => void
@@ -138,6 +141,9 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
   currentConfig: ResourcesCurrentConfig | undefined
   abortController = new AbortController()
 
+  // Minecraft data for current version
+  mcData?: McData
+
   private _promiseAssetsReadyResolvers = Promise.withResolvers<void>()
 
   get promiseAssetsReady(): Promise<void> {
@@ -177,7 +183,23 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
    * Load source data for a specific version.
    */
   async loadSourceData(version: string): Promise<void> {
-    // Override this in app-specific implementation to load mc-assets data
+    // Load minecraft data if not already loaded or version changed
+    if (!this.mcData || this.mcData.version?.minecraftVersion !== version) {
+      try {
+        // Try to use MinecraftData if available
+        if (typeof require !== 'undefined') {
+          const MinecraftData = require('minecraft-data')
+          this.mcData = MinecraftData(version)
+        } else {
+          // Fallback to global mcData if in browser
+          this.mcData = (globalThis as any).mcData
+        }
+      } catch (error) {
+        console.warn('Failed to load minecraft data:', error)
+        // Use global fallback
+        this.mcData = (globalThis as any).mcData
+      }
+    }
   }
 
   resetResources(): void {

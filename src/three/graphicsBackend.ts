@@ -11,87 +11,174 @@
 
 import * as THREE from 'three'
 import { Vec3 } from 'vec3'
-import type {
-  GraphicsBackend,
-  GraphicsBackendLoader,
-  GraphicsInitOptions,
-  DisplayWorldOptions,
-  SoundSystem
-} from '../types'
-import { DocumentRenderer, ThreeRendererMainData, isWebWorker } from './documentRenderer'
+import type { GraphicsBackendLoader, GraphicsBackend, GraphicsInitOptions, DisplayWorldOptions } from '@/graphicsBackend'
+import { createWorkerProxy, restoreTransferred } from '@/lib/workerProxy'
+import { ResourcesManager } from '@/resourcesManager'
+// import { WorldViewWorker } from '@/worldView'
+import { FrameTimingCollector } from '@/lib/frameTimingCollector'
+import { WorldRendererThree } from './worldRendererThree'
+import { DocumentRenderer, isWebWorker, ThreeRendererMainData } from './documentRenderer'
+import { PanoramaRenderer } from './panorama'
 
-// Enable Three.js in global scope for debugging
-;(globalThis as any).THREE = THREE
 // Disable Three.js color management for compatibility
 THREE.ColorManagement.enabled = false
+// Enable Three.js in global scope for debugging
+globalThis.THREE = THREE
+
+const getBackendMethods = (worldRenderer: WorldRendererThree): any => {
+  return {
+    updateMap: worldRenderer.entities.updateMap.bind(worldRenderer.entities),
+    updateCustomBlock: worldRenderer.updateCustomBlock.bind(worldRenderer),
+    getBlockInfo: worldRenderer.getBlockInfo.bind(worldRenderer),
+    playEntityAnimation: worldRenderer.entities.playAnimation.bind(worldRenderer.entities),
+    damageEntity: worldRenderer.entities.handleDamageEvent.bind(worldRenderer.entities),
+    updatePlayerSkin: worldRenderer.entities.updatePlayerSkin.bind(worldRenderer.entities),
+    changeHandSwingingState: worldRenderer.changeHandSwingingState.bind(worldRenderer),
+    getHighestBlocks: worldRenderer.getHighestBlocks.bind(worldRenderer),
+    reloadWorld: worldRenderer.reloadWorld.bind(worldRenderer),
+    updateEntityModel: worldRenderer.entities.updateEntityModel.bind(worldRenderer.entities),
+    playEntityModelAnimation: worldRenderer.entities.playEntityModelAnimation.bind(worldRenderer.entities),
+    addMedia: worldRenderer.media.addMedia.bind(worldRenderer.media),
+    destroyMedia: worldRenderer.media.destroyMedia.bind(worldRenderer.media),
+    setControlMode: worldRenderer.media.setControlMode.bind(worldRenderer.media),
+    setVideoPlaying: worldRenderer.media.setVideoPlaying.bind(worldRenderer.media),
+    setVideoSeeking: worldRenderer.media.setVideoSeeking.bind(worldRenderer.media),
+    setVideoVolume: worldRenderer.media.setVideoVolume.bind(worldRenderer.media),
+    setVideoSpeed: worldRenderer.media.setVideoSpeed.bind(worldRenderer.media),
+    handleUserClick: worldRenderer.media.handleUserClick.bind(worldRenderer.media),
+    addSectionAnimation(id: string, animation: typeof worldRenderer.sectionsOffsetsAnimations[string]) {
+      worldRenderer.sectionsOffsetsAnimations[id] = animation
+    },
+    removeSectionAnimation(id: string) {
+      delete worldRenderer.sectionsOffsetsAnimations[id]
+    },
+    shakeFromDamage: worldRenderer.cameraShake.shakeFromDamage.bind(worldRenderer.cameraShake),
+    onPageInteraction: worldRenderer.media.onPageInteraction.bind(worldRenderer.media),
+    downloadMesherLog: worldRenderer.downloadMesherLog.bind(worldRenderer),
+    // Fireworks methods
+    explodeFirework: worldRenderer.fireworksLegacy.explode.bind(worldRenderer.fireworksLegacy),
+    explodeFireworkFacingCamera: worldRenderer.fireworksLegacy.explodeFacingCamera.bind(worldRenderer.fireworksLegacy),
+    addWaypoint: worldRenderer.waypoints.addWaypoint.bind(worldRenderer.waypoints),
+    removeWaypoint: worldRenderer.waypoints.removeWaypoint.bind(worldRenderer.waypoints),
+    // Cinematic script methods
+    startCinimaticScript: worldRenderer.cinimaticScript.startScript.bind(worldRenderer.cinimaticScript),
+    stopCinimaticScript: worldRenderer.cinimaticScript.stopScript.bind(worldRenderer.cinimaticScript),
+    launchFirework: worldRenderer.fireworks.launchFirework.bind(worldRenderer.fireworks),
+    // New method for updating skybox
+    setSkyboxImage: worldRenderer.skyboxRenderer.setSkyboxImage.bind(worldRenderer.skyboxRenderer),
+    async loadGeometryExport(exportData: any) {
+      // Import dynamically to avoid circular dependencies
+      const { applyWorldGeometryExport } = await import('./worldGeometryExport')
+      return applyWorldGeometryExport(worldRenderer, exportData)
+    }
+  }
+}
+
+export type ThreeJsBackendMethods = ReturnType<typeof getBackendMethods>
+
+const initOptionsRestorers = [
+  ResourcesManager,
+  // WorldDataEmitterWorker
+]
 
 /**
  * Creates the base graphics backend with core functionality.
  */
 export const createGraphicsBackendBase = () => {
-  let initOptions: GraphicsInitOptions
+  // Private state
+  let initOptions!: GraphicsInitOptions
   let documentRenderer: DocumentRenderer | null = null
+  let panoramaRenderer: PanoramaRenderer | null = null
+  let worldRenderer: WorldRendererThree | null = null
+  let frameTimingCollector: FrameTimingCollector | null = null
 
   const init = (initOptionsArg: GraphicsInitOptions, mainData?: ThreeRendererMainData) => {
-    initOptions = initOptionsArg
+    if (isWebWorker) {
+      initOptions = restoreTransferred(initOptionsArg, initOptionsRestorers, globalThis as unknown as Worker)
+    } else {
+      initOptions = initOptionsArg
+    }
+
     documentRenderer = new DocumentRenderer(initOptions, mainData?.canvas)
-    ;(globalThis as any).renderer = documentRenderer.renderer
-    ;(globalThis as any).documentRenderer = documentRenderer
+      ; (globalThis as any).renderer = documentRenderer.renderer
+      ; (globalThis as any).documentRenderer = documentRenderer
+      ; (globalThis as any).threeJsBackend = backend
+      ; (globalThis as any).resourcesManager = initOptions.resourcesManager
+
+    callModsMethod('default', backend)
   }
 
   const startPanorama = async () => {
     if (!documentRenderer) throw new Error('Document renderer not initialized')
-    // Panorama rendering would go here
-    console.log('[GraphicsBackend] Panorama rendering not yet implemented in library')
+    if (worldRenderer) return
+
+    if (!panoramaRenderer) {
+      panoramaRenderer = new PanoramaRenderer(documentRenderer, initOptions, !!process.env.SINGLE_FILE_BUILD_MODE)
+        ; (globalThis as any).panoramaRenderer = panoramaRenderer
+
+      callModsMethod('panoramaCreated', panoramaRenderer)
+      await panoramaRenderer.start()
+      callModsMethod('panoramaReady', panoramaRenderer)
+    }
   }
 
   const startWorld = async (displayOptionsArg: DisplayWorldOptions) => {
+    const displayOptions: DisplayWorldOptions = isWebWorker ? restoreTransferred(displayOptionsArg, initOptionsRestorers, globalThis as unknown as Worker) : displayOptionsArg
+
     if (!documentRenderer) throw new Error('Document renderer not initialized')
 
-    // World renderer would be created here
-    // For now, we just set up the basic scene
-    console.log('[GraphicsBackend] Starting world with version:', displayOptionsArg.version)
+    documentRenderer.nonReactiveState = displayOptions.nonReactiveState
 
-    const scene = new THREE.Scene()
-    scene.background = new THREE.Color(initOptions.config.sceneBackground)
-
-    // Add basic lighting
-    const ambientLight = new THREE.AmbientLight(0xcccccc)
-    scene.add(ambientLight)
-
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5)
-    directionalLight.position.set(1, 1, 0.5).normalize()
-    scene.add(directionalLight)
-
-    // Create camera
-    const size = documentRenderer.renderer.getSize(new THREE.Vector2())
-    const camera = new THREE.PerspectiveCamera(75, size.x / size.y, 0.1, 1000)
-    scene.add(camera)
-
-    // Store references
-    ;(globalThis as any).scene = scene
-    ;(globalThis as any).camera = camera
-
-    // Set up render callback
-    documentRenderer.render = (sizeChanged: boolean) => {
-      if (sizeChanged) {
-        const newSize = documentRenderer!.renderer.getSize(new THREE.Vector2())
-        camera.aspect = newSize.width / newSize.height
-        camera.updateProjectionMatrix()
-      }
-      documentRenderer!.renderer.render(scene, camera)
+    if (panoramaRenderer) {
+      panoramaRenderer.dispose()
+      panoramaRenderer = null
     }
 
-    documentRenderer.inWorldRenderingConfig = displayOptionsArg.inWorldRenderingConfig
+    worldRenderer = new WorldRendererThree(documentRenderer.renderer, initOptions, displayOptions)
+
+    await worldRenderer.worldReadyPromise
+
+    frameTimingCollector = new FrameTimingCollector(displayOptions.nonReactiveState)
+      ; (globalThis as any).frameTimingCollector = frameTimingCollector
+
+    const originalRender = documentRenderer.render
+
+    documentRenderer.render = function (sizeChanged: boolean) {
+      originalRender.call(this, sizeChanged)
+      frameTimingCollector?.markFrameStart()
+
+      if (!displayOptions.inWorldRenderingConfig.paused) {
+        worldRenderer?.render(sizeChanged)
+      }
+
+      frameTimingCollector?.markFrameEnd()
+      frameTimingCollector?.markFrameDisplay()
+    }
+
+    documentRenderer.inWorldRenderingConfig = displayOptions.inWorldRenderingConfig
+
+      ; (globalThis as any).world = worldRenderer
+
+    callModsMethod('worldReady', worldRenderer)
   }
 
   const disconnect = () => {
+    if (panoramaRenderer) {
+      panoramaRenderer.dispose()
+      panoramaRenderer = null
+    }
+
     if (documentRenderer) {
       documentRenderer.dispose()
-      documentRenderer = null
+    }
+
+    if (worldRenderer) {
+      worldRenderer.destroy()
+      worldRenderer = null
     }
   }
 
+  // Public interface
   const backend: GraphicsBackend = {
     id: 'threejs',
     displayName: `three.js ${THREE.REVISION}`,
@@ -99,27 +186,25 @@ export const createGraphicsBackendBase = () => {
     startWorld,
     disconnect,
     setRendering(rendering) {
-      documentRenderer?.setPaused(!rendering)
+      documentRenderer!.setPaused(!rendering)
+      if (worldRenderer) worldRenderer.renderingActive = rendering
     },
-    getDebugOverlay: () => ({}),
+    getDebugOverlay: () => ({
+      get entitiesString() {
+        return worldRenderer?.entities.getDebugString()
+      },
+    }),
     updateCamera(pos: Vec3 | null, yaw: number, pitch: number) {
-      const camera = (globalThis as any).camera as THREE.PerspectiveCamera
-      if (!camera) return
-
-      if (pos) {
-        camera.position.set(pos.x, pos.y, pos.z)
-      }
-
-      // Apply rotation (yaw and pitch)
-      camera.rotation.order = 'YXZ'
-      camera.rotation.y = yaw
-      camera.rotation.x = pitch
+      // Mark camera update event for frame timing visualization
+      frameTimingCollector?.markCameraUpdate(!pos)
+      worldRenderer?.setFirstPersonCamera(pos, yaw, pitch)
     },
-    get soundSystem(): SoundSystem | undefined {
-      return undefined // Sound system not yet implemented
+    get soundSystem() {
+      return worldRenderer?.soundSystem
     },
     get backendMethods() {
-      return {}
+      if (!worldRenderer) return undefined
+      return getBackendMethods(worldRenderer)
     }
   }
 
@@ -127,20 +212,63 @@ export const createGraphicsBackendBase = () => {
     main: {
       init,
       backend
+    },
+    workerProxy() {
+      return createWorkerProxy({
+        init(initOptionsArg: GraphicsInitOptions, canvas: OffscreenCanvas) {
+          init(initOptionsArg, { canvas })
+        },
+        updateSizeExternal(width: number, height: number, pixelRatio: number) {
+          documentRenderer?.updateSizeExternal(width, height, pixelRatio)
+        },
+        startPanorama,
+        startWorld,
+        disconnect,
+        setRendering: backend.setRendering,
+        updateCamera(pos, yaw, pitch) {
+          const posVec = pos ? new Vec3(pos.x, pos.y, pos.z) : null
+          frameTimingCollector?.markCameraUpdate(!posVec)
+          backend.updateCamera(posVec, yaw, pitch)
+        },
+        async callBackendMethod<K extends keyof ThreeJsBackendMethods>(
+          method: K,
+          ...args: Parameters<ThreeJsBackendMethods[K]>
+        ): Promise<ReturnType<ThreeJsBackendMethods[K]> extends Promise<infer R> ? R : ReturnType<ThreeJsBackendMethods[K]>> {
+          if (!worldRenderer) {
+            throw new Error('World renderer not initialized')
+          }
+
+          const methods = getBackendMethods(worldRenderer)
+          const target = methods[method]
+
+          if (!target) {
+            throw new Error(`Backend method ${String(method)} is unavailable`)
+          }
+
+          return target(...args)
+        }
+      })
     }
   }
 }
 
-/**
- * Creates a Three.js graphics backend loader.
- */
-const createGraphicsBackend: GraphicsBackendLoader = (initOptions: GraphicsInitOptions): GraphicsBackend => {
+const createGraphicsBackend = (initOptions: GraphicsInitOptions) => {
   const { main } = createGraphicsBackendBase()
   main.init(initOptions)
   return main.backend
 }
 
+const callModsMethod = (method: string, ...args: any[]) => {
+  for (const mod of Object.values((globalThis.loadedMods ?? {}) as Record<string, any>)) {
+    try {
+      mod.threeJsBackendModule?.[method]?.(...args)
+    } catch (err) {
+      const errorMessage = `[mod three.js] Error calling ${method} on ${mod.name}: ${err}`
+      throw new Error(errorMessage)
+    }
+  }
+}
+
 createGraphicsBackend.id = 'threejs'
 
 export default createGraphicsBackend
-export { createGraphicsBackend }

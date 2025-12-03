@@ -6,8 +6,7 @@ import fs from 'fs'
 
 const dev = process.env.NODE_ENV === 'development'
 
-// Playground version to bundle minecraft-data for
-const PLAYGROUND_VERSION = '1.20.4'
+const PLAYGROUND_VERSION = '1.16.5'
 
 export default defineConfig({
   html: {
@@ -15,10 +14,9 @@ export default defineConfig({
   },
   output: {
     polyfill: 'usage',
-    dataUriLimit: 50 * 1024,
     assetPrefix: './',
     distPath: {
-      root: './dist/playground',
+      root: './dist-playground',
     },
   },
   source: {

@@ -3,6 +3,7 @@ import { ItemSelector } from 'mc-assets/dist/itemDefinitions'
 export type GameMode = 'survival' | 'creative' | 'adventure' | 'spectator'
 
 export interface Team {
+  team?: any
   id: string
   name: string
   color: string
@@ -12,12 +13,11 @@ export interface Team {
 }
 
 export interface HandItemBlock {
-  itemId?: number
-  blockId?: number
   name?: string
-  count?: number
-  damage?: number
-  enchants?: any[]
+  properties?: Record<string, any>
+  fullItem?: any
+  type: 'block' | 'item' | 'hand'
+  id?: number
 }
 
 export type MovementState = 'NOT_MOVING' | 'WALKING' | 'SPRINTING' | 'SNEAKING'

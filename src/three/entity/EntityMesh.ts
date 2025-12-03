@@ -3,12 +3,12 @@ import { OBJLoader } from 'three-stdlib'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import huskPng from 'mc-assets/dist/other-textures/latest/entity/zombie/husk.png'
 import { Vec3 } from 'vec3'
-import ocelotPng from '../../../../node_modules/mc-assets/dist/other-textures/latest/entity/cat/ocelot.png'
-import arrowTexture from '../../../../node_modules/mc-assets/dist/other-textures/1.21.2/entity/projectiles/arrow.png'
-import spectralArrowTexture from '../../../../node_modules/mc-assets/dist/other-textures/1.21.2/entity/projectiles/spectral_arrow.png'
-import tippedArrowTexture from '../../../../node_modules/mc-assets/dist/other-textures/1.21.2/entity/projectiles/tipped_arrow.png'
+import ocelotPng from 'mc-assets/dist/other-textures/latest/entity/cat/ocelot.png'
+import arrowTexture from 'mc-assets/dist/other-textures/1.21.2/entity/projectiles/arrow.png'
+import spectralArrowTexture from 'mc-assets/dist/other-textures/1.21.2/entity/projectiles/spectral_arrow.png'
+import tippedArrowTexture from 'mc-assets/dist/other-textures/1.21.2/entity/projectiles/tipped_arrow.png'
 import { loadTexture } from '../threeJsUtils'
-import { WorldRendererThree } from '../worldrendererThree'
+import { WorldRendererThree } from '../worldRendererThree'
 import entities from './entities.json'
 import { externalModels } from './objModels'
 import externalTexturesJson from './externalTextures.json'
@@ -151,11 +151,11 @@ const elemFaces: Record<string, ElemFace> = {
   }
 }
 
-function dot (a: number[], b: number[]): number {
+function dot(a: number[], b: number[]): number {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
-function addCube (
+function addCube(
   attr: GeoData,
   boneId: number,
   bone: THREE.Bone,
@@ -234,7 +234,7 @@ function addCube (
   }
 }
 
-export function getMesh (
+export function getMesh(
   worldRenderer: WorldRendererThree | undefined,
   texture: string,
   jsonModel: JsonModel,
@@ -403,7 +403,7 @@ const temporaryMappings: EntityMapping[] = [
   { pattern: /_arrow$/, target: 'zombie' },
 ]
 
-function getEntityMapping (type: string): string | undefined {
+function getEntityMapping(type: string): string | undefined {
   for (const mapping of temporaryMappings) {
     if (typeof mapping.pattern === 'string') {
       if (mapping.pattern === type) return mapping.target
@@ -447,11 +447,11 @@ export type EntityDebugFlags = {
 }
 
 export class EntityMesh {
-  mesh: THREE.Object3D
+  mesh!: THREE.Object3D
   animations?: THREE.AnimationClip[]
   mixer?: THREE.AnimationMixer
 
-  constructor (
+  constructor(
     version: string,
     type: string,
     worldRenderer?: WorldRendererThree,
@@ -547,7 +547,7 @@ export class EntityMesh {
           return
         }
         case 'bedrock': {
-        // Parse bedrock model JSON
+          // Parse bedrock model JSON
           const modelData = JSON.parse(modelPath as string)
           this.mesh = new THREE.Object3D()
 
@@ -577,7 +577,7 @@ export class EntityMesh {
           debugFlags.type = 'bedrock'
           return
         }
-      // No default
+        // No default
       }
     }
 
@@ -664,7 +664,7 @@ export class EntityMesh {
     debugFlags.type = 'bedrock'
   }
 
-  playAnimation (name: string, loop = false) {
+  playAnimation(name: string, loop = false) {
     if (!this.mixer || !this.animations) return
 
     // Find animation by name
@@ -684,13 +684,13 @@ export class EntityMesh {
     action.reset().play()
   }
 
-  update (deltaTime: number) {
+  update(deltaTime: number) {
     if (this.mixer) {
       this.mixer.update(deltaTime)
     }
   }
 
-  static getStaticData (name: string): { boneNames: string[] } {
+  static getStaticData(name: string): { boneNames: string[] } {
     name = getEntityMapping(name) || name
     if (externalModels[name]) {
       return {

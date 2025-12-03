@@ -1,25 +1,21 @@
 import { Vec3 } from 'vec3'
 import * as THREE from 'three'
-import '../../src/getCollisionShapes'
-import { IndexedData } from 'minecraft-data'
+import MinecraftData, { IndexedData } from 'minecraft-data'
 import BlockLoader from 'prismarine-block'
 import ChunkLoader from 'prismarine-chunk'
 import WorldLoader from 'prismarine-world'
 import { proxy } from 'valtio'
+import { BlockNames } from 'mc-bridge/dist/names.generated'
 
-//@ts-expect-error
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 // eslint-disable-next-line import/no-named-as-default
 import GUI from 'lil-gui'
 import _ from 'lodash'
-import supportedVersions from '../../src/supportedVersions.mjs'
-import { toMajorVersion } from '../../src/utils'
-import { BlockNames } from '../../src/mcDataTypes'
-import { defaultWorldRendererConfig, WorldRendererConfig } from '../viewer/lib/worldrendererCommon'
-import { WorldDataEmitter } from '../viewer/lib/worldDataEmitter'
-import { getInitialPlayerState } from '../viewer/lib/basePlayerState'
-import { appGraphicBackends } from '../../src/appViewerLoad'
+import { defaultWorldRendererConfig, WorldRendererConfig } from '@/lib/worldrendererCommon'
 import { getSyncWorld } from './shared'
+import { AppViewer, getInitialPlayerState } from '@/graphicsBackend'
+import { WorldView } from '@/worldView'
+import { createGraphicsBackend } from '@/three'
 
 window.THREE = THREE
 
@@ -34,9 +30,21 @@ export interface PlaygroundSceneConfig {
   continuousRender?: boolean
 }
 
-const includedVersions = globalThis.includedVersions ?? supportedVersions
+const appGraphicBackends = [
+  createGraphicsBackend,
+]
+
+const includedVersions = globalThis.includedVersions
 
 export class BasePlaygroundScene {
+  appViewer = new AppViewer({
+    config: {
+      statsVisible: 2,
+    }
+  })
+
+  mcData!: IndexedData
+
   // Rendering state
   continuousRender = false
   stopRender = false
@@ -45,12 +53,12 @@ export class BasePlaygroundScene {
   // Scene configuration
   viewDistance = 0
   targetPos = new Vec3(2, 90, 2)
-  version: string = new URLSearchParams(window.location.search).get('version') || '1.21.4'
+  version: string = new URLSearchParams(window.location.search).get('version') ?? includedVersions.at(-1)!
 
   // World data
-  Chunk: typeof import('prismarine-chunk/types/index').PCChunk
-  Block: typeof import('prismarine-block').Block
-  world: ReturnType<typeof getSyncWorld>
+  Chunk!: typeof import('prismarine-chunk/types/index').PCChunk
+  Block!: typeof import('prismarine-block').Block
+  world!: ReturnType<typeof getSyncWorld>
 
   // GUI
   gui = new GUI()
@@ -70,10 +78,10 @@ export class BasePlaygroundScene {
   enableCameraControls = true
   enableCameraOrbitControl = true
   controls: OrbitControls | undefined
-  camera: THREE.PerspectiveCamera
+  camera!: THREE.PerspectiveCamera
 
   // World data emitter (from appViewer)
-  worldView: WorldDataEmitter | undefined
+  worldView: WorldView | undefined
 
   // Debug FPS tracking
   private debugFpsElement: HTMLElement | undefined
@@ -85,20 +93,21 @@ export class BasePlaygroundScene {
 
   // Getter for worldRenderer - accesses via window.world for advanced scene features
   // This allows derived scenes to access worldRenderer when needed without storing it
-  get worldRenderer () {
+  get worldRenderer() {
+    //@ts-ignore
     return window.world
   }
 
   // World config - syncs with appViewer.inWorldRenderingConfig
-  get worldConfig () {
-    return appViewer.inWorldRenderingConfig
+  get worldConfig() {
+    return this.appViewer.inWorldRenderingConfig
   }
-  set worldConfig (value) {
+  set worldConfig(value) {
     // Merge the new values into appViewer's config to maintain reactivity
-    Object.assign(appViewer.inWorldRenderingConfig, value)
+    Object.assign(this.appViewer.inWorldRenderingConfig, value)
   }
 
-  constructor (config: PlaygroundSceneConfig = {}) {
+  constructor(config: PlaygroundSceneConfig = {}) {
     // Apply config
     if (config.version) this.version = config.version
 
@@ -113,12 +122,12 @@ export class BasePlaygroundScene {
     if (config.enableCameraOrbitControl !== undefined) this.enableCameraOrbitControl = config.enableCameraOrbitControl
     if (config.worldConfig) {
       // Merge config into appViewer's config to maintain reactivity
-      Object.assign(appViewer.inWorldRenderingConfig, config.worldConfig)
+      Object.assign(this.appViewer.inWorldRenderingConfig, config.worldConfig)
     }
-    appViewer.inWorldRenderingConfig.showHand = false
-    appViewer.inWorldRenderingConfig.isPlayground = true
-    appViewer.inWorldRenderingConfig.instantCameraUpdate = this.enableCameraOrbitControl
-    appViewer.config.statsVisible = 2
+    this.appViewer.inWorldRenderingConfig.showHand = false
+    this.appViewer.inWorldRenderingConfig.isPlayground = true
+    this.appViewer.inWorldRenderingConfig.instantCameraUpdate = this.enableCameraOrbitControl
+    this.appViewer.config.statsVisible = 2
     if (config.continuousRender !== undefined) this.continuousRender = config.continuousRender
 
     void this.initData().then(() => {
@@ -126,9 +135,9 @@ export class BasePlaygroundScene {
     })
   }
 
-  onParamsUpdate (paramName: string, object: any) {}
+  onParamsUpdate(paramName: string, object: any) { }
 
-  updateQs (paramName: string, valueSet: any) {
+  updateQs(paramName: string, valueSet: any) {
     if (this.skipUpdateQs) return
     const newQs = new URLSearchParams(window.location.search)
     for (const [key, value] of Object.entries({ [paramName]: valueSet })) {
@@ -142,11 +151,11 @@ export class BasePlaygroundScene {
     window.history.replaceState({}, '', `${window.location.pathname}?${newQs.toString()}`)
   }
 
-  renderFinish () {
+  renderFinish() {
     this.requestRender()
   }
 
-  initGui () {
+  initGui() {
     const qs = new URLSearchParams(window.location.search)
     for (const key of Object.keys(this.params)) {
       const value = qs.get(key)
@@ -186,23 +195,23 @@ export class BasePlaygroundScene {
   }
 
   // Overridable methods
-  setupWorld () { }
-  sceneReset () {}
+  setupWorld() { }
+  sceneReset() { }
 
   // eslint-disable-next-line max-params
-  addWorldBlock (xOffset: number, yOffset: number, zOffset: number, blockName: BlockNames, properties?: Record<string, any>) {
+  addWorldBlock(xOffset: number, yOffset: number, zOffset: number, blockName: BlockNames, properties?: Record<string, any>) {
     if (xOffset > 16 || yOffset > 16 || zOffset > 16) throw new Error('Offset too big')
     const block =
       properties ?
-        this.Block.fromProperties(loadedData.blocksByName[blockName].id, properties ?? {}, 0) :
-        this.Block.fromStateId(loadedData.blocksByName[blockName].defaultState, 0)
+        this.Block.fromProperties(this.mcData.blocksByName[blockName].id, properties ?? {}, 0) :
+        this.Block.fromStateId(this.mcData.blocksByName[blockName].defaultState, 0)
     this.world.setBlock(this.targetPos.offset(xOffset, yOffset, zOffset), block)
   }
 
   // Sync our camera state to the graphics backend
   // Extract rotation from OrbitControls spherical coordinates to avoid flip issues
-  protected syncCameraToBackend (onlyRotation = false) {
-    if (!appViewer.backend || !this.camera) return
+  protected syncCameraToBackend(onlyRotation = false) {
+    if (!this.appViewer.backend || !this.camera) return
 
     // Extract rotation from camera's quaternion to avoid gimbal lock issues
     // Get forward direction vector to extract yaw/pitch properly
@@ -216,15 +225,15 @@ export class BasePlaygroundScene {
     const pitch = Math.asin(forward.y)
 
     if (onlyRotation) {
-      appViewer.backend.updateCamera(null, yaw, pitch)
+      this.appViewer.backend.updateCamera(null, yaw, pitch)
       return
     }
 
     const pos = new Vec3(this.camera.position.x, this.camera.position.y, this.camera.position.z)
-    appViewer.backend.updateCamera(pos, yaw, pitch)
+    this.appViewer.backend.updateCamera(pos, yaw, pitch)
   }
 
-  resetCamera () {
+  resetCamera() {
     if (!this.camera) return
     const { targetPos } = this
     this.controls?.target.set(targetPos.x + 0.5, targetPos.y + 0.5, targetPos.z + 0.5)
@@ -237,9 +246,10 @@ export class BasePlaygroundScene {
     this.syncCameraToBackend()
   }
 
-  async initData () {
-    await window._LOAD_MC_DATA()
-    const mcData: IndexedData = require('minecraft-data')(this.version)
+  async initData() {
+    const mcData: IndexedData = MinecraftData(this.version)
+    this.mcData = mcData
+    //@ts-ignore
     window.loadedData = window.mcData = mcData
 
     this.Chunk = (ChunkLoader as any)(this.version)
@@ -255,26 +265,26 @@ export class BasePlaygroundScene {
     // worldConfig is already synced with appViewer.inWorldRenderingConfig via getter/setter
 
     // Initialize resources manager via appViewer
-    appViewer.resourcesManager.currentConfig = { version: this.version, noInventoryGui: true }
-    await appViewer.resourcesManager.loadSourceData(this.version)
-    await appViewer.resourcesManager.updateAssetsData({})
+    this.appViewer.resourcesManager.currentConfig = { version: this.version, noInventoryGui: true }
+    await this.appViewer.resourcesManager.loadSourceData?.(this.version)
+    await this.appViewer.resourcesManager.updateAssetsData?.({})
 
     // Load backend if not already loaded
-    if (!appViewer.backend) {
-      await appViewer.loadBackend(appGraphicBackends[0])
+    if (!this.appViewer.backend) {
+      await this.appViewer.loadBackend(appGraphicBackends[0])
     }
 
     // Start world using appViewer
     // This creates WorldDataEmitter, GraphicsBackend, and WorldRendererThree internally
-    await appViewer.startWorld(world, this.viewDistance, proxy(getInitialPlayerState()), this.targetPos)
+    await this.appViewer.startWorld(world, this.viewDistance, proxy(getInitialPlayerState()), this.targetPos)
 
     // Get world view from appViewer
-    this.worldView = appViewer.worldView
+    this.worldView = this.appViewer.worldView
 
     // Create our own camera for OrbitControls - this is separate from the internal worldRenderer camera
     // We sync our camera state to the backend via updateCamera()
     this.camera = new THREE.PerspectiveCamera(
-      appViewer.inWorldRenderingConfig.fov || 75,
+      this.appViewer.inWorldRenderingConfig.fov || 75,
       window.innerWidth / window.innerHeight,
       0.1,
       1000
@@ -392,12 +402,12 @@ export class BasePlaygroundScene {
     this.mainDebugLoop()
   }
 
-  mainDebugLoop () {
+  mainDebugLoop() {
     requestAnimationFrame(() => this.mainDebugLoop())
     this.trackFrame()
   }
 
-  loop () {
+  loop() {
     if (this.continuousRender && !this.windowHidden) {
       this.requestRender()
       requestAnimationFrame(() => this.loop())
@@ -407,12 +417,12 @@ export class BasePlaygroundScene {
   // Request a render from the backend (on-demand rendering)
   // The DocumentRenderer loop handles actual rendering continuously
   // Camera sync happens via syncCameraToBackend() which updates the internal camera
-  requestRender () {
+  requestRender() {
     // No-op: rendering is handled by DocumentRenderer's continuous loop
     // This method exists for API compatibility
   }
 
-  private setupDebugFpsGui () {
+  private setupDebugFpsGui() {
     // Create simple DOM element for debug FPS display in bottom left corner
     this.debugFpsElement = document.createElement('div')
     this.debugFpsElement.style.position = 'fixed'
@@ -437,7 +447,7 @@ export class BasePlaygroundScene {
     }, 1000)
   }
 
-  private trackFrame () {
+  private trackFrame() {
     const now = performance.now()
     this.frameTimes.push(now)
     this.frameCount++
@@ -455,7 +465,7 @@ export class BasePlaygroundScene {
     this.frameTimes = this.frameTimes.filter(time => time > oneSecondAgo)
   }
 
-  private updateDebugInfo () {
+  private updateDebugInfo() {
     if (!this.debugFpsElement) return
 
     // Calculate FPS from number of frames in the last second
@@ -479,11 +489,11 @@ export class BasePlaygroundScene {
   }
 
   // Legacy render method for compatibility
-  render (fromLoop = false) {
+  render(fromLoop = false) {
     this.requestRender()
   }
 
-  addKeyboardShortcuts () {
+  addKeyboardShortcuts() {
     document.addEventListener('keydown', (e) => {
       if (!e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
         if (e.code === 'KeyR') {
@@ -571,7 +581,7 @@ export class BasePlaygroundScene {
     })
   }
 
-  onResize () {
+  onResize() {
     this.requestRender()
   }
 }

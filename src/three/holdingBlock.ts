@@ -3,23 +3,16 @@ import * as tweenJs from '@tweenjs/tween.js'
 import PrismarineItem from 'prismarine-item'
 import worldBlockProvider, { WorldBlockProvider } from 'mc-assets/dist/worldBlockProvider'
 import { BlockModel } from 'mc-assets'
-import { getThreeBlockModelGroup, renderBlockThree, setBlockPosition } from '../lib/mesher/standaloneRenderer'
-import { MovementState, PlayerStateRenderer } from '../lib/basePlayerState'
 import { DebugGui } from '../lib/DebugGui'
 import { SmoothSwitcher } from '../lib/smoothSwitcher'
 import { watchProperty } from '../lib/utils/proxy'
 import { WorldRendererConfig } from '../lib/worldrendererCommon'
 import { getMyHand } from './hand'
-import { WorldRendererThree } from './worldrendererThree'
+import { WorldRendererThree } from './worldRendererThree'
 import { disposeObject } from './threeJsUtils'
-
-export type HandItemBlock = {
-  name?
-  properties?
-  fullItem?
-  type: 'block' | 'item' | 'hand'
-  id?: number
-}
+import { HandItemBlock, MovementState } from '@/playerState/types'
+import { PlayerStateRenderer } from '@/playerState/playerState'
+import { getThreeBlockModelGroup } from '@/mesher/standaloneRenderer'
 
 const rotationPositionData = {
   itemRight: {
@@ -118,7 +111,7 @@ export default class HoldingBlock {
   swingAnimator: HandSwingAnimator | undefined
   config: WorldRendererConfig
 
-  constructor (public worldRenderer: WorldRendererThree, public offHand = false) {
+  constructor(public worldRenderer: WorldRendererThree, public offHand = false) {
     this.initCameraGroup()
     this.worldRenderer.onReactivePlayerStateUpdated('heldItemMain', () => {
       if (!this.offHand) {
@@ -163,7 +156,7 @@ export default class HoldingBlock {
     }
   }
 
-  updateItem () {
+  updateItem() {
     if (!this.ready) return
     const item = this.offHand ? this.worldRenderer.playerStateReactive.heldItemOff : this.worldRenderer.playerStateReactive.heldItemMain
     if (item) {
@@ -177,19 +170,19 @@ export default class HoldingBlock {
     }
   }
 
-  initCameraGroup () {
+  initCameraGroup() {
     this.cameraGroup = new THREE.Mesh()
   }
 
-  startSwing () {
+  startSwing() {
     this.swingAnimator?.startSwing()
   }
 
-  stopSwing () {
+  stopSwing() {
     this.swingAnimator?.stopSwing()
   }
 
-  render (originalCamera: THREE.PerspectiveCamera, renderer: THREE.WebGLRenderer, ambientLight: THREE.AmbientLight, directionalLight: THREE.DirectionalLight) {
+  render(originalCamera: THREE.PerspectiveCamera, renderer: THREE.WebGLRenderer, ambientLight: THREE.AmbientLight, directionalLight: THREE.DirectionalLight) {
     if (!this.lastHeldItem) return
     const now = performance.now()
     if (this.lastUpdate && now - this.lastUpdate > 50) { // one tick
@@ -257,7 +250,7 @@ export default class HoldingBlock {
   //   new tweenJs.Tween(group.rotation).to({ z: THREE.MathUtils.degToRad(90) }, 1000).yoyo(true).repeat(Infinity).start()
   // }
 
-  async playBlockSwapAnimation (forceState: 'appeared' | 'disappeared') {
+  async playBlockSwapAnimation(forceState: 'appeared' | 'disappeared') {
     this.blockSwapAnimation ??= {
       switcher: new SmoothSwitcher(
         () => ({
@@ -301,7 +294,7 @@ export default class HoldingBlock {
     })
   }
 
-  isDifferentItem (block: HandItemBlock | undefined) {
+  isDifferentItem(block: HandItemBlock | undefined) {
     const Item = PrismarineItem(this.worldRenderer.version)
     if (!this.lastHeldItem) {
       return true
@@ -317,7 +310,7 @@ export default class HoldingBlock {
     return false
   }
 
-  updateCameraGroup () {
+  updateCameraGroup() {
     if (this.stopUpdate) return
     const { camera } = this
     this.cameraGroup.position.copy(camera.position)
@@ -344,7 +337,7 @@ export default class HoldingBlock {
   }
 
   lastItemModelName: string | undefined
-  private async createItemModel (handItem: HandItemBlock): Promise<{ model: THREE.Object3D; type: 'hand' | 'block' | 'item' } | undefined> {
+  private async createItemModel(handItem: HandItemBlock): Promise<{ model: THREE.Object3D; type: 'hand' | 'block' | 'item' } | undefined> {
     this.lastUpdate = performance.now()
     if (!handItem || (handItem.type === 'hand' && !this.playerHand)) return undefined
 
@@ -384,7 +377,7 @@ export default class HoldingBlock {
     return { model: blockInner, type: handItem.type }
   }
 
-  async replaceItemModel (handItem?: HandItemBlock): Promise<void> {
+  async replaceItemModel(handItem?: HandItemBlock): Promise<void> {
     // if switch animation is in progress, do not replace the item
     if (this.blockSwapAnimation?.switcher.isTransitioning) return
 
@@ -408,7 +401,7 @@ export default class HoldingBlock {
 
   }
 
-  testUnknownBlockSwitch () {
+  testUnknownBlockSwitch() {
     void this.setNewItem({
       type: 'item',
       name: 'minecraft:some-unknown-block',
@@ -418,7 +411,7 @@ export default class HoldingBlock {
   }
 
   switchRequest = 0
-  async setNewItem (handItem?: HandItemBlock) {
+  async setNewItem(handItem?: HandItemBlock) {
     if (!this.isDifferentItem(handItem)) return
     this.lastItemModelName = undefined
     const switchRequest = ++this.switchRequest
@@ -477,7 +470,7 @@ export default class HoldingBlock {
     }
   }
 
-  getHandHeld3d () {
+  getHandHeld3d() {
     const type = this.lastHeldItem?.type ?? 'hand'
     const side = this.offHandModeLegacy ? 'Left' : 'Right'
 
@@ -554,7 +547,7 @@ class HandIdleAnimator {
 
   private readonly debugGui: DebugGui
 
-  constructor (public handMesh: THREE.Object3D, public playerState: PlayerStateRenderer) {
+  constructor(public handMesh: THREE.Object3D, public playerState: PlayerStateRenderer) {
     this.handMesh = handMesh
     this.globalTime = 0
     this.currentState = 'NOT_MOVING'
@@ -604,7 +597,7 @@ class HandIdleAnimator {
     // this.debugGui.activate()
   }
 
-  private startIdleAnimation () {
+  private startIdleAnimation() {
     if (this.idleTween) {
       this.idleTween.stop()
     }
@@ -624,7 +617,7 @@ class HandIdleAnimator {
       .start()
   }
 
-  private stopIdleAnimation () {
+  private stopIdleAnimation() {
     if (this.idleTween) {
       this.idleTween.stop()
       this.idleOffset.y = 0
@@ -632,7 +625,7 @@ class HandIdleAnimator {
     }
   }
 
-  private getStateTransform (state: MovementState, time: number) {
+  private getStateTransform(state: MovementState, time: number) {
     switch (state) {
       case 'NOT_MOVING':
       case 'SNEAKING':
@@ -662,7 +655,7 @@ class HandIdleAnimator {
     }
   }
 
-  setState (newState: MovementState) {
+  setState(newState: MovementState) {
     if (newState === this.targetState) return
 
     this.targetState = newState
@@ -685,7 +678,7 @@ class HandIdleAnimator {
   }
 
   updated = false
-  update () {
+  update() {
     this.stateSwitcher.update()
 
     const now = performance.now()
@@ -743,11 +736,11 @@ class HandIdleAnimator {
     }
   }
 
-  getCurrentState () {
+  getCurrentState() {
     return this.currentState
   }
 
-  destroy () {
+  destroy() {
     this.stopIdleAnimation()
     this.stateSwitcher.forceFinish()
   }
@@ -792,7 +785,7 @@ class HandSwingAnimator {
 
   public type: 'hand' | 'block' | 'item' = 'hand'
 
-  constructor (public handMesh: THREE.Object3D) {
+  constructor(public handMesh: THREE.Object3D) {
     this.handMesh = handMesh
     // Store initial transforms
     this.originalRotation = handMesh.rotation.clone()
@@ -825,7 +818,7 @@ class HandSwingAnimator {
     // this.debugGui.activate()
   }
 
-  update () {
+  update() {
     if (!this.isAnimating && !this.debugParams.animationStage) {
       // If not animating, ensure we're at original position
       this.handMesh.rotation.copy(this.originalRotation)
@@ -905,7 +898,7 @@ class HandSwingAnimator {
     }
   }
 
-  startSwing () {
+  startSwing() {
     this.stopRequested = false
     if (this.isAnimating) return
 
@@ -914,12 +907,12 @@ class HandSwingAnimator {
     this.lastTime = performance.now()
   }
 
-  stopSwing () {
+  stopSwing() {
     if (!this.isAnimating) return
     this.stopRequested = true
   }
 
-  isCurrentlySwinging () {
+  isCurrentlySwinging() {
     return this.isAnimating
   }
 }

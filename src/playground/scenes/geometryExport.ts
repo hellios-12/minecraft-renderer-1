@@ -4,7 +4,7 @@ import {
   downloadWorldGeometry,
   loadWorldGeometryFromUrl,
   type ExportedWorldGeometry
-} from '../../viewer/three/worldGeometryExport'
+} from '../../three/worldGeometryExport'
 
 type GeometryExportBackendMethods = {
   loadGeometryExport?: (exportData: ExportedWorldGeometry) => Promise<number>
@@ -27,7 +27,7 @@ export default class extends BasePlaygroundScene {
   private loadedGeometry: ExportedWorldGeometry | null = null
   private readonly geometryUrl: string | null
 
-  constructor () {
+  constructor() {
     const qs = new URLSearchParams(window.location.search)
     const geometryUrl = qs.get('geometryUrl') ?? 'world-geometry.json'
 
@@ -42,7 +42,7 @@ export default class extends BasePlaygroundScene {
   }
 
   // Override initData to load geometry after base initialization completes
-  override async initData () {
+  override async initData() {
     await super.initData()
 
     // Now camera and worldRenderer are ready - load geometry if URL provided
@@ -51,7 +51,7 @@ export default class extends BasePlaygroundScene {
     }
   }
 
-  setupWorld () {
+  setupWorld() {
     if (this.geometryUrl) {
       return
     }
@@ -64,7 +64,7 @@ export default class extends BasePlaygroundScene {
     this.addWorldBlock(1, 1, 0, 'oak_planks')
   }
 
-  private async loadFromUrl (url: string) {
+  private async loadFromUrl(url: string) {
     try {
       console.log('Loading geometry from:', url)
       this.loadedGeometry = await loadWorldGeometryFromUrl(url)
@@ -88,7 +88,7 @@ export default class extends BasePlaygroundScene {
       this.controls?.update()
       this.syncCameraToBackend()
 
-      const backendMethods = appViewer.backend?.backendMethods as GeometryExportBackendMethods | undefined
+      const backendMethods = this.appViewer.backend?.backendMethods as GeometryExportBackendMethods | undefined
       if (!backendMethods?.loadGeometryExport) {
         console.warn('Three.js backend does not expose loadGeometryExport')
         return
@@ -109,7 +109,7 @@ export default class extends BasePlaygroundScene {
     }
   }
 
-  private exportGeometry (includeTexture = false) {
+  private exportGeometry(includeTexture = false) {
     const { worldRenderer } = this
     if (!worldRenderer) {
       console.error('WorldRenderer not available')
