@@ -1,7 +1,7 @@
 import { Vec3 } from 'vec3'
 import worldBlockProvider, { WorldBlockProvider } from 'mc-assets/dist/worldBlockProvider'
 import legacyJson from '../lib/preflatMap.json'
-import { BlockType } from '../../../playground/shared'
+import { BlockType } from '../playground/shared'
 import { World, BlockModelPartsResolved, WorldBlock as Block, WorldBlock, worldColumnKey } from './world'
 import { BlockElement, buildRotationMatrix, elemFaces, matmul3, matmulmat3, vecadd3, vecsub3 } from './modelsGeometryCommon'
 import { INVISIBLE_BLOCKS } from './worldConstants'
@@ -27,7 +27,7 @@ type Tiles = {
   [blockPos: string]: BlockType
 }
 
-function prepareTints (tints) {
+function prepareTints(tints) {
   const map = new Map()
   const defaultValue = tintToGl(tints.default)
   for (let { keys, color } of tints.data) {
@@ -37,14 +37,14 @@ function prepareTints (tints) {
     }
   }
   return new Proxy(map, {
-    get (target, key) {
+    get(target, key) {
       return target.has(key) ? target.get(key) : defaultValue
     }
   })
 }
 
 const calculatedBlocksEntries = Object.entries(legacyJson.clientCalculatedBlocks)
-export function preflatBlockCalculation (block: Block, world: World, position: Vec3) {
+export function preflatBlockCalculation(block: Block, world: World, position: Vec3) {
   const type = calculatedBlocksEntries.find(([name, blocks]) => blocks.includes(block.name))?.[0]
   if (!type) return
   switch (type) {
@@ -96,14 +96,14 @@ export function preflatBlockCalculation (block: Block, world: World, position: V
   }
 }
 
-function tintToGl (tint) {
+function tintToGl(tint) {
   const r = (tint >> 16) & 0xff
   const g = (tint >> 8) & 0xff
   const b = tint & 0xff
   return [r / 255, g / 255, b / 255]
 }
 
-function getLiquidRenderHeight (world: World, block: WorldBlock | null, type: number, pos: Vec3, isWater: boolean, isRealWater: boolean) {
+function getLiquidRenderHeight(world: World, block: WorldBlock | null, type: number, pos: Vec3, isWater: boolean, isRealWater: boolean) {
   if ((isWater && !isRealWater) || (block && isBlockWaterlogged(block))) return 8 / 9
   if (!block || block.type !== type) return 1 / 9
   if (block.metadata === 0) { // source block
@@ -132,7 +132,7 @@ const getVec = (v: Vec3, dir: Vec3) => {
   return v.plus(dir)
 }
 
-function renderLiquid (world: World, cursor: Vec3, texture: any | undefined, type: number, biome: string, water: boolean, attr: MesherGeometryOutput, isRealWater: boolean) {
+function renderLiquid(world: World, cursor: Vec3, texture: any | undefined, type: number, biome: string, water: boolean, attr: MesherGeometryOutput, isRealWater: boolean) {
   const heights: number[] = []
   for (let z = -1; z <= 1; z++) {
     for (let x = -1; x <= 1; x++) {
@@ -269,7 +269,7 @@ const identicalCull = (currentElement: BlockElement, neighbor: Block, direction:
 
 let needSectionRecomputeOnChange = false
 
-function renderElement (world: World, cursor: Vec3, element: BlockElement, doAO: boolean, attr: MesherGeometryOutput, globalMatrix: any, globalShift: any, block: Block, biome: string) {
+function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: boolean, attr: MesherGeometryOutput, globalMatrix: any, globalShift: any, block: Block, biome: string) {
   const position = cursor
   // const key = `${position.x},${position.y},${position.z}`
   // if (!globalThis.allowedBlocks.includes(key)) return
@@ -519,7 +519,7 @@ const isBlockWaterlogged = (block: Block) => {
 }
 
 let unknownBlockModel: BlockModelPartsResolved
-export function getSectionGeometry (sx: number, sy: number, sz: number, world: World) {
+export function getSectionGeometry(sx: number, sy: number, sz: number, world: World) {
   let delayedRender = [] as Array<() => void>
 
   const attr: MesherGeometryOutput = {
@@ -744,11 +744,11 @@ export function getSectionGeometry (sx: number, sy: number, sz: number, world: W
 }
 
 // copied from three.js
-function arrayNeedsUint32 (array) {
+function arrayNeedsUint32(array) {
 
   // assumes larger values usually on last
 
-  for (let i = array.length - 1; i >= 0; -- i) {
+  for (let i = array.length - 1; i >= 0; --i) {
 
     if (array[i] >= 65_535) return true // account for PRIMITIVE_RESTART_FIXED_INDEX, #24565
 
