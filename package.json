@@ -63,6 +63,7 @@
         "@rsbuild/core": "1.3.5",
         "@rsbuild/plugin-node-polyfill": "1.3.0",
         "@rsbuild/plugin-react": "1.2.0",
+        "@types/lodash": "^4.17.21",
         "@types/react": "^19.2.7",
         "@types/stats.js": "^0.17.1",
         "@types/three": "0.154.0",

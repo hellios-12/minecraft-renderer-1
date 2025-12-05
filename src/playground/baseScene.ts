@@ -247,6 +247,7 @@ export class BasePlaygroundScene {
   }
 
   async initData() {
+    // Load mcData synchronously first (needed for initGui)
     const mcData: IndexedData = MinecraftData(this.version)
     this.mcData = mcData
     //@ts-ignore
@@ -264,10 +265,17 @@ export class BasePlaygroundScene {
     // Use appViewer for resource management and world rendering
     // worldConfig is already synced with appViewer.inWorldRenderingConfig via getter/setter
 
-    // Initialize resources manager via appViewer
+    // Initialize resources manager via appViewer (this will also load mcData, but we already have it)
     this.appViewer.resourcesManager.currentConfig = { version: this.version, noInventoryGui: true }
     await this.appViewer.resourcesManager.loadSourceData?.(this.version)
     await this.appViewer.resourcesManager.updateAssetsData?.({})
+
+    // Sync mcData from resourcesManager (should be the same, but ensure consistency)
+    if (this.appViewer.resourcesManager.currentResources?.mcData) {
+      this.mcData = this.appViewer.resourcesManager.currentResources.mcData
+      //@ts-ignore
+      window.loadedData = window.mcData = this.mcData
+    }
 
     // Load backend if not already loaded
     if (!this.appViewer.backend) {

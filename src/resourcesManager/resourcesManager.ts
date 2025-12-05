@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events'
 import TypedEmitter from 'typed-emitter'
+import MinecraftData, { IndexedData } from 'minecraft-data'
 import blocksAtlases from 'mc-assets/dist/blocksAtlases.json'
 import itemsAtlases from 'mc-assets/dist/itemsAtlases.json'
 import itemDefinitionsJson from 'mc-assets/dist/itemDefinitions.json'
@@ -48,6 +49,7 @@ export class LoadedResourcesTransferrable {
 
   version!: string
   texturesVersion!: string
+  mcData!: IndexedData
 
   constructor(data?: any) {
     if (data) {
@@ -177,6 +179,9 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
     const resources = this.currentResources ?? new LoadedResourcesTransferrable()
     resources.version = this.currentConfig.version
     resources.texturesVersion = this.currentConfig.texturesVersion ?? resources.version
+
+    // Load minecraft data
+    resources.mcData = MinecraftData(resources.version)
 
     resources.blockstatesModels = {
       blockstates: {},

@@ -13,6 +13,8 @@ import { disposeObject } from './threeJsUtils'
 import { HandItemBlock, MovementState } from '../playerState/types'
 import { PlayerStateRenderer } from '../playerState/playerState'
 import { getThreeBlockModelGroup } from '../mesher/standaloneRenderer'
+import { IndexedData } from 'minecraft-data'
+import type { ResourcesManagerTransferred } from '../resourcesManager'
 
 const rotationPositionData = {
   itemRight: {
@@ -917,10 +919,10 @@ class HandSwingAnimator {
   }
 }
 
-export const getBlockMeshFromModel = (material: THREE.Material, model: BlockModel, name: string, blockProvider: WorldBlockProvider) => {
+export const getBlockMeshFromModel = (material: THREE.Material, model: BlockModel, name: string, blockProvider: WorldBlockProvider, mcData: IndexedData) => {
   const worldRenderModel = blockProvider.transformModel(model, {
     name,
     properties: {}
   }) as any
-  return getThreeBlockModelGroup(material, [[worldRenderModel]], undefined, 'plains', loadedData)
+  return getThreeBlockModelGroup(material, [[worldRenderModel]], undefined, 'plains', mcData)
 }

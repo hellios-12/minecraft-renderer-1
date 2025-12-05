@@ -88,8 +88,6 @@ export {
 //   disposeObject
 // } from './three/worldGeometryHandler'
 
-export { StarField } from './three/starField'
-
 // ============================================================================
 // Examples (for reference and testing)
 // ============================================================================
