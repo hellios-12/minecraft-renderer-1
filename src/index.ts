@@ -75,15 +75,3 @@ export {
   addCanvasForWorker,
   isWebWorker
 } from './three/documentRenderer'
-
-// export {
-//   WorldGeometryHandler,
-//   estimateGeometryMemoryUsage,
-//   disposeObject
-// } from './three/worldGeometryHandler'
-
-// ============================================================================
-// Examples (for reference and testing)
-// ============================================================================
-export { AppViewerExample, runExample } from './examples/appViewerExample'
-export { appViewer, initialMenuStart, initialize } from './examples/initialMenuStart'
