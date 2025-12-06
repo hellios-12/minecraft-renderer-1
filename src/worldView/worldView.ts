@@ -9,6 +9,7 @@ import { EventEmitter } from 'events'
 import { Vec3 } from 'vec3'
 import TypedEmitter from 'typed-emitter'
 import type { WorldViewEvents, ChunkPosKey, WorldSizeParams } from './types'
+import { generateSpiralMatrix } from '../lib/spiral'
 
 /**
  * Helper to calculate chunk position from absolute position.
@@ -22,33 +23,6 @@ export const chunkPos = (pos: { x: number; z: number } | Vec3): [number, number]
  */
 export const sectionPos = (pos: { x: number; y: number; z: number }): [number, number, number] => {
   return [Math.floor(pos.x / 16), Math.floor(pos.y / 16), Math.floor(pos.z / 16)]
-}
-
-/**
- * Generates a spiral matrix of chunk positions for loading chunks in order from center.
- */
-export const generateSpiralMatrix = (viewDistance: number): [number, number][] => {
-  const result: [number, number][] = []
-  const size = viewDistance * 2 + 1
-  let x = 0
-  let z = 0
-  let dx = 0
-  let dz = -1
-
-  for (let i = 0; i < size * size; i++) {
-    if (-viewDistance <= x && x <= viewDistance && -viewDistance <= z && z <= viewDistance) {
-      result.push([x, z])
-    }
-    if (x === z || (x < 0 && x === -z) || (x > 0 && x === 1 - z)) {
-      const temp = dx
-      dx = -dz
-      dz = temp
-    }
-    x += dx
-    z += dz
-  }
-
-  return result
 }
 
 /**

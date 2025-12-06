@@ -41,7 +41,6 @@ export {
   WorldViewWorker,
   chunkPos,
   sectionPos,
-  generateSpiralMatrix,
   delayedIterator
 } from './worldView'
 export type { WorldProvider } from './worldView'
@@ -62,11 +61,6 @@ export {
   ResourcesManager,
   LoadedResourcesTransferrable
 } from './resourcesManager'
-
-// ============================================================================
-// Modules System
-// ============================================================================
-export * from './modules'
 
 // ============================================================================
 // Three.js Backend (re-exported for convenience)

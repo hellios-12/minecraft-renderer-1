@@ -1,10 +1,10 @@
-import { generateSpiralMatrix } from 'flying-squid/dist/utils'
 import PrismarineWorld from 'prismarine-world'
 import PrismarineChunk from 'prismarine-chunk'
 import { Vec3 } from 'vec3'
 import MinecraftData from 'minecraft-data'
 import { defaultMesherConfig } from '../shared'
 import { setup } from './mesherTester.js'
+import { generateSpiralMatrix } from '../../lib/spiral'
 
 // const version = '1.8.8'
 const version = '1.21.1'
@@ -16,7 +16,7 @@ const { chunk, getGeometry, reload } = setup(version, [])
 
 const fillers = {
   // 10 iterations no smooth light 66ms m1 pro
-  worstPossibleFull () {
+  worstPossibleFull() {
     for (let x = 0; x < 16; x++) {
       for (let z = 0; z < 16; z++) {
         for (let y = -64; y < 320; y++) {
@@ -28,7 +28,7 @@ const fillers = {
       }
     }
   },
-  allFilled () {
+  allFilled() {
     for (let x = 0; x < 16; x++) {
       for (let z = 0; z < 16; z++) {
         for (let y = -64; y < 320; y++) {
@@ -61,13 +61,13 @@ console.time('iterate')
 for (let i = 0; i < sections; i++) {
   const { totalTiles } = getGeometry()
   console.log('totalTiles', totalTiles)
-//   for (let x = 0; x < 16; x++) {
-//     for (let z = 0; z < 16; z++) {
-//       for (let y = -64; y < 320; y++) {
-//         world.getBlockStateId(new Vec3(x, y, z))
-//       }
-//     }
-//   }
+  //   for (let x = 0; x < 16; x++) {
+  //     for (let z = 0; z < 16; z++) {
+  //       for (let y = -64; y < 320; y++) {
+  //         world.getBlockStateId(new Vec3(x, y, z))
+  //       }
+  //     }
+  //   }
 }
 console.timeEnd('iterate')
 console.log(globalThis.tasksTiming)

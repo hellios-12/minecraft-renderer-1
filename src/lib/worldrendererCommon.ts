@@ -16,7 +16,8 @@ import { getPlayerStateUtils } from '../graphicsBackend/playerState'
 type PlayerStateUtils = ReturnType<typeof getPlayerStateUtils>
 import { MesherLogReader } from './mesherlogReader'
 import { setSkinsConfig } from './utils/skins'
-import { generateSpiralMatrix, WorldViewWorker } from '../worldView'
+import { WorldViewWorker } from '../worldView'
+import { generateSpiralMatrix } from './spiral'
 import { PlayerStateReactive } from '../playerState/playerState'
 import { IndexedData } from 'minecraft-data'
 

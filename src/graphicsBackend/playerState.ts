@@ -3,7 +3,7 @@
  */
 
 import { proxy } from 'valtio'
-import type { PlayerStateReactive } from './types'
+import { PlayerStateReactive } from '../playerState/playerState'
 
 /**
  * Get initial player state with default values.

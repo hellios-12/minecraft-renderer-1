@@ -1,4 +1,4 @@
-import { BlockType } from '../../../playground/shared'
+import { BlockType } from '../playground/shared'
 
 // only here for easier testing
 export const defaultMesherConfig = {

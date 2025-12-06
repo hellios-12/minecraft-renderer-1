@@ -115,7 +115,7 @@ export const getNonFullBlocksModels = (appViewer: AppViewer) => {
 
 const RENDER_SIZE = 64
 
-const generateItemsGui = async (models: Record<string, BlockModelMcAssets>, isItems = false) => {
+const generateItemsGui = async (appViewer: AppViewer, models: Record<string, BlockModelMcAssets>, isItems = false) => {
   const { currentResources } = appViewer.resourcesManager
   const imgBitmap = isItems ? currentResources!.itemsAtlasImage : currentResources!.blocksAtlasImage
   const canvasTemp = document.createElement('canvas')
@@ -241,7 +241,7 @@ const generateItemsGui = async (models: Record<string, BlockModelMcAssets>, isIt
 /**
  * @mainThread
  */
-const generateAtlas = async (images: Record<string, HTMLImageElement>) => {
+const generateAtlas = async (appViewer: AppViewer, images: Record<string, HTMLImageElement>) => {
   const atlas = makeTextureAtlas({
     input: Object.keys(images),
     tileSize: RENDER_SIZE,
@@ -266,18 +266,18 @@ const generateAtlas = async (images: Record<string, HTMLImageElement>) => {
   return atlas
 }
 
-export const generateGuiAtlas = async () => {
+export const generateGuiAtlas = async (appViewer: AppViewer) => {
   console.trace('generateGuiAtlas')
-  const { blockModelsResolved, itemsModelsResolved } = getNonFullBlocksModels()
+  const { blockModelsResolved, itemsModelsResolved } = getNonFullBlocksModels(appViewer)
 
   // Generate blocks atlas
   console.time('generate blocks gui atlas')
-  const blockImages = await generateItemsGui(blockModelsResolved, false)
+  const blockImages = await generateItemsGui(appViewer, blockModelsResolved, false)
   console.timeEnd('generate blocks gui atlas')
   console.time('generate items gui atlas')
-  const itemImages = await generateItemsGui(itemsModelsResolved, true)
+  const itemImages = await generateItemsGui(appViewer, itemsModelsResolved, true)
   console.timeEnd('generate items gui atlas')
-  await generateAtlas({ ...blockImages, ...itemImages })
+  await generateAtlas(appViewer, { ...blockImages, ...itemImages })
   appViewer.resourcesManager.currentResources!.guiAtlasVersion++
   // await generateAtlas(blockImages)
 }

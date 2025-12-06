@@ -7,7 +7,7 @@ const stats = {}
 
 let lastY = 40
 export const addNewStat = (id: string, width = 80, x = rightOffset, y = lastY) => {
-  if (isWebWorker) return { updateText () {}, setVisibility () {} }
+  if (isWebWorker) return { updateText() { }, setVisibility() { } }
 
   const pane = document.createElement('div')
   pane.style.position = 'fixed'
@@ -29,18 +29,18 @@ export const addNewStat = (id: string, width = 80, x = rightOffset, y = lastY) =
   }
 
   return {
-    updateText (text: string) {
+    updateText(text: string) {
       if (pane.innerText === text) return
       pane.innerText = text
     },
-    setVisibility (visible: boolean) {
+    setVisibility(visible: boolean) {
       pane.style.display = visible ? 'block' : 'none'
     }
   }
 }
 
 export const addNewStat2 = (id: string, { top, bottom, right, left, displayOnlyWhenWider }: { top?: number, bottom?: number, right?: number, left?: number, displayOnlyWhenWider?: number }) => {
-  if (isWebWorker) return { updateText () {}, setVisibility () {} }
+  if (isWebWorker) return { updateText() { }, setVisibility() { } }
 
   if (top === undefined && bottom === undefined) top = 0
   const pane = document.createElement('div')
@@ -76,10 +76,10 @@ export const addNewStat2 = (id: string, { top, bottom, right, left, displayOnlyW
   resizeCheck()
 
   return {
-    updateText (text: string) {
+    updateText(text: string) {
       pane.innerText = text
     },
-    setVisibility (visible: boolean) {
+    setVisibility(visible: boolean) {
       pane.style.display = visible ? 'block' : 'none'
     }
   }
@@ -110,11 +110,4 @@ export const removeStat = (id) => {
   if (isWebWorker || !stats[id]) return
   stats[id].remove()
   delete stats[id]
-}
-
-if (typeof customEvents !== 'undefined' && !isWebWorker) {
-  customEvents.on('gameLoaded', () => {
-    const chunksLoaded = addNewStat('chunks-loaded', 80, 0, 0)
-    const chunksTotal = addNewStat('chunks-read', 80, 0, 0)
-  })
 }

@@ -4,11 +4,11 @@
 
 import { proxy } from 'valtio'
 import type {
-  WorldRendererConfig,
   GraphicsBackendConfig,
   RendererReactiveState,
   NonReactiveState
 } from './types'
+import { WorldRendererConfig } from '../lib/worldrendererCommon'
 
 /**
  * Default world renderer configuration.
