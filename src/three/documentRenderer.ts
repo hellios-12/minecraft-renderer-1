@@ -13,6 +13,7 @@ import Stats from 'stats.js'
 import StatsGl from 'stats-gl'
 import * as tween from '@tweenjs/tween.js'
 import { WorldRendererConfig } from '../lib/worldrendererCommon'
+import type { GraphicsInitOptions } from '../graphicsBackend/types'
 
 // ============================================================================
 // Types (co-located with implementation)
@@ -49,16 +50,7 @@ export interface NonReactiveState {
   }
 }
 
-export interface GraphicsInitOptions<S = any> {
-  resourcesManager: any
-  config: GraphicsBackendConfig
-  rendererSpecificSettings: S
-  callbacks: {
-    displayCriticalError: (error: Error) => void
-    setRendererSpecificSettings: (key: string, value: any) => void
-    fireCustomEvent: (eventName: string, ...args: any[]) => void
-  }
-}
+// GraphicsInitOptions is now imported from ../graphicsBackend/types
 
 export interface ThreeRendererMainData {
   canvas: OffscreenCanvas

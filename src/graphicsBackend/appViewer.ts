@@ -114,8 +114,7 @@ export class AppViewer {
 
     this.backendLoader = loader
 
-    const loaderOptions: GraphicsInitOptions = { // todo!
-      resourcesManager: this.resourcesManager! as unknown as ResourcesManagerTransferred,
+    const loaderOptions: GraphicsInitOptions = {
       config: this.config,
       callbacks: {
         displayCriticalError: (error) => {
@@ -170,7 +169,8 @@ export class AppViewer {
       inWorldRenderingConfig: this.inWorldRenderingConfig,
       playerStateReactive,
       rendererState: this.rendererState,
-      nonReactiveState: this.nonReactiveState
+      nonReactiveState: this.nonReactiveState,
+      resourcesManager: this.resourcesManager! as unknown as ResourcesManagerTransferred
     }
 
     this.onBeforeWorldStart?.()

@@ -18,6 +18,7 @@ import { AppViewer, getInitialPlayerState } from '../graphicsBackend'
 import { WorldView } from '../worldView'
 import { createGraphicsBackend } from '../three'
 import { createGraphicsBackendOffThread } from '../three/graphicsBackendOffThread'
+import { WorldRendererThree } from '../three/worldRendererThree'
 
 window.THREE = THREE
 
@@ -96,7 +97,7 @@ export class BasePlaygroundScene {
 
   // Getter for worldRenderer - accesses via window.world for advanced scene features
   // This allows derived scenes to access worldRenderer when needed without storing it
-  get worldRenderer() {
+  get worldRenderer(): WorldRendererThree | undefined {
     //@ts-ignore
     return window.world
   }

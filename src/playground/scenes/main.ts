@@ -110,7 +110,7 @@ class MainScene extends BasePlaygroundScene {
       this.continuousRender = this.params.entity === 'player'
       this.entityUpdateShared()
       if (!this.params.entity) return
-      if (this.params.entity === 'player') {
+      if (this.params.entity === 'player' && this.worldRenderer) {
         this.worldRenderer.entities.updatePlayerSkin('id', this.worldRenderer.entities.entities.id.username, undefined, true, true)
         this.worldRenderer.entities.playAnimation('id', 'running')
       }
@@ -130,17 +130,19 @@ class MainScene extends BasePlaygroundScene {
       this.worldView!.setBlockStateId(this.targetPos.offset(0, -1, 0), this.params.supportBlock ? 1 : 0)
     },
     modelVariant: () => {
+      if (!this.worldRenderer) return
       this.worldRenderer.worldRendererConfig.debugModelVariant = this.params.modelVariant === 0 ? undefined : [this.params.modelVariant]
     }
   }
 
   entityUpdateShared() {
-    this.worldRenderer.entities.clear()
+    this.worldRenderer?.entities.clear()
     if (!this.params.entity) return
     this.worldView!.emit('entity', {
       id: 'id', name: this.params.entity, pos: this.targetPos.offset(0.5, 1, 0.5), width: 1, height: 1, username: localStorage.testUsername, yaw: Math.PI, pitch: 0
     })
     const enableSkeletonDebug = (obj) => {
+      if (!obj) return
       const { children, isSkeletonHelper } = obj
       if (!Array.isArray(children)) return
       if (isSkeletonHelper) {
@@ -151,7 +153,7 @@ class MainScene extends BasePlaygroundScene {
         if (typeof child === 'object') enableSkeletonDebug(child)
       }
     }
-    enableSkeletonDebug(this.worldRenderer.entities.entities['id'])
+    enableSkeletonDebug(this.worldRenderer?.entities.entities['id'])
     setTimeout(() => {
       this.render()
     }, TWEEN_DURATION)
@@ -199,6 +201,8 @@ class MainScene extends BasePlaygroundScene {
   }
 
   blockIsomorphicRenderBundle() {
+    if (!this.worldRenderer) return
+    //@ts-ignore
     const { renderer } = this.worldRenderer
 
     const canvas = renderer.domElement
@@ -245,7 +249,7 @@ class MainScene extends BasePlaygroundScene {
       // onUpdate.block()
       // applyChanges(false, true)
     }
-    void this.worldRenderer.waitForChunksToRender().then(async () => {
+    void this.worldRenderer?.waitForChunksToRender().then(async () => {
       // wait for next macro task
       await new Promise(resolve => {
         setTimeout(resolve, 0)
@@ -255,7 +259,7 @@ class MainScene extends BasePlaygroundScene {
         onWorldUpdate()
       } else {
         // will be called on every render update
-        this.worldRenderer.renderUpdateEmitter.addListener('update', onWorldUpdate)
+        this.worldRenderer!.renderUpdateEmitter.addListener('update', onWorldUpdate)
         updateBlock()
       }
     })
@@ -276,7 +280,7 @@ class MainScene extends BasePlaygroundScene {
       URL.revokeObjectURL(dataUrlZip)
       console.log('end')
 
-      this.worldRenderer.renderUpdateEmitter.removeListener('update', onWorldUpdate)
+      this.worldRenderer!.renderUpdateEmitter.removeListener('update', onWorldUpdate)
     }
 
     async function onWorldUpdate() {

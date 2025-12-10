@@ -6,7 +6,7 @@ import * as tweenJs from '@tweenjs/tween.js'
 import type { GraphicsInitOptions } from '../graphicsBackend/types'
 import { defaultWorldRendererConfig, WorldRendererCommon } from '../lib/worldrendererCommon'
 import { getDefaultRendererState } from '../graphicsBackend/config'
-import { ResourcesManager } from '../resourcesManager/resourcesManager'
+import { ResourcesManager, ResourcesManagerTransferred } from '../resourcesManager/resourcesManager'
 import { getInitialPlayerStateRenderer } from '../graphicsBackend/playerState'
 import { loadThreeJsTextureFromUrl, loadThreeJsTextureFromUrlSync } from './threeJsUtils'
 import { WorldRendererThree } from './worldRendererThree'
@@ -163,7 +163,9 @@ export class PanoramaRenderer {
 
   async worldBlocksPanorama() {
     const version = PANORAMA_VERSION
-    const fullResourceManager = this.options.resourcesManager
+
+    const fullResourceManager = new ResourcesManager()
+
     fullResourceManager.currentConfig = { version, noInventoryGui: true, }
     await fullResourceManager.updateAssetsData?.({})
     if (this.abortController.signal.aborted) return
@@ -206,7 +208,8 @@ export class PanoramaRenderer {
         inWorldRenderingConfig: defaultWorldRendererConfig,
         playerStateReactive: getInitialPlayerStateRenderer().reactive,
         rendererState: getDefaultRendererState().reactive,
-        nonReactiveState: getDefaultRendererState().nonReactive
+        nonReactiveState: getDefaultRendererState().nonReactive,
+        resourcesManager: fullResourceManager as ResourcesManagerTransferred // todo use guard instead
       }
     )
     if (this.worldRenderer instanceof WorldRendererThree) {

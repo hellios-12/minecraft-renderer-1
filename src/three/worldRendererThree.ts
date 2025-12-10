@@ -108,8 +108,8 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   constructor(public renderer: THREE.WebGLRenderer, public initOptions: GraphicsInitOptions, public displayOptions: DisplayWorldOptions) {
-    if (!initOptions.resourcesManager) throw new Error('resourcesManager is required')
-    super(initOptions.resourcesManager, displayOptions, initOptions)
+    if (!displayOptions.resourcesManager) throw new Error('resourcesManager is required in displayOptions')
+    super(displayOptions.resourcesManager, displayOptions, initOptions)
 
     this.renderer = renderer
     displayOptions.rendererState.renderer = WorldRendererThree.getRendererInfo(renderer) ?? '...'

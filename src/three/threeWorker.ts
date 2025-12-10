@@ -30,7 +30,7 @@ self.addEventListener('message', (event: MessageEvent) => {
 })
 
 // Initialize the graphics backend worker proxy
-import { createGraphicsBackendBase } from './graphicsBackend'
+import { createGraphicsBackendBase } from './graphicsBackendBase'
 
 const graphicsBackend = createGraphicsBackendBase()
 graphicsBackend.workerProxy()

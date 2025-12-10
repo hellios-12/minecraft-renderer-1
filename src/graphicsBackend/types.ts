@@ -87,7 +87,6 @@ export interface RendererReactiveState {
 
 /** Graphics initialization options */
 export interface GraphicsInitOptions<S = any> {
-  resourcesManager: ResourcesManagerTransferred
   config: GraphicsBackendConfig
   rendererSpecificSettings: S
   callbacks: {
@@ -105,6 +104,7 @@ export interface DisplayWorldOptions {
   playerStateReactive: PlayerStateReactive
   rendererState: RendererReactiveState
   nonReactiveState: NonReactiveState
+  resourcesManager: ResourcesManagerTransferred
 }
 
 /** Graphics backend interface */

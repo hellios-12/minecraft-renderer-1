@@ -4,7 +4,7 @@ import { useWorkerProxy, deepPrepareForTransfer, findProblemTransfer } from '../
 import { meshersSendMcData } from '../lib/worldrendererCommon'
 import { dynamicMcDataFiles } from '../lib/buildSharedConfig.mjs'
 import { addNewStat } from '../lib/ui/newStats'
-import { createGraphicsBackendBase, type ThreeJsBackendMethods } from './graphicsBackend'
+import { createGraphicsBackendBase, type ThreeJsBackendMethods } from './graphicsBackendBase'
 import { addCanvasForWorker } from './documentRenderer'
 
 function initThreeWorker(onGotMessage: (data: any) => void) {
@@ -65,7 +65,7 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
         items: 'itemsArray',
         entities: 'entitiesArray',
       }
-      meshersSendMcData([worker], options.version, workerThreeSendData, initOptions.resourcesManager.currentResources.mcData)
+      meshersSendMcData([worker], options.version, workerThreeSendData, options.resourcesManager.currentResources.mcData)
       console.log('mc data sent to three worker')
 
       options.inWorldRenderingConfig['__syncToWorker'] = true
