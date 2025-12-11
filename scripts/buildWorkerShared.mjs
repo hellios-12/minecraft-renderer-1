@@ -146,7 +146,7 @@ export function createWorkerBuildOptions({ entryPoint, bundleMcData, watch, esbu
     plugins: [
       createMcDataPlugin(BUNDLE_MC_DATA, rootDir),
       polyfillNode(),
-      ...esbuildOptions.plugins,
+      ...esbuildOptions.plugins ?? [],
     ],
   }
   return buildOptions
