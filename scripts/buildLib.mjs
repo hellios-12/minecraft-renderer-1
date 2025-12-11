@@ -27,7 +27,7 @@ const buildOptions = {
   minifyIdentifiers: false,
   logLevel: 'info',
   drop: minify ? ['debugger', 'console'] : [],
-  sourcemap: true,
+  sourcemap: !minify,
   metafile: true,
   define: {
     'process.env.NODE_ENV': watch ? '"development"' : '"production"',
