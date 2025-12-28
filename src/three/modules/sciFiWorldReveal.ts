@@ -8,13 +8,23 @@ const CHUNKS_THRESHOLD = 9
 const REVEAL_DURATION = 3500 // ms for full reveal transition
 const WIREFRAME_FADE_DELAY = 1200 // ms before wireframe starts fading
 
+const INITIAL_WIREFRAME_MS = 350
+const INITIAL_REVEAL_MS = 650
+const INITIAL_WAVE_SPREAD_MS = 650
+
+const CHUNK_WIREFRAME_MS = 120
+const CHUNK_REVEAL_MS = 280
+
 interface RevealingSection {
   key: string
   wireframeGroup: THREE.Group
   revealStartTime: number
   phase: 'wireframe' | 'transitioning' | 'complete'
   originalMeshRef: THREE.Mesh | null
+  wireframeMs: number
+  revealMs: number
 }
+
 
 /**
  * SciFiWorldReveal - Creates a futuristic wireframe-to-solid reveal effect
@@ -29,6 +39,10 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   private revealTriggered = false
   private revealStartTime = 0
   private enabled = false
+
+  private onWorldSwitchedCb: (() => void) | null = null
+  private patched = false
+  private initialWaveDone = false
 
   // Wireframe materials
   private readonly wireframeMaterial!: THREE.LineBasicMaterial
@@ -46,30 +60,32 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   private originalSceneAdd: ((...object: THREE.Object3D[]) => THREE.Scene) | null = null
   private originalHandleWorkerMessage: ((data: { geometry: MesherGeometryOutput; key: string; type: string }) => void) | null = null
 
-  constructor(private readonly worldRenderer: WorldRendererThree) {
-    // dont watch by design
-    if (!this.worldRenderer.worldRendererConfig.futuristicReveal) {
-      return
-    }
+  private originalWbgHandle: ((data: any) => void) | null = null
 
-    // Create glowing wireframe material
+  private configEnabled = true
+
+  constructor(private readonly worldRenderer: WorldRendererThree) {
+    this.configEnabled = this.worldRenderer.worldRendererConfig.futuristicReveal !== false
+
     this.wireframeMaterial = new THREE.LineBasicMaterial({
       color: SCI_FI_CYAN,
       transparent: true,
       opacity: 1,
-      linewidth: 2,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
     })
 
-    // Secondary glow layer
     this.wireframeGlowMaterial = new THREE.LineBasicMaterial({
       color: SCI_FI_CYAN,
       transparent: true,
-      opacity: 0.4,
-      linewidth: 1,
+      opacity: 0.55,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
     })
   }
 
   enable(): void {
+    if (!this.configEnabled) return
     if (this.enabled) return
     this.enabled = true
     this.patchWorldRenderer()
@@ -97,12 +113,14 @@ export class SciFiWorldRevealModule implements RendererModuleController {
    * Patch world renderer methods to integrate the reveal effect
    */
   private patchWorldRenderer(): void {
+    if (this.patched) return
+    this.patched = true
     const wr = this.worldRenderer
 
     // Hook into onWorldSwitched
-    wr.onWorldSwitched.push(() => {
-      this.reset()
-    })
+    this.onWorldSwitchedCb = () => this.reset()
+    wr.onWorldSwitched.push(this.onWorldSwitchedCb)
+
 
     // Patch finishChunk
     this.originalFinishChunk = wr.finishChunk.bind(wr)
@@ -119,16 +137,25 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     }
 
     // Patch handleWorkerMessage
-    this.originalHandleWorkerMessage = wr.handleWorkerMessage.bind(wr)
-    wr.handleWorkerMessage = (data: { geometry: MesherGeometryOutput; key: string; type: string }) => {
-      if (data.type === 'geometry') {
-        const useRevealEffect = this.shouldUseRevealEffect(data.key)
-        if (useRevealEffect) {
-          this.registerSection(data.key, data.geometry)
-        }
+    const wbg = wr.worldBlockGeometry
+    this.originalWbgHandle = wbg.handleWorkerGeometryMessage.bind(wbg)
+
+    wbg.handleWorkerGeometryMessage = (data: any) => {
+      const result = this.originalWbgHandle!(data)
+
+      if (this.enabled && data?.type === 'geometry') {
+        Promise.resolve().then(() => {
+          try {
+            this.registerSection(data.key, data.geometry)
+          } catch (err) {
+            console.error('[SciFiReveal] registerSection failed', err)
+          }
+        })
       }
-      this.originalHandleWorkerMessage!(data)
+
+      return result
     }
+
 
     // Patch scene.add to intercept mesh additions
     this.originalSceneAdd = wr.scene.add.bind(wr.scene)
@@ -170,6 +197,18 @@ export class SciFiWorldRevealModule implements RendererModuleController {
       wr.scene.add = this.originalSceneAdd
       this.originalSceneAdd = null
     }
+
+    if (this.originalWbgHandle) {
+      wr.worldBlockGeometry.handleWorkerGeometryMessage = this.originalWbgHandle as any
+      this.originalWbgHandle = null
+    }
+
+    if (this.onWorldSwitchedCb) {
+      const i = wr.onWorldSwitched.indexOf(this.onWorldSwitchedCb)
+      if (i !== -1) wr.onWorldSwitched.splice(i, 1)
+      this.onWorldSwitchedCb = null
+    }
+    this.patched = false
   }
 
   /**
@@ -277,14 +316,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
    * Check if a section should use the reveal effect
    */
   shouldUseRevealEffect(key: string): boolean {
-    if (!this.enabled) return false
-    // Only use effect if we haven't revealed this section yet
-    // and the reveal hasn't been triggered yet OR it's actively revealing
-    return !this.revealedChunks.has(key) && (
-      !this.revealTriggered ||
-      this.pendingGeometries.has(key) ||
-      this.revealingSections.has(key)
-    )
+    return this.enabled && !this.revealedChunks.has(key) && !this.revealingSections.has(key)
   }
 
   /**
@@ -292,6 +324,8 @@ export class SciFiWorldRevealModule implements RendererModuleController {
    */
   private triggerReveal(): void {
     this.revealTriggered = true
+    this.initialWaveDone = true
+
     this.revealStartTime = performance.now()
 
     const cameraPos = this.getCameraPosition()
@@ -338,6 +372,11 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     // Create wireframe geometry
     const wireframeGeom = this.createWireframeGeometry(geometry)
 
+    const original = this.getOriginalMesh(key)
+    if (original) {
+      original.visible = false
+        ; (original as any).hiddenByReveal = true
+    }
     // Main wireframe
     const wireframe = new THREE.LineSegments(wireframeGeom, this.wireframeMaterial.clone())
     wireframe.position.set(geometry.sx, geometry.sy, geometry.sz)
@@ -360,13 +399,26 @@ export class SciFiWorldRevealModule implements RendererModuleController {
 
     this.scene.add(group)
 
+    const wireframeMs = this.initialWaveDone ? CHUNK_WIREFRAME_MS : INITIAL_WIREFRAME_MS
+    const revealMs = this.initialWaveDone ? CHUNK_REVEAL_MS : INITIAL_REVEAL_MS
+
     const section: RevealingSection = {
       key,
       wireframeGroup: group,
       revealStartTime: performance.now(),
       phase: 'wireframe',
-      originalMeshRef: null
+      originalMeshRef: null,
+      wireframeMs,
+      revealMs,
     }
+
+    setTimeout(() => {
+      const m = this.getOriginalMesh(key)
+      if (m && !(m as any).hiddenByReveal) {
+        m.visible = false
+          ; (m as any).hiddenByReveal = true
+      }
+    }, 0)
 
     this.revealingSections.set(key, section)
   }
@@ -462,7 +514,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
         }
 
         // Transition to fading phase
-        if (elapsed > WIREFRAME_FADE_DELAY) {
+        if (elapsed > section.wireframeMs) {
           section.phase = 'transitioning'
 
           // Get and show the original mesh with fade-in
@@ -480,8 +532,8 @@ export class SciFiWorldRevealModule implements RendererModuleController {
           }
         }
       } else if (section.phase === 'transitioning') {
-        const transitionElapsed = elapsed - WIREFRAME_FADE_DELAY
-        const progress = Math.min(1, transitionElapsed / REVEAL_DURATION)
+        const transitionElapsed = elapsed - section.wireframeMs
+        const progress = Math.min(1, transitionElapsed / section.revealMs)
 
         // Smooth ease-out curve
         const eased = 1 - (1 - progress) ** 3
@@ -492,12 +544,12 @@ export class SciFiWorldRevealModule implements RendererModuleController {
 
         if (wireframe?.material) {
           const mat = wireframe.material as THREE.LineBasicMaterial
-          mat.opacity = (1 - eased) * basePulse
+          mat.opacity = (1 - eased)
         }
 
         if (glow?.material) {
           const glowMat = glow.material as THREE.LineBasicMaterial
-          glowMat.opacity = (1 - eased) * basePulse * 0.4
+          glowMat.opacity = (1 - eased) * 0.55
         }
 
         // Fade in original mesh

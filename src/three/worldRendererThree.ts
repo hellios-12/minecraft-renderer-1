@@ -176,21 +176,19 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     const controller = new manifest.controller(this)
 
-    let enabled = manifest.enabledDefault ?? false
-
     const registered: RegisteredModule = {
       manifest,
       controller,
-      enabled,
+      enabled: false,
     }
 
     this.modules.set(manifest.id, registered)
 
-    // Auto-enable if enabled is true
-    if (enabled) {
+    if (manifest.enabledDefault) {
       this.enableModule(manifest.id)
     }
   }
+
 
   /**
    * Enable a module
@@ -257,7 +255,7 @@ export class WorldRendererThree extends WorldRendererCommon {
    */
   private initializeModules(): void {
     for (const [id, module] of this.modules.entries()) {
-      if (module.enabled) {
+      if (module.manifest.enabledDefault) {
         this.enableModule(id)
       }
     }
