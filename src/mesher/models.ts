@@ -281,6 +281,8 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
     const { corners, mask1, mask2, side } = elemFaces[face]
     const dir = matmul3(globalMatrix, elemFaces[face].dir)
 
+    console.log(`[TS] Processing face ${face} at (${cursor.x}, ${cursor.y}, ${cursor.z}), dir=[${dir.join(',')}]`)
+
     if (eFace.cullface) {
       const neighbor = world.getBlock(cursor.plus(new Vec3(...dir)), blockProvider, {})
       if (neighbor) {
@@ -306,6 +308,8 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
     const { sv } = texture
 
     const ndx = Math.floor(attr.positions.length / 3)
+
+    console.log(`[TS]   Base index: ${ndx}`)
 
     let tint = [1, 1, 1]
     if (eFace.tintindex !== undefined) {
@@ -398,17 +402,24 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
         vertex = vecadd3(matmul3(globalMatrix, vertex), globalShift)
         vertex = vertex.map(v => v / 16)
 
-        attr.positions.push(
+        const worldPos = [
           vertex[0] + (cursor.x & 15) - 8,
           vertex[1] + (cursor.y & 15) - 8,
           vertex[2] + (cursor.z & 15) - 8
-        )
+        ]
+
+        console.log(`[TS]     Corner ${pos.join(',')}: vertex=[${vertex.map(v => v.toFixed(3)).join(',')}], worldPos=[${worldPos.map(v => v.toFixed(3)).join(',')}]`)
+
+        attr.positions.push(...worldPos)
 
         attr.normals.push(...dir)
 
         const baseu = (pos[3] - 0.5) * uvcs - (pos[4] - 0.5) * uvsn + 0.5
         const basev = (pos[3] - 0.5) * uvsn + (pos[4] - 0.5) * uvcs + 0.5
-        attr.uvs.push(baseu * su + u, basev * sv + v)
+        const finalU = baseu * su + u
+        const finalV = basev * sv + v
+        console.log(`[TS]       UV: cornerUV=[${pos[3]},${pos[4]}], baseUV=[${baseu.toFixed(6)},${basev.toFixed(6)}], finalUV=[${finalU.toFixed(6)},${finalV.toFixed(6)}], texture=[u=${u},v=${v},su=${su},sv=${sv}], rotation=${r}`)
+        attr.uvs.push(finalU, finalV)
       }
 
       let light = 1
@@ -456,6 +467,10 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
         // todo light should go upper on lower blocks
         light = (ao + 1) / 4 * (cornerLightResult / 15)
         aos.push(ao)
+
+        // Log AO and light for this corner (corner index is aos.length - 1)
+        const cornerIdx = aos.length - 1
+        console.log(`[TS]       Corner ${cornerIdx} AO=${ao}, light=${light.toFixed(3)}`)
       }
 
       if (!needTiles) {
@@ -488,20 +503,27 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
     }
 
     if (!needTiles) {
+      let tri1: number[], tri2: number[]
       if (doAO && aos[0] + aos[3] >= aos[1] + aos[2]) {
-        attr.indices[attr.indicesCount++] = ndx
-        attr.indices[attr.indicesCount++] = ndx + 3
-        attr.indices[attr.indicesCount++] = ndx + 2
-        attr.indices[attr.indicesCount++] = ndx
-        attr.indices[attr.indicesCount++] = ndx + 1
-        attr.indices[attr.indicesCount++] = ndx + 3
+        tri1 = [ndx, ndx + 3, ndx + 2]
+        tri2 = [ndx, ndx + 1, ndx + 3]
+        console.log(`[TS]     Indices (AO optimized): tri1=[${tri1.join(',')}], tri2=[${tri2.join(',')}], aos=[${aos.join(',')}]`)
+        attr.indices[attr.indicesCount++] = tri1[0]
+        attr.indices[attr.indicesCount++] = tri1[1]
+        attr.indices[attr.indicesCount++] = tri1[2]
+        attr.indices[attr.indicesCount++] = tri2[0]
+        attr.indices[attr.indicesCount++] = tri2[1]
+        attr.indices[attr.indicesCount++] = tri2[2]
       } else {
-        attr.indices[attr.indicesCount++] = ndx
-        attr.indices[attr.indicesCount++] = ndx + 1
-        attr.indices[attr.indicesCount++] = ndx + 2
-        attr.indices[attr.indicesCount++] = ndx + 2
-        attr.indices[attr.indicesCount++] = ndx + 1
-        attr.indices[attr.indicesCount++] = ndx + 3
+        tri1 = [ndx, ndx + 1, ndx + 2]
+        tri2 = [ndx + 2, ndx + 1, ndx + 3]
+        console.log(`[TS]     Indices (standard): tri1=[${tri1.join(',')}], tri2=[${tri2.join(',')}], aos=[${aos.join(',')}]`)
+        attr.indices[attr.indicesCount++] = tri1[0]
+        attr.indices[attr.indicesCount++] = tri1[1]
+        attr.indices[attr.indicesCount++] = tri1[2]
+        attr.indices[attr.indicesCount++] = tri2[0]
+        attr.indices[attr.indicesCount++] = tri2[1]
+        attr.indices[attr.indicesCount++] = tri2[2]
       }
     }
   }
@@ -519,6 +541,8 @@ const isBlockWaterlogged = (block: Block) => {
 }
 
 let unknownBlockModel: BlockModelPartsResolved
+globalThis.a = 0
+const HEIGHT = 364
 export function getSectionGeometry(sx: number, sy: number, sz: number, world: World) {
   let delayedRender = [] as Array<() => void>
 
@@ -526,7 +550,7 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
     sectionYNumber: (sy - world.config.worldMinY) >> 4,
     chunkKey: worldColumnKey(sx, sz),
     sectionStartY: sy,
-    sectionEndY: sy + 16,
+    sectionEndY: sy + HEIGHT,
     sectionStartX: sx,
     sectionEndX: sx + 16,
     sectionStartZ: sz,
@@ -556,9 +580,10 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
   }
 
   const cursor = new Vec3(0, 0, 0)
-  for (cursor.y = sy; cursor.y < sy + 16; cursor.y++) {
+  for (cursor.y = sy; cursor.y < sy + HEIGHT; cursor.y++) {
     for (cursor.z = sz; cursor.z < sz + 16; cursor.z++) {
       for (cursor.x = sx; cursor.x < sx + 16; cursor.x++) {
+        globalThis.a++
         let block = world.getBlock(cursor, blockProvider, attr)!
         if (INVISIBLE_BLOCKS.has(block.name)) continue
         if ((block.name.includes('_sign') || block.name === 'sign') && !world.config.disableBlockEntityTextures) {
@@ -640,6 +665,8 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
         if (block.name !== 'water' && block.name !== 'lava' && !INVISIBLE_BLOCKS.has(block.name)) {
           // cache
           let { models } = block
+
+          console.log(`[TS] Processing block at (${cursor.x}, ${cursor.y}, ${cursor.z}), name=${block.name}, stateId=${block.stateId}`)
 
           models ??= unknownBlockModel
 
@@ -739,6 +766,14 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
     delete attr.colors
     delete attr.uvs
   }
+
+  console.log(`[TS] Final geometry summary:`)
+  console.log(`[TS]   Total vertices: ${attr.positions.length / 3}`)
+  console.log(`[TS]   Total triangles: ${attr.indices.length / 3}`)
+  const posArray = Array.from(attr.positions)
+  const idxArray = Array.from(attr.indices)
+  console.log(`[TS]   Positions: [${posArray.slice(0, 12).join(',')}...] (first 4 vertices)`)
+  console.log(`[TS]   Indices: [${idxArray.slice(0, 12).join(',')}...] (first 2 faces)`)
 
   return attr
 }
