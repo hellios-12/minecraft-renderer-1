@@ -264,6 +264,12 @@ export function renderWasmOutputToGeometry(
     const cachedModel = getCachedBlockModel(blockStateId, version, blockProvider, PrismarineBlock)
     if (!cachedModel) continue
 
+    let biome: string | undefined
+    if (world) {
+      const blockObj = world.getBlock(new Vec3(bx, by, bz))
+      biome = blockObj?.biome?.name
+    }
+
     if (false) {
     // For now, use first model variant (can be extended later)
     const modelVariant = cachedModel.modelVariants[0]
@@ -410,15 +416,12 @@ export function renderWasmOutputToGeometry(
         // But WASM light calculation seems to return 0.0, so we need to handle that
         // In the test case, TypeScript gets baseLight = 1.0 (full brightness)
         // So we should use 1.0 as the base light value when WASM returns 0
-        const wasmLightValue = lightValues[cornerIdx]
-        const baseLight = wasmLightValue > 0 ? wasmLightValue : 1.0 // Default to 1.0 if WASM returns 0
-        const cornerLightResult = baseLight * 15 // Convert to 0-15 range
+        const baseLight = lightValues[cornerIdx]
+        const cornerLightResult = baseLight * 15
 
-        // TS formula: light = (ao + 1) / 4 * (cornerLightResult / 15)
         const light = (ao + 1) / 4 * (cornerLightResult / 15)
 
-        // Base color - TS uses: baseLight * tint[0] * light
-        colors.push(baseLight * tint[0] * light, baseLight * tint[1] * light, baseLight * tint[2] * light)
+        colors.push(tint[0] * light, tint[1] * light, tint[2] * light)
 
         // UV calculation (matching reference exactly)
         const baseu = (pos[3] - 0.5) * uvcs - (pos[4] - 0.5) * uvsn + 0.5

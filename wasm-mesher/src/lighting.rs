@@ -16,7 +16,7 @@ pub const FACE_NAMES: [&str; 6] = ["up", "down", "east", "west", "south", "north
 /// Returns AO value (0-3, where 0 = darkest, 3 = brightest)
 #[inline(always)]
 pub fn calculate_ao(
-    world: &WorldView,
+    world: &WorldView<'_>,
     x: i32,
     y: i32,
     z: i32,
@@ -58,7 +58,7 @@ pub fn calculate_ao(
 
 /// Check if a block is solid (non-transparent, non-air)
 #[inline(always)]
-fn is_solid(world: &WorldView, x: i32, y: i32, z: i32) -> bool {
+fn is_solid(world: &WorldView<'_>, x: i32, y: i32, z: i32) -> bool {
     let state = world.get_block_state(x, y, z);
     state != 0 // TODO: Check against transparent blocks list
 }
@@ -67,7 +67,7 @@ fn is_solid(world: &WorldView, x: i32, y: i32, z: i32) -> bool {
 /// Returns light value (0-15)
 #[inline(always)]
 pub fn calculate_light(
-    world: &WorldView,
+    world: &WorldView<'_>,
     x: i32,
     y: i32,
     z: i32,
@@ -90,15 +90,27 @@ pub fn calculate_light(
         return base_light / 15.0;
     }
 
-    // Smooth lighting: interpolate from 4 corners
     let [cx, cy, cz] = corner_offset;
 
-    // Get light from 4 positions around the corner
+    let get_light = |x: i32, y: i32, z: i32| -> f32 {
+        let bl = world.get_block_light(x, y, z) as f32;
+        let sl = world.get_sky_light(x, y, z) as f32;
+        bl.max(sl)
+    };
+
     let lights = [
         base_light,
-        world.get_block_light(x + cx, y + cy, z + cz) as f32,
-        world.get_block_light(x + if fx != 0 { 0 } else { cx }, y + if fy != 0 { 0 } else { cy }, z + if fz != 0 { 0 } else { cz }) as f32,
-        world.get_block_light(x + if fx != 0 { cx } else { 0 }, y + if fy != 0 { cy } else { 0 }, z + if fz != 0 { cz } else { 0 }) as f32,
+        get_light(x + cx, y + cy, z + cz),
+        get_light(
+            x + if fx != 0 { 0 } else { cx },
+            y + if fy != 0 { 0 } else { cy },
+            z + if fz != 0 { 0 } else { cz },
+        ),
+        get_light(
+            x + if fx != 0 { cx } else { 0 },
+            y + if fy != 0 { cy } else { 0 },
+            z + if fz != 0 { cz } else { 0 },
+        ),
     ];
 
     // Average the lights
