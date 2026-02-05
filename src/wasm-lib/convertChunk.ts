@@ -1,7 +1,6 @@
 import { Vec3 } from 'vec3'
 import MinecraftData from 'minecraft-data'
 import moreBlockDataGeneratedJson from '../lib/moreBlockDataGenerated.json'
-import { getChunk } from '../mesher/test/run/chunk'
 
 export interface ChunkConversionResult {
   blockStates: Uint16Array
@@ -19,7 +18,7 @@ export interface ChunkConversionResult {
  * Convert a prismarine chunk to WASM format
  */
 export function convertChunkToWasm(
-  _chunk: any,
+  chunk: any,
   version: string,
   chunkX: number = 0,
   chunkZ: number = 0,
@@ -28,7 +27,6 @@ export function convertChunkToWasm(
   sectionY?: number,
   sectionHeight?: number
 ): ChunkConversionResult {
-  const chunk = getChunk()
   const mcData = MinecraftData(version)
   const CHUNK_SIZE = 16
 
@@ -55,7 +53,6 @@ export function convertChunkToWasm(
         try {
           // Get block state ID
           const stateId = chunk.getBlockStateId(pos)
-          if (stateId) console.log('stateId', stateId)
           blockStates[idx] = stateId || 0
 
           // Get light values
@@ -64,7 +61,7 @@ export function convertChunkToWasm(
           blockLight[idx] = bl !== undefined ? bl : 0
           skyLight[idx] = sl !== undefined ? sl : 15
 
-          // Get biome (simplified - use first biome ID if available)
+          // Get biome
           const biome = chunk.getBiome ? chunk.getBiome(pos) : 1
           biomesArray[idx] = biome || 1
 
@@ -94,7 +91,6 @@ export function convertChunkToWasm(
   const noAoBlocks = new Uint16Array(mcData.blocksArray.filter(x => moreBlockDataGeneratedJson.noOcclusions[x.name]).flatMap(blockToIds))
   const cullIdenticalBlocks = new Uint16Array(mcData.blocksArray.filter(x => x.name.includes('glass') || x.name.includes('ice')).flatMap(blockToIds))
 
-  // console.log(blockStates.length, blockLight.length, skyLight.length, biomesArray.length, invisibleBlocks.length, transparentBlocks.length, noAoBlocks.length, cullIdenticalBlocks.length)
   return {
     blockStates,
     blockLight,

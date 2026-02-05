@@ -79,8 +79,8 @@ impl Mesher {
             biomes: biomes.to_vec(),
             chunk_x: self.section_x,
             chunk_z: self.section_z,
-            world_min_y: self.world_min_y,
-            world_height: self.world_max_y - self.world_min_y,
+            world_min_y: self.section_y,
+            world_height: self.section_height,
         };
 
         let world = WorldView::new(vec![chunk], self.world_min_y, self.world_max_y);
