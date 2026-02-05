@@ -91,8 +91,8 @@ impl WorldView {
     /// Get chunk for a world position
     #[inline(always)]
     fn get_chunk(&self, x: i32, z: i32) -> Option<&ChunkData> {
-        let chunk_x = (x / CHUNK_SIZE) * CHUNK_SIZE;
-        let chunk_z = (z / CHUNK_SIZE) * CHUNK_SIZE;
+        let chunk_x = x.div_euclid(CHUNK_SIZE) * CHUNK_SIZE;
+        let chunk_z = z.div_euclid(CHUNK_SIZE) * CHUNK_SIZE;
 
         self.chunks.iter().find(|c| c.chunk_x == chunk_x && c.chunk_z == chunk_z)
     }
