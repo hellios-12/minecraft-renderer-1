@@ -2,6 +2,78 @@ import { Vec3 } from 'vec3'
 import MinecraftData from 'minecraft-data'
 import moreBlockDataGeneratedJson from '../lib/moreBlockDataGenerated.json'
 
+type BlockMeta = {
+  invisibleBlocks: Uint16Array
+  transparentBlocks: Uint16Array
+  noAoBlocks: Uint16Array
+  cullIdenticalBlocks: Uint16Array
+  occludingBlocks: Uint16Array
+}
+
+const metaCache = new Map<string, BlockMeta>()
+
+const blockToIds = (block: { minStateId: number, maxStateId: number }) => {
+  const ids: number[] = []
+  for (let i = block.minStateId; i <= block.maxStateId; i++) {
+    ids.push(i)
+  }
+  return ids
+}
+
+const isLikelyFullCubeBlockName = (name: string) => {
+  if (!name) return false
+  if (name.includes('stairs')) return false
+  if (name.includes('slab')) return false
+  if (name.includes('fence')) return false
+  if (name.includes('gate')) return false
+  if (name.includes('pane')) return false
+  if (name.includes('wall')) return false
+  if (name.includes('door')) return false
+  if (name.includes('trapdoor')) return false
+  if (name.includes('sign')) return false
+  if (name.includes('banner')) return false
+  if (name.includes('rail')) return false
+  if (name.includes('torch')) return false
+  if (name.includes('lantern')) return false
+  if (name.includes('button')) return false
+  if (name.includes('lever')) return false
+  if (name.includes('pressure_plate')) return false
+  if (name.includes('carpet')) return false
+  if (name.includes('flower')) return false
+  if (name.includes('sapling')) return false
+  if (name.includes('tall_grass')) return false
+  if (name === 'grass' || name === 'short_grass' || name === 'tall_grass') return false
+  return true
+}
+
+const getBlockMeta = (version: string): BlockMeta => {
+  const cached = metaCache.get(version)
+  if (cached) return cached
+
+  const mcData = MinecraftData(version)
+
+  const invisibleBlocks = new Uint16Array(mcData.blocksArray.filter(x => moreBlockDataGeneratedJson.invisibleBlocks[x.name]).flatMap(blockToIds))
+  const transparentBlocks = new Uint16Array(mcData.blocksArray.filter(x => x.transparent).flatMap(blockToIds))
+  const noAoBlocks = new Uint16Array(mcData.blocksArray.filter(x => moreBlockDataGeneratedJson.noOcclusions[x.name]).flatMap(blockToIds))
+  const cullIdenticalBlocks = new Uint16Array(mcData.blocksArray.filter(x => x.name.includes('glass') || x.name.includes('ice')).flatMap(blockToIds))
+  const occludingBlocks = new Uint16Array(
+    mcData.blocksArray
+      .filter(b => b.boundingBox === 'block' && !b.transparent && isLikelyFullCubeBlockName(b.name))
+      .flatMap(blockToIds)
+  )
+
+  const meta = {
+    invisibleBlocks,
+    transparentBlocks,
+    noAoBlocks,
+    cullIdenticalBlocks,
+    occludingBlocks
+  }
+
+  metaCache.set(version, meta)
+  return meta
+}
+
 export interface ChunkConversionResult {
   blockStates: Uint16Array
   blockLight: Uint8Array
@@ -28,7 +100,6 @@ export function convertChunkToWasm(
   sectionY?: number,
   sectionHeight?: number
 ): ChunkConversionResult {
-  const mcData = MinecraftData(version)
   const CHUNK_SIZE = 16
 
   // If sectionY and sectionHeight are provided, only convert that section
@@ -78,51 +149,13 @@ export function convertChunkToWasm(
     }
   }
 
-  const blockToIds = (block: { minStateId: number, maxStateId: number }) => {
-    const ids: number[] = []
-    for (let i = block.minStateId; i <= block.maxStateId; i++) {
-      ids.push(i)
-    }
-    return ids
-  }
-
-  // Prepare block metadata
-  const invisibleBlocks = new Uint16Array(mcData.blocksArray.filter(x => moreBlockDataGeneratedJson.invisibleBlocks[x.name]).flatMap(blockToIds))
-  const transparentBlocks = new Uint16Array(mcData.blocksArray.filter(x => x.transparent).flatMap(blockToIds))
-  const noAoBlocks = new Uint16Array(mcData.blocksArray.filter(x => moreBlockDataGeneratedJson.noOcclusions[x.name]).flatMap(blockToIds))
-  const cullIdenticalBlocks = new Uint16Array(mcData.blocksArray.filter(x => x.name.includes('glass') || x.name.includes('ice')).flatMap(blockToIds))
-
-  const isLikelyFullCubeBlockName = (name: string) => {
-    if (!name) return false
-    if (name.includes('stairs')) return false
-    if (name.includes('slab')) return false
-    if (name.includes('fence')) return false
-    if (name.includes('gate')) return false
-    if (name.includes('pane')) return false
-    if (name.includes('wall')) return false
-    if (name.includes('door')) return false
-    if (name.includes('trapdoor')) return false
-    if (name.includes('sign')) return false
-    if (name.includes('banner')) return false
-    if (name.includes('rail')) return false
-    if (name.includes('torch')) return false
-    if (name.includes('lantern')) return false
-    if (name.includes('button')) return false
-    if (name.includes('lever')) return false
-    if (name.includes('pressure_plate')) return false
-    if (name.includes('carpet')) return false
-    if (name.includes('flower')) return false
-    if (name.includes('sapling')) return false
-    if (name.includes('tall_grass')) return false
-    if (name === 'grass' || name === 'short_grass' || name === 'tall_grass') return false
-    return true
-  }
-
-  const occludingBlocks = new Uint16Array(
-    mcData.blocksArray
-      .filter(b => b.boundingBox === 'block' && !b.transparent && isLikelyFullCubeBlockName(b.name))
-      .flatMap(blockToIds)
-  )
+  const {
+    invisibleBlocks,
+    transparentBlocks,
+    noAoBlocks,
+    cullIdenticalBlocks,
+    occludingBlocks
+  } = getBlockMeta(version)
 
   return {
     blockStates,
