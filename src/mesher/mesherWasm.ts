@@ -186,6 +186,23 @@ const getSectionHeight = () => {
   return SECTION_HEIGHT
 }
 
+
+function collectChunksForSection(x: number, y: number, z: number) {
+  const result = [] as Array<{ x: number, z: number, chunk: any }>
+  result.push({ x, z, chunk: world.getColumn(x, z) })
+  const offsets = [-16, 0, 16]
+  for (const dx of offsets) {
+    for (const dz of offsets) {
+      if (dx === 0 && dz === 0) continue
+      const nx = x + dx
+      const nz = z + dz
+      const c = world.getColumn(nx, nz)
+      if (c) result.push({ x: nx, z: nz, chunk: c })
+    }
+  }
+  return result.filter(r => r.chunk)
+}
+
 setInterval(async () => {
   if (!allDataReady) return
 
@@ -216,42 +233,72 @@ setInterval(async () => {
         const sectionY = IS_FULL_WORLD_SECTION ? undefined : y
         const convertSectionHeight = IS_FULL_WORLD_SECTION ? undefined : sectionHeight
 
-        console.time(`converting chunk ${x},${z} y=${y}`)
-        const conversionResult = convertChunkToWasm(
+        // Run WASM mesher for this section
+        const chunksToUse = collectChunksForSection(x, y, z)
+        const chunkCount = chunksToUse.length
+
+        const conversions = chunksToUse.map(({ x: cx, z: cz, chunk }) => convertChunkToWasm(
           chunk,
           version,
-          x,
-          z,
+          cx,
+          cz,
           worldMinY,
           worldMaxY,
           sectionY,
           convertSectionHeight
-        )
-        console.timeEnd(`converting chunk ${x},${z} y=${y}`)
+        ))
 
         const {
-          blockStates,
-          blockLight,
-          skyLight,
-          biomesArray,
           invisibleBlocks,
           transparentBlocks,
           noAoBlocks,
           cullIdenticalBlocks,
           occludingBlocks,
-        } = conversionResult
+        } = conversions[0]
 
-        // Run WASM mesher for this section
-        const wasmResult = wasm.generate_geometry(
-          x, y, z, sectionHeight,
-          worldMinY, worldMaxY,
-          blockStates, blockLight, skyLight, biomesArray,
-          invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks,
-          config?.enableLighting !== false, // default true
-          // config?.smoothLighting !== false, // default true
-          false,
-          config?.skyLight || 15
-        )
+        let wasmResult
+        if (chunkCount === 1 || !(wasm as any).generate_geometry_multi) {
+          const { blockStates, blockLight, skyLight, biomesArray } = conversions[0]
+          wasmResult = wasm.generate_geometry(
+            x, y, z, sectionHeight,
+            worldMinY, worldMaxY,
+            blockStates, blockLight, skyLight, biomesArray,
+            invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks,
+            config?.enableLighting !== false,
+            config?.smoothLighting !== false,
+            config?.skyLight || 15
+          )
+        } else {
+          const perChunkLen = conversions[0].blockStates.length
+          const xs = new Int32Array(chunkCount)
+          const zs = new Int32Array(chunkCount)
+          const blockStatesAll = new Uint16Array(perChunkLen * chunkCount)
+          const blockLightAll = new Uint8Array(perChunkLen * chunkCount)
+          const skyLightAll = new Uint8Array(perChunkLen * chunkCount)
+          const biomesAll = new Uint8Array(perChunkLen * chunkCount)
+
+          for (let i = 0; i < chunkCount; i++) {
+            const c = conversions[i]
+            xs[i] = chunksToUse[i].x
+            zs[i] = chunksToUse[i].z
+            blockStatesAll.set(c.blockStates, perChunkLen * i)
+            blockLightAll.set(c.blockLight, perChunkLen * i)
+            skyLightAll.set(c.skyLight, perChunkLen * i)
+            biomesAll.set(c.biomesArray, perChunkLen * i)
+          }
+
+          wasmResult = (wasm as any).generate_geometry_multi(
+            x, y, z, sectionHeight,
+            worldMinY, worldMaxY,
+            xs, zs,
+            blockStatesAll, blockLightAll, skyLightAll, biomesAll,
+            invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks,
+            config?.enableLighting !== false,
+            config?.smoothLighting !== false,
+            config?.skyLight || 15
+          )
+        }
+
 
         // Convert WASM output to MesherGeometryOutput format
         const sectionKeyStr = worldColumnKey(x, z)

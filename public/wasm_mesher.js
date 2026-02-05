@@ -96,6 +96,14 @@ function getUint16ArrayMemory0() {
     return cachedUint16ArrayMemory0;
 }
 
+let cachedUint32ArrayMemory0 = null;
+function getUint32ArrayMemory0() {
+    if (cachedUint32ArrayMemory0 === null || cachedUint32ArrayMemory0.byteLength === 0) {
+        cachedUint32ArrayMemory0 = new Uint32Array(wasm.memory.buffer);
+    }
+    return cachedUint32ArrayMemory0;
+}
+
 let cachedUint8ArrayMemory0 = null;
 function getUint8ArrayMemory0() {
     if (cachedUint8ArrayMemory0 === null || cachedUint8ArrayMemory0.byteLength === 0) {
@@ -123,6 +131,13 @@ function logError(f, args) {
 function passArray16ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 2, 2) >>> 0;
     getUint16ArrayMemory0().set(arg, ptr / 2);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function passArray32ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 4, 4) >>> 0;
+    getUint32ArrayMemory0().set(arg, ptr / 4);
     WASM_VECTOR_LEN = arg.length;
     return ptr;
 }
@@ -258,6 +273,65 @@ export function generate_geometry(section_x, section_y, section_z, section_heigh
     return ret;
 }
 
+/**
+ * @param {number} section_x
+ * @param {number} section_y
+ * @param {number} section_z
+ * @param {number} section_height
+ * @param {number} world_min_y
+ * @param {number} world_max_y
+ * @param {Int32Array} chunk_xs
+ * @param {Int32Array} chunk_zs
+ * @param {Uint16Array} block_states
+ * @param {Uint8Array} block_light
+ * @param {Uint8Array} sky_light
+ * @param {Uint8Array} biomes
+ * @param {Uint16Array} invisible_blocks
+ * @param {Uint16Array} transparent_blocks
+ * @param {Uint16Array} no_ao_blocks
+ * @param {Uint16Array} cull_identical_blocks
+ * @param {Uint16Array} occluding_blocks
+ * @param {boolean} enable_lighting
+ * @param {boolean} smooth_lighting
+ * @param {number} sky_light_value
+ * @returns {any}
+ */
+export function generate_geometry_multi(section_x, section_y, section_z, section_height, world_min_y, world_max_y, chunk_xs, chunk_zs, block_states, block_light, sky_light, biomes, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks, enable_lighting, smooth_lighting, sky_light_value) {
+    _assertNum(section_x);
+    _assertNum(section_y);
+    _assertNum(section_z);
+    _assertNum(section_height);
+    _assertNum(world_min_y);
+    _assertNum(world_max_y);
+    const ptr0 = passArray32ToWasm0(chunk_xs, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray32ToWasm0(chunk_zs, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray16ToWasm0(block_states, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArray8ToWasm0(block_light, wasm.__wbindgen_malloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ptr4 = passArray8ToWasm0(sky_light, wasm.__wbindgen_malloc);
+    const len4 = WASM_VECTOR_LEN;
+    const ptr5 = passArray8ToWasm0(biomes, wasm.__wbindgen_malloc);
+    const len5 = WASM_VECTOR_LEN;
+    const ptr6 = passArray16ToWasm0(invisible_blocks, wasm.__wbindgen_malloc);
+    const len6 = WASM_VECTOR_LEN;
+    const ptr7 = passArray16ToWasm0(transparent_blocks, wasm.__wbindgen_malloc);
+    const len7 = WASM_VECTOR_LEN;
+    const ptr8 = passArray16ToWasm0(no_ao_blocks, wasm.__wbindgen_malloc);
+    const len8 = WASM_VECTOR_LEN;
+    const ptr9 = passArray16ToWasm0(cull_identical_blocks, wasm.__wbindgen_malloc);
+    const len9 = WASM_VECTOR_LEN;
+    const ptr10 = passArray16ToWasm0(occluding_blocks, wasm.__wbindgen_malloc);
+    const len10 = WASM_VECTOR_LEN;
+    _assertBoolean(enable_lighting);
+    _assertBoolean(smooth_lighting);
+    _assertNum(sky_light_value);
+    const ret = wasm.generate_geometry_multi(section_x, section_y, section_z, section_height, world_min_y, world_max_y, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, enable_lighting, smooth_lighting, sky_light_value);
+    return ret;
+}
+
 const EXPECTED_RESPONSE_TYPES = new Set(['basic', 'cors', 'default']);
 
 async function __wbg_load(module, imports) {
@@ -354,6 +428,7 @@ function __wbg_finalize_init(instance, module) {
     __wbg_init.__wbindgen_wasm_module = module;
     cachedDataViewMemory0 = null;
     cachedUint16ArrayMemory0 = null;
+    cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
 
 
