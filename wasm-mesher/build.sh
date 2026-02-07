@@ -54,8 +54,9 @@ case "$TARGET" in
   web)
     echo "🔨 Building WASM mesher for web target..."
     wasm-pack build --target web $BUILD_FLAGS
-    echo "📋 Copying WASM file to public directory..."
-    cp pkg/wasm_mesher_bg.wasm ../public/wasm_mesher_bg.wasm
+    echo "📋 Copying WASM files to dist directory..."
+    cp pkg/wasm_mesher_bg.wasm ../dist/wasm_mesher_bg.wasm
+    cp pkg/wasm_mesher.js ../dist/wasm_mesher.js
     echo "✅ Build complete! (web target)"
     ;;
   nodejs)
@@ -68,8 +69,9 @@ case "$TARGET" in
     echo ""
     echo "📦 Building for web target..."
     wasm-pack build --target web $BUILD_FLAGS
-    echo "📋 Copying WASM file to public directory..."
-    cp pkg/wasm_mesher_bg.wasm ../public/wasm_mesher_bg.wasm
+    echo "📋 Copying WASM files to dist directory..."
+    cp pkg/wasm_mesher_bg.wasm ../dist/wasm_mesher_bg.wasm
+    cp pkg/wasm_mesher.js ../dist/wasm_mesher.js
     echo ""
     echo "📦 Building for nodejs target..."
     wasm-pack build --target nodejs $BUILD_FLAGS

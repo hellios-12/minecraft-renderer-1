@@ -9,8 +9,6 @@
     "files": [
         "dist",
         "src",
-        "public/wasm_mesher.js",
-        "public/wasm_mesher_bg.wasm",
         "logo.webp"
     ],
     "scripts": {
