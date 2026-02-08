@@ -67,14 +67,14 @@ let wasmPlugin = {
   },
 }
 
-// TODO! please make two targets build: return old build sa well
 const buildOptions = createWorkerBuildOptions({
   entryPoint: path.join(rootDir, './src/mesher/mesherWasm.ts'),
   bundleMcData: mesherMcData,
   watch,
   esbuildOptions: {
-    outfile: 'mesher.js',
-    outdir: undefined,
+    outfile: undefined,
+    outdir: path.join(rootDir, './dist'),
+    entryPoints: [path.join(rootDir, './src/mesher/mesherWasm.ts'), path.join(rootDir, './src/mesher/mesher.ts')],
     plugins: [wasmPlugin],
   }
 })
@@ -85,3 +85,6 @@ if (watch) {
 } else {
   await build(buildOptions)
 }
+
+// remove dist/mesherWasm.js.map for now
+fs.unlinkSync(path.join(rootDir, './dist/mesherWasm.js.map'))

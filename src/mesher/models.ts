@@ -7,6 +7,9 @@ import { BlockElement, buildRotationMatrix, elemFaces, matmul3, matmulmat3, veca
 import { INVISIBLE_BLOCKS } from './worldConstants'
 import { MesherGeometryOutput, HighestBlockInfo } from './shared'
 
+// Log function disabled by default for zero overhead in production hot loops
+const ENABLE_TS_LOGS = false
+const tsLog = ENABLE_TS_LOGS ? console.log : () => { }
 
 let blockProvider: WorldBlockProvider
 
@@ -281,7 +284,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
     const { corners, mask1, mask2, side } = elemFaces[face]
     const dir = matmul3(globalMatrix, elemFaces[face].dir)
 
-    console.log(`[TS] Processing face ${face} at (${cursor.x}, ${cursor.y}, ${cursor.z}), dir=[${dir.join(',')}]`)
+    tsLog(`[TS] Processing face ${face} at (${cursor.x}, ${cursor.y}, ${cursor.z}), dir=[${dir.join(',')}]`)
 
     if (eFace.cullface) {
       const neighbor = world.getBlock(cursor.plus(new Vec3(...dir)), blockProvider, {})
@@ -309,7 +312,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
 
     const ndx = Math.floor(attr.positions.length / 3)
 
-    console.log(`[TS]   Base index: ${ndx}`)
+    tsLog(`[TS]   Base index: ${ndx}`)
 
     let tint = [1, 1, 1]
     if (eFace.tintindex !== undefined) {
@@ -408,7 +411,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
           vertex[2] + (cursor.z & 15) - 8
         ]
 
-        console.log(`[TS]     Corner ${pos.join(',')}: vertex=[${vertex.map(v => v.toFixed(3)).join(',')}], worldPos=[${worldPos.map(v => v.toFixed(3)).join(',')}]`)
+        tsLog(`[TS]     Corner ${pos.join(',')}: vertex=[${vertex.map(v => v.toFixed(3)).join(',')}], worldPos=[${worldPos.map(v => v.toFixed(3)).join(',')}]`)
 
         attr.positions.push(...worldPos)
 
@@ -418,7 +421,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
         const basev = (pos[3] - 0.5) * uvsn + (pos[4] - 0.5) * uvcs + 0.5
         const finalU = baseu * su + u
         const finalV = basev * sv + v
-        console.log(`[TS]       UV: cornerUV=[${pos[3]},${pos[4]}], baseUV=[${baseu.toFixed(6)},${basev.toFixed(6)}], finalUV=[${finalU.toFixed(6)},${finalV.toFixed(6)}], texture=[u=${u},v=${v},su=${su},sv=${sv}], rotation=${r}`)
+        tsLog(`[TS]       UV: cornerUV=[${pos[3]},${pos[4]}], baseUV=[${baseu.toFixed(6)},${basev.toFixed(6)}], finalUV=[${finalU.toFixed(6)},${finalV.toFixed(6)}], texture=[u=${u},v=${v},su=${su},sv=${sv}], rotation=${r}`)
         attr.uvs.push(finalU, finalV)
       }
 
@@ -470,7 +473,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
 
         // Log AO and light for this corner (corner index is aos.length - 1)
         const cornerIdx = aos.length - 1
-        console.log(`[TS]       Corner ${cornerIdx} AO=${ao}, light=${light.toFixed(3)}`)
+        tsLog(`[TS]       Corner ${cornerIdx} AO=${ao}, light=${light.toFixed(3)}`)
       }
 
       if (!needTiles) {
@@ -507,7 +510,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
       if (doAO && aos[0] + aos[3] >= aos[1] + aos[2]) {
         tri1 = [ndx, ndx + 3, ndx + 2]
         tri2 = [ndx, ndx + 1, ndx + 3]
-        console.log(`[TS]     Indices (AO optimized): tri1=[${tri1.join(',')}], tri2=[${tri2.join(',')}], aos=[${aos.join(',')}]`)
+        tsLog(`[TS]     Indices (AO optimized): tri1=[${tri1.join(',')}], tri2=[${tri2.join(',')}], aos=[${aos.join(',')}]`)
         attr.indices[attr.indicesCount++] = tri1[0]
         attr.indices[attr.indicesCount++] = tri1[1]
         attr.indices[attr.indicesCount++] = tri1[2]
@@ -517,7 +520,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
       } else {
         tri1 = [ndx, ndx + 1, ndx + 2]
         tri2 = [ndx + 2, ndx + 1, ndx + 3]
-        console.log(`[TS]     Indices (standard): tri1=[${tri1.join(',')}], tri2=[${tri2.join(',')}], aos=[${aos.join(',')}]`)
+        tsLog(`[TS]     Indices (standard): tri1=[${tri1.join(',')}], tri2=[${tri2.join(',')}], aos=[${aos.join(',')}]`)
         attr.indices[attr.indicesCount++] = tri1[0]
         attr.indices[attr.indicesCount++] = tri1[1]
         attr.indices[attr.indicesCount++] = tri1[2]
@@ -541,16 +544,14 @@ const isBlockWaterlogged = (block: Block) => {
 }
 
 let unknownBlockModel: BlockModelPartsResolved
-globalThis.a = 0
-const HEIGHT = 364
-export function getSectionGeometry(sx: number, sy: number, sz: number, world: World) {
+export function getSectionGeometry(sx: number, sy: number, sz: number, world: World, readHeight = 16) {
   let delayedRender = [] as Array<() => void>
 
   const attr: MesherGeometryOutput = {
     sectionYNumber: (sy - world.config.worldMinY) >> 4,
     chunkKey: worldColumnKey(sx, sz),
     sectionStartY: sy,
-    sectionEndY: sy + HEIGHT,
+    sectionEndY: sy + readHeight,
     sectionStartX: sx,
     sectionEndX: sx + 16,
     sectionStartZ: sz,
@@ -580,10 +581,9 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
   }
 
   const cursor = new Vec3(0, 0, 0)
-  for (cursor.y = sy; cursor.y < sy + HEIGHT; cursor.y++) {
+  for (cursor.y = sy; cursor.y < sy + readHeight; cursor.y++) {
     for (cursor.z = sz; cursor.z < sz + 16; cursor.z++) {
       for (cursor.x = sx; cursor.x < sx + 16; cursor.x++) {
-        globalThis.a++
         let block = world.getBlock(cursor, blockProvider, attr)!
         if (INVISIBLE_BLOCKS.has(block.name)) continue
         if ((block.name.includes('_sign') || block.name === 'sign') && !world.config.disableBlockEntityTextures) {
@@ -666,7 +666,7 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
           // cache
           let { models } = block
 
-          console.log(`[TS] Processing block at (${cursor.x}, ${cursor.y}, ${cursor.z}), name=${block.name}, stateId=${block.stateId}`)
+          tsLog(`[TS] Processing block at (${cursor.x}, ${cursor.y}, ${cursor.z}), name=${block.name}, stateId=${block.stateId}`)
 
           models ??= unknownBlockModel
 
@@ -760,20 +760,20 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
     attr.indices = new Uint16Array(attr.indices)
   }
 
+  tsLog(`[TS] Final geometry summary:`)
+  tsLog(`[TS]   Total vertices: ${attr.positions.length / 3}`)
+  tsLog(`[TS]   Total triangles: ${attr.indices.length / 3}`)
+  const posArray = Array.from(attr.positions)
+  const idxArray = Array.from(attr.indices)
+  tsLog(`[TS]   Positions: [${posArray.slice(0, 12).join(',')}...] (first 4 vertices)`)
+  tsLog(`[TS]   Indices: [${idxArray.slice(0, 12).join(',')}...] (first 2 faces)`)
+
   if (needTiles) {
     delete attr.positions
     delete attr.normals
     delete attr.colors
     delete attr.uvs
   }
-
-  console.log(`[TS] Final geometry summary:`)
-  console.log(`[TS]   Total vertices: ${attr.positions.length / 3}`)
-  console.log(`[TS]   Total triangles: ${attr.indices.length / 3}`)
-  const posArray = Array.from(attr.positions)
-  const idxArray = Array.from(attr.indices)
-  console.log(`[TS]   Positions: [${posArray.slice(0, 12).join(',')}...] (first 4 vertices)`)
-  console.log(`[TS]   Indices: [${idxArray.slice(0, 12).join(',')}...] (first 2 faces)`)
 
   return attr
 }

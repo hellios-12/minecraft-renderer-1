@@ -264,7 +264,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
           this.messageQueue.push(data)
         }
         void this.processMessageQueue('worker')
-      })
+      }, this.worldRendererConfig.wasmMesher ? 'mesherWasm.js' : 'mesher.js')
       this.workers.push(worker)
     }
   }
@@ -1045,9 +1045,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 }
 
-export const initMesherWorker = (onGotMessage: (data: any) => void) => {
+export const initMesherWorker = (onGotMessage: (data: any) => void, workerName = 'mesher.js') => {
   // Node environment needs an absolute path, but browser needs the url of the file
-  const workerName = 'mesher.js'
 
   let worker: any
   if (process.env.SINGLE_FILE_BUILD) {
