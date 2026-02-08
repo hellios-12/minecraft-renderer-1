@@ -5,14 +5,14 @@ import { setBlockStatesData as setMesherData } from './models'
 import { defaultMesherConfig, type MesherGeometryOutput, IS_FULL_WORLD_SECTION, SECTION_HEIGHT } from './shared'
 import { worldColumnKey, World } from './world'
 
-let wasm: typeof import('../../wasm-mesher/pkg/wasm_mesher.js') | null = null
+let wasm: typeof import('../../wasm/wasm_mesher.js') | null = null
 let wasmInitialized = false
 
 async function initWasm() {
   if (wasmInitialized) return
   try {
     wasmInitialized = true
-    wasm = await import('../../wasm-mesher/pkg/wasm_mesher.js')
+    wasm = await import('../../wasm/wasm_mesher.js')
     await wasm.default('/wasm_mesher_bg.wasm') as any
 
     // const result = await testChunkShared(wasm)

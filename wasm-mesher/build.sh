@@ -53,29 +53,28 @@ fi
 case "$TARGET" in
   web)
     echo "🔨 Building WASM mesher for web target..."
-    wasm-pack build --target web $BUILD_FLAGS
-    echo "📋 Copying WASM file to public directory..."
-    cp pkg/wasm_mesher_bg.wasm ../public/wasm_mesher_bg.wasm
+    wasm-pack build --target web --out-dir ../../wasm $BUILD_FLAGS
     echo "✅ Build complete! (web target)"
+    echo "📦 Output: ../../wasm/"
     ;;
   nodejs)
     echo "🔨 Building WASM mesher for nodejs target..."
-    wasm-pack build --target nodejs $BUILD_FLAGS
+    wasm-pack build --target nodejs --out-dir ../../wasm $BUILD_FLAGS
     echo "✅ Build complete! (nodejs target)"
+    echo "📦 Output: ../../wasm/"
     ;;
   both)
     echo "🔨 Building WASM mesher for both targets..."
     echo ""
     echo "📦 Building for web target..."
-    wasm-pack build --target web $BUILD_FLAGS
-    echo "📋 Copying WASM file to public directory..."
-    cp pkg/wasm_mesher_bg.wasm ../public/wasm_mesher_bg.wasm
+    wasm-pack build --target web --out-dir ../../wasm $BUILD_FLAGS
     echo ""
     echo "📦 Building for nodejs target..."
-    wasm-pack build --target nodejs $BUILD_FLAGS
+    wasm-pack build --target nodejs --out-dir ../../wasm $BUILD_FLAGS
     echo ""
     echo "✅ Build complete! (both targets)"
-    echo "⚠️  Note: nodejs target overwrites web target in pkg/"
+    echo "📦 Output: ../../wasm/"
+    echo "⚠️  Note: nodejs target overwrites web target in wasm/"
     ;;
   *)
     echo "Usage: $0 [web|nodejs|both] [--clean] [--dev]"

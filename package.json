@@ -9,7 +9,7 @@
     "files": [
         "dist",
         "src",
-        "public/wasm_mesher_bg.wasm",
+        "wasm",
         "logo.webp"
     ],
     "scripts": {
