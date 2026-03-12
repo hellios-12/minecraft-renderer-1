@@ -5,6 +5,7 @@ import type { RendererModuleController, RendererModuleManifest } from '../render
 interface RainParticleData {
   velocity: THREE.Vector3
   age: number
+  despawnOffset: number
 }
 
 const PARTICLE_COUNT = 2000
@@ -91,7 +92,7 @@ export class RainModule implements RendererModuleController {
 
       // Respawn when: out of range, hit heightmap surface (heightY + 1 = block top face), or fell too far
       const shouldRespawn = horizontalDist > RANGE ||
-        (heightY !== undefined && heightY !== -32768 && worldY <= heightY + 1) ||
+        (heightY !== undefined && heightY !== -32768 && worldY <= heightY + 1 + particle.despawnOffset) ||
         relativeY < RESPAWN_BELOW
 
       if (shouldRespawn) {
@@ -102,6 +103,7 @@ export class RainModule implements RendererModuleController {
           -speed,
           (Math.random() - 0.5) * HORIZONTAL_DRIFT,
         )
+        particle.despawnOffset = Math.random() * 0.5
       }
 
       dummy.compose(position, quaternion, scale)
@@ -151,6 +153,7 @@ export class RainModule implements RendererModuleController {
           (Math.random() - 0.5) * HORIZONTAL_DRIFT,
         ),
         age: 0,
+        despawnOffset: Math.random() * 0.5,
       })
     }
 
