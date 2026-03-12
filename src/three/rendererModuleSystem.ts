@@ -34,4 +34,5 @@ export interface RegisteredModule {
   manifest: RendererModuleManifest
   controller: RendererModuleController
   enabled: boolean
+  toggle: () => boolean
 }

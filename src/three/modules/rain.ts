@@ -27,7 +27,7 @@ export class RainModule implements RendererModuleController {
   private readonly tempQuaternion = new THREE.Quaternion()
   private readonly tempScale = new THREE.Vector3()
 
-  constructor(private readonly worldRenderer: WorldRendererThree) {}
+  constructor(private readonly worldRenderer: WorldRendererThree) { }
 
   enable(): void {
     if (this.enabled) return

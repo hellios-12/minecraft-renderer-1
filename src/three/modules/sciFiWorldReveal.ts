@@ -98,6 +98,15 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     this.reset()
   }
 
+  toggle(): boolean {
+    if (this.enabled) {
+      this.disable()
+    } else {
+      this.enable()
+    }
+    return this.enabled
+  }
+
   render?: () => void = () => {
     if (!this.enabled) return
     this.update(16)

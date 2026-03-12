@@ -55,6 +55,15 @@ export class StarfieldModule implements RendererModuleController {
     this.removeStars()
   }
 
+  toggle(): boolean {
+    if (this.enabled) {
+      this.disable()
+    } else {
+      this.enable()
+    }
+    return this.enabled
+  }
+
   enablementCheck?: () => boolean = () => {
     if (!this.currentTime) return false
     const nightTime = 13_500
