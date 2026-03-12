@@ -32,7 +32,7 @@ import { DEFAULT_TEMPERATURE, SkyboxRenderer } from './skyboxRenderer'
 import { FireworksManager } from './fireworks'
 import { downloadWorldGeometry } from './worldGeometryExport'
 import { WorldBlockGeometry } from './worldBlockGeometry'
-import type { RendererModuleManifest, RegisteredModule } from './rendererModuleSystem'
+import type { RendererModuleManifest, RegisteredModule, RendererModuleController } from './rendererModuleSystem'
 import { BUILTIN_MODULES } from './modules/index'
 
 type SectionKey = string
@@ -72,7 +72,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     return this.worldBlockGeometry.estimatedMemoryUsage
   }
   // Module system
-  private modules = new Map<string, RegisteredModule>()
+  private modules = {} as Record<string, RegisteredModule>
   sectionsOffsetsAnimations = {} as {
     [chunkKey: string]: {
       time: number,
@@ -169,7 +169,7 @@ export class WorldRendererThree extends WorldRendererCommon {
    * Register a renderer module
    */
   registerModule(manifest: RendererModuleManifest): void {
-    if (this.modules.has(manifest.id)) {
+    if (manifest.id in this.modules) {
       console.warn(`Module ${manifest.id} is already registered`)
       return
     }
@@ -180,12 +180,13 @@ export class WorldRendererThree extends WorldRendererCommon {
       manifest,
       controller,
       enabled: false,
+      toggle: () => this.toggleModule(manifest.id),
     }
 
-    this.modules.set(manifest.id, registered)
+    this.modules[manifest.id] = registered
 
     if (manifest.enabledDefault) {
-      this.enableModule(manifest.id)
+      this.toggleModule(manifest.id, true)
     }
   }
 
@@ -194,7 +195,7 @@ export class WorldRendererThree extends WorldRendererCommon {
    * Enable a module
    */
   enableModule(moduleId: string): void {
-    const module = this.modules.get(moduleId)
+    const module = this.modules[moduleId]
     if (!module) {
       console.warn(`Module ${moduleId} not found`)
       return
@@ -215,7 +216,7 @@ export class WorldRendererThree extends WorldRendererCommon {
    * Disable a module
    */
   disableModule(moduleId: string): void {
-    const module = this.modules.get(moduleId)
+    const module = this.modules[moduleId]
     if (!module) {
       console.warn(`Module ${moduleId} not found`)
       return
@@ -241,20 +242,61 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   /**
+   * Toggle a module on/off, or force a specific state
+   */
+  toggleModule(moduleId: string, forceState?: boolean): boolean {
+    const module = this.modules[moduleId]
+    if (!module) {
+      console.warn(`Module ${moduleId} not found`)
+      return false
+    }
+
+    const targetState = forceState !== undefined ? forceState : !module.enabled
+
+    if (targetState === module.enabled) return module.enabled
+
+    if (!targetState && module.manifest.cannotBeDisabled) {
+      console.warn(`Module ${moduleId} cannot be disabled`)
+      return true
+    }
+
+    module.enabled = targetState
+
+    if (targetState) {
+      module.controller.enable()
+      // Register render callback if provided
+      if (module.controller.render && !this.onRender.includes(module.controller.render)) {
+        this.onRender.push(module.controller.render)
+      }
+    } else {
+      module.controller.disable()
+      // Unregister render callback if provided
+      if (module.controller.render) {
+        const index = this.onRender.indexOf(module.controller.render)
+        if (index > -1) {
+          this.onRender.splice(index, 1)
+        }
+      }
+    }
+
+    return targetState
+  }
+
+  /**
    * Dispose all modules
    */
   private disposeModules(): void {
-    for (const module of this.modules.values()) {
+    for (const module of Object.values(this.modules)) {
       module.controller.dispose()
     }
-    this.modules.clear()
+    this.modules = {}
   }
 
   /**
    * Initialize all registered modules
    */
   private initializeModules(): void {
-    for (const [id, module] of this.modules.entries()) {
+    for (const [id, module] of Object.entries(this.modules)) {
       if (module.manifest.enabledDefault) {
         this.enableModule(id)
       }
@@ -265,7 +307,7 @@ export class WorldRendererThree extends WorldRendererCommon {
    * Get a module controller by ID
    */
   getModule<T = any>(moduleId: string): T | undefined {
-    return this.modules.get(moduleId)?.controller as T | undefined
+    return this.modules[moduleId]?.controller as T | undefined
   }
 
   get cameraObject() {
@@ -485,7 +527,7 @@ export class WorldRendererThree extends WorldRendererCommon {
         text += `TE: ${formatBigNumber(this.renderer.info.memory.textures)} `
         text += `F: ${formatBigNumber(this.tilesRendered)} `
         text += `B: ${formatBigNumber(this.blocksRendered)} `
-        text += `MEM: ${this.getEstimatedMemoryUsage().readable}`
+        text += `MEM: ${this.worldBlockGeometry.getEstimatedMemoryUsage().readable}`
         pane.updateText(text)
         this.backendInfoReport = text
       }
@@ -1142,12 +1184,5 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   reloadWorld() {
     this.entities.reloadEntities()
-  }
-
-  /**
-   * Get estimated memory usage in a human-readable format
-   */
-  getEstimatedMemoryUsage(): { bytes: number; readable: string } {
-    return this.worldBlockGeometry.getEstimatedMemoryUsage()
   }
 }

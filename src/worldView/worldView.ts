@@ -362,7 +362,7 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
 
       // Unload chunks that are no longer in view
       const chunksToUnload: Vec3[] = []
-      const viewDistanceWithBuffer = this.viewDistance + this.keepChunksDistance
+      const viewDistanceWithBuffer = force ? this.viewDistance : this.viewDistance + this.keepChunksDistance
 
       for (const coords of Object.keys(this.loadedChunks)) {
         const [x, z] = coords.split(',').map(Number)

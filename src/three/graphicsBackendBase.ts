@@ -65,6 +65,8 @@ export const getBackendMethods = (worldRenderer: WorldRendererThree): any => {
     launchFirework: worldRenderer.fireworks.launchFirework.bind(worldRenderer.fireworks),
     // New method for updating skybox
     setSkyboxImage: worldRenderer.skyboxRenderer.setSkyboxImage.bind(worldRenderer.skyboxRenderer),
+    // Rain methods
+    setRain: (newState: boolean) => worldRenderer.toggleModule('rain', newState),
     async loadGeometryExport(exportData: any) {
       // Import dynamically to avoid circular dependencies
       const { applyWorldGeometryExport } = await import('./worldGeometryExport')
