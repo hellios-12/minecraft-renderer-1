@@ -105,6 +105,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   debugStopGeometryUpdate = false
 
   protocolCustomBlocks = new Map<string, CustomBlockModels>()
+  private heightmapDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   blockStateModelInfo = new Map<string, BlockStateModelInfo>()
 
@@ -113,6 +114,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   soundSystem: SoundSystem | undefined
 
   abstract changeBackgroundColor(color: [number, number, number]): void
+
+  /** Override in subclass to check if any enabled module requires heightmap data */
+  protected anyModuleRequiresHeightmap(): boolean {
+    return false
+  }
 
   worldRendererConfig: WorldRendererConfig
   playerStateReactive: PlayerStateReactive
@@ -664,6 +670,13 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   removeColumn(x, z) {
     delete this.loadedChunks[`${x},${z}`]
+    // Cancel any pending heightmap debounce for this chunk
+    const debounceKey = `${x},${z}`
+    const pendingTimer = this.heightmapDebounceTimers.get(debounceKey)
+    if (pendingTimer) {
+      clearTimeout(pendingTimer)
+      this.heightmapDebounceTimers.delete(debounceKey)
+    }
     for (const worker of this.workers) {
       worker.postMessage({ type: 'unloadChunk', x, z })
     }
@@ -848,10 +861,18 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         customBlockModels
       })
     }
-    // Re-request heightmap for the affected chunk after block change
-    const chunkCornerX = Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE
-    const chunkCornerZ = Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE
-    this.workers[0].postMessage({ type: 'getHeightmap', x: chunkCornerX, z: chunkCornerZ })
+    // Re-request heightmap for the affected chunk after block change (debounced)
+    if (this.anyModuleRequiresHeightmap()) {
+      const chunkCornerX = Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE
+      const chunkCornerZ = Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE
+      const chunkKey2 = `${chunkCornerX},${chunkCornerZ}`
+      const existing = this.heightmapDebounceTimers.get(chunkKey2)
+      if (existing) clearTimeout(existing)
+      this.heightmapDebounceTimers.set(chunkKey2, setTimeout(() => {
+        this.heightmapDebounceTimers.delete(chunkKey2)
+        this.workers[0]?.postMessage({ type: 'getHeightmap', x: chunkCornerX, z: chunkCornerZ })
+      }, 100))
+    }
     this.logWorkerWork(`-> blockUpdate ${JSON.stringify({ pos, stateId, customBlockModels })}`)
     this.setSectionDirty(pos, true, true)
     if (this.neighborChunkUpdates) {
@@ -1022,6 +1043,12 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 
   destroy() {
+    // Cancel all pending heightmap debounce timers
+    for (const timer of this.heightmapDebounceTimers.values()) {
+      clearTimeout(timer)
+    }
+    this.heightmapDebounceTimers.clear()
+
     // Stop all workers
     for (const worker of this.workers) {
       worker.terminate()

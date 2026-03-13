@@ -310,6 +310,10 @@ export class WorldRendererThree extends WorldRendererCommon {
     return this.modules[moduleId]?.controller as T | undefined
   }
 
+  protected override anyModuleRequiresHeightmap(): boolean {
+    return Object.values(this.modules).some(m => m.enabled && m.manifest.requiresHeightmap)
+  }
+
   get cameraObject() {
     return this.cameraGroupVr ?? this.cameraContainer
   }
