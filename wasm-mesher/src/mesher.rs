@@ -107,7 +107,6 @@ pub struct Mesher {
     section_y: i32,
     section_z: i32,
     section_height: i32,
-    section_data_start_y: i32,
     world_min_y: i32,
     world_max_y: i32,
     enable_lighting: bool,
@@ -130,7 +129,6 @@ pub struct GeometryOutput {
     pub blocks: Vec<BlockFaceData>,
     pub block_count: usize,
     pub block_iterations: u32,
-    pub heightmap: Vec<i16>, // 256 elements (z*16+x), max non-invisible block Y per column, -32768 = none
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debug_blocks_found: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -143,7 +141,6 @@ impl Mesher {
         section_y: i32,
         section_z: i32,
         section_height: i32,
-        section_data_start_y: i32,
         world_min_y: i32,
         world_max_y: i32,
         enable_lighting: bool,
@@ -155,7 +152,6 @@ impl Mesher {
             section_y,
             section_z,
             section_height,
-            section_data_start_y,
             world_min_y,
             world_max_y,
             enable_lighting,
@@ -168,9 +164,6 @@ impl Mesher {
         // Pre-allocate with estimated capacity
         let estimated_blocks = ((self.section_height * 16 * 16) / 4) as usize; // Rough estimate
         let mut blocks = Vec::with_capacity(estimated_blocks);
-
-        // Heightmap: max non-invisible block Y per column (z*16+x), -32768 = no block found
-        let mut heightmap = vec![-32768i16; 256];
 
         // Main loop: iterate through all blocks
         let mut block_iterations = 0u32;
@@ -188,11 +181,6 @@ impl Mesher {
                     }
 
                     blocks_found += 1;
-
-                    // Update heightmap - y increases in the outer loop so last write = highest y
-                    let col_x = (x - self.section_x) as usize;
-                    let col_z = (z - self.section_z) as usize;
-                    heightmap[col_z * 16 + col_x] = y as i16;
 
                     let is_transparent = meta.transparent[block_state as usize] != 0;
                     let cull_identical = meta.cull_identical[block_state as usize] != 0;
@@ -296,7 +284,6 @@ impl Mesher {
             blocks,
             block_count,
             block_iterations,
-            heightmap,
             debug_blocks_found: Some(blocks_found),
             debug_blocks_with_faces: Some(blocks_with_faces),
         }
@@ -315,9 +302,6 @@ impl Mesher {
         occluding_blocks: &[u16],
     ) -> GeometryOutput {
         // Build world view from input data
-        // chunk_data_height is derived from the actual data length, which may be larger than
-        // section_height to include ±1 Y layers for correct cross-section boundary culling
-        let chunk_data_height = (block_states.len() / (16 * 16)) as i32;
         let chunk = ChunkData {
             block_states,
             block_light,
@@ -325,8 +309,8 @@ impl Mesher {
             biomes,
             chunk_x: self.section_x,
             chunk_z: self.section_z,
-            world_min_y: self.section_data_start_y,
-            world_height: chunk_data_height,
+            world_min_y: self.section_y,
+            world_height: self.section_height,
         };
 
         let world = WorldView::new(vec![chunk], self.world_min_y, self.world_max_y);
