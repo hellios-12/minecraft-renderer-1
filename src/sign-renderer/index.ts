@@ -99,6 +99,7 @@ export const renderComponent = (
   defaultColor: string,
   offset = 0
 ) => {
+  let textRendered = false
   // todo: in pre flatenning it seems the format was not json
   const parsed = typeof text === 'string' && (text?.startsWith('{') || text?.startsWith('"')) ? parseSafe(text ?? '""', 'sign text') : text
   if (!parsed || (typeof parsed !== 'object' && typeof parsed !== 'string')) return
@@ -161,6 +162,9 @@ export const renderComponent = (
   }
 
   const addTextPart = (text: string, formatting: Formatting) => {
+    if (!textRendered) {
+      textRendered = text.trim() !== ''
+    }
     plainText += text
     textWidths[textOffset] = ctx.measureText(plainText).width
     let color = formatting.color ?? defaultColor
@@ -213,4 +217,6 @@ export const renderComponent = (
     }
     renderedWidth += ctx.measureText(text).width
   }
+
+  return textRendered
 }
