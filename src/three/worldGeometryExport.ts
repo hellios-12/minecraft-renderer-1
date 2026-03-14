@@ -51,12 +51,13 @@ export function exportWorldGeometry(
 
     if (!positionAttr || !indexAttr) continue
 
+    const wp = worldRenderer.sceneOrigin.getWorldPosition(mesh)
     sections.push({
       key,
       position: {
-        x: mesh.userData.worldSx ?? mesh.position.x,
-        y: mesh.userData.worldSy ?? mesh.position.y,
-        z: mesh.userData.worldSz ?? mesh.position.z
+        x: wp?.x ?? worldRenderer.sceneOrigin.toWorldX(mesh.position.x),
+        y: wp?.y ?? worldRenderer.sceneOrigin.toWorldY(mesh.position.y),
+        z: wp?.z ?? worldRenderer.sceneOrigin.toWorldZ(mesh.position.z)
       },
       geometry: {
         positions: [...positionAttr.array],

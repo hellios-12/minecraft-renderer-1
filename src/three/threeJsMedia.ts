@@ -203,8 +203,8 @@ export class ThreeJsMedia {
       positionalAudio.setRefDistance(6)
       positionalAudio.setVolume(volume)
       scene.add(positionalAudio)
-      positionalAudio.userData.worldPos = { x: props.position.x, y: props.position.y, z: props.position.z }
-      this.worldRenderer.sceneOrigin.setPositionFromWorld(positionalAudio, props.position.x, props.position.y, props.position.z)
+      this.worldRenderer.sceneOrigin.track(positionalAudio)
+      positionalAudio.position.set(props.position.x, props.position.y, props.position.z)
 
       // Connect video to positional audio
       positionalAudio.setMediaElementSource(video)
@@ -461,8 +461,10 @@ export class ThreeJsMedia {
       if (mediaData.positionalAudio) {
         // mediaData.positionalAudio.stop()
         // mediaData.positionalAudio.disconnect()
+        this.worldRenderer.sceneOrigin.untrack(mediaData.positionalAudio)
         scene.remove(mediaData.positionalAudio)
       }
+      this.worldRenderer.sceneOrigin.untrack(mediaData.mesh)
       scene.remove(mediaData.mesh)
       mediaData.texture.dispose()
 
@@ -550,8 +552,8 @@ export class ThreeJsMedia {
     mesh.geometry.attributes.position.needsUpdate = true
 
     // Now place the mesh at the start position (convert world → scene coords)
-    mesh.userData.worldPos = { x: startPosition.x, y: startPosition.y, z: startPosition.z }
-    this.worldRenderer.sceneOrigin.setPositionFromWorld(mesh, startPosition.x, startPosition.y, startPosition.z)
+    this.worldRenderer.sceneOrigin.track(mesh)
+    mesh.position.set(startPosition.x, startPosition.y, startPosition.z)
 
     // Create a group to hold our mesh and markers
     const debugGroup = new THREE.Group()
@@ -562,7 +564,8 @@ export class ThreeJsMedia {
       new THREE.BoxGeometry(0.1, 0.1, 0.1),
       new THREE.MeshBasicMaterial({ color: 0xff_00_00 })
     )
-    this.worldRenderer.sceneOrigin.setPositionFromWorld(startMarker, startPosition.x, startPosition.y, startPosition.z)
+    this.worldRenderer.sceneOrigin.track(startMarker)
+    startMarker.position.set(startPosition.x, startPosition.y, startPosition.z)
     debugGroup.add(startMarker)
 
     // Add a marker at the end position (width units away in the rotated direction)
@@ -572,7 +575,8 @@ export class ThreeJsMedia {
       new THREE.BoxGeometry(0.1, 0.1, 0.1),
       new THREE.MeshBasicMaterial({ color: 0x00_00_ff })
     )
-    this.worldRenderer.sceneOrigin.setPositionFromWorld(endYMarker, startPosition.x, startPosition.y + height, startPosition.z)
+    this.worldRenderer.sceneOrigin.track(endYMarker)
+    endYMarker.position.set(startPosition.x, startPosition.y + height, startPosition.z)
     debugGroup.add(endYMarker)
 
     // Add a marker at the width endpoint
@@ -580,7 +584,8 @@ export class ThreeJsMedia {
       new THREE.BoxGeometry(0.1, 0.1, 0.1),
       new THREE.MeshBasicMaterial({ color: 0xff_ff_00 })
     )
-    this.worldRenderer.sceneOrigin.setPositionFromWorld(endWidthMarker, endX, startPosition.y, endZ)
+    this.worldRenderer.sceneOrigin.track(endWidthMarker)
+    endWidthMarker.position.set(endX, startPosition.y, endZ)
     debugGroup.add(endWidthMarker)
 
     // Add a marker at the corner diagonal endpoint (both width and height)
@@ -588,7 +593,8 @@ export class ThreeJsMedia {
       new THREE.BoxGeometry(0.1, 0.1, 0.1),
       new THREE.MeshBasicMaterial({ color: 0xff_00_ff })
     )
-    this.worldRenderer.sceneOrigin.setPositionFromWorld(endCornerMarker, endX, startPosition.y + height, endZ)
+    this.worldRenderer.sceneOrigin.track(endCornerMarker)
+    endCornerMarker.position.set(endX, startPosition.y + height, endZ)
     debugGroup.add(endCornerMarker)
 
     // Also add a visual helper to show the rotation direction

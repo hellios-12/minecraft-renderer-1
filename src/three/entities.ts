@@ -425,8 +425,10 @@ export class Entities {
 
     // Update position and rotation
     if (playerData.position) {
-      this.playerEntity.userData.worldPos = { x: playerData.position.x, y: playerData.position.y, z: playerData.position.z }
-      this.worldRenderer.sceneOrigin.setPositionFromWorld(this.playerEntity, playerData.position.x, playerData.position.y, playerData.position.z)
+      if (!this.worldRenderer.sceneOrigin.getWorldPosition(this.playerEntity)) {
+        this.worldRenderer.sceneOrigin.track(this.playerEntity)
+      }
+      this.playerEntity.position.set(playerData.position.x, playerData.position.y, playerData.position.z)
     }
     if (playerData.yaw !== undefined) {
       this.playerEntity.rotation.y = playerData.yaw
@@ -437,6 +439,7 @@ export class Entities {
 
   clear() {
     for (const mesh of Object.values(this.entities)) {
+      this.worldRenderer.sceneOrigin.untrack(mesh)
       this.worldRenderer.scene.remove(mesh)
       disposeObject(mesh)
     }
@@ -449,6 +452,7 @@ export class Entities {
 
     // Clean up player entity
     if (this.playerEntity) {
+      this.worldRenderer.sceneOrigin.untrack(this.playerEntity)
       this.worldRenderer.scene.remove(this.playerEntity)
       disposeObject(this.playerEntity)
       this.playerEntity = null
@@ -537,30 +541,29 @@ export class Entities {
 
         if (thirdPersonNow) {
           const yOffset = this.worldRenderer.playerStateReactive.eyeHeight
-          // Camera is at (0,0,0) in scene space, so scene-relative position is just the offset
-          entity.position.set(0, -yOffset, 0)
-          // Store world position for distance calculations etc.
-          entity.userData.worldPos = {
-            x: this.worldRenderer.cameraWorldPos.x,
-            y: this.worldRenderer.cameraWorldPos.y - yOffset,
-            z: this.worldRenderer.cameraWorldPos.z
-          }
+          // Set world position — proxy auto-converts to scene coords
+          entity.position.set(
+            this.worldRenderer.cameraWorldPos.x,
+            this.worldRenderer.cameraWorldPos.y - yOffset,
+            this.worldRenderer.cameraWorldPos.z
+          )
 
           const p: any = (this.worldRenderer.playerStateReactive as any).position
           if (p && typeof p.x === 'number') {
             this.updateAutoWalkFlags(entityKey, entity, dtRaw, new THREE.Vector3(p.x, p.y, p.z))
-          } else if (entity.userData.worldPos) {
-            this.updateAutoWalkFlags(entityKey, entity, dtRaw, new THREE.Vector3(entity.userData.worldPos.x, entity.userData.worldPos.y, entity.userData.worldPos.z))
           } else {
-            this.updateAutoWalkFlags(entityKey, entity, dtRaw, entity.position)
+            const wp = this.worldRenderer.sceneOrigin.getWorldPosition(entity)
+            this.updateAutoWalkFlags(entityKey, entity, dtRaw, wp ? new THREE.Vector3(wp.x, wp.y, wp.z) : entity.position)
           }
 
           this.updateThirdPersonHeadAndBody(entity, dt)
         } else {
-          this.updateAutoWalkFlags(entityKey, entity, dtRaw, entity.userData.worldPos ? new THREE.Vector3(entity.userData.worldPos.x, entity.userData.worldPos.y, entity.userData.worldPos.z) : entity.position)
+          const wp = this.worldRenderer.sceneOrigin.getWorldPosition(entity)
+          this.updateAutoWalkFlags(entityKey, entity, dtRaw, wp ? new THREE.Vector3(wp.x, wp.y, wp.z) : entity.position)
         }
       } else {
-        this.updateAutoWalkFlags(entityKey, entity, dtRaw, entity.userData.worldPos ? new THREE.Vector3(entity.userData.worldPos.x, entity.userData.worldPos.y, entity.userData.worldPos.z) : entity.position)
+        const wp = this.worldRenderer.sceneOrigin.getWorldPosition(entity)
+        this.updateAutoWalkFlags(entityKey, entity, dtRaw, wp ? new THREE.Vector3(wp.x, wp.y, wp.z) : entity.position)
       }
 
       const { playerObject } = entity
@@ -1048,6 +1051,7 @@ export class Entities {
         if (c['additionalCleanup']) c['additionalCleanup']()
       })
       this.onRemoveEntity(entity)
+      this.worldRenderer.sceneOrigin.untrack(e)
       this.worldRenderer.scene.remove(e)
       disposeObject(e)
       // todo dispose textures as well ?
@@ -1121,8 +1125,8 @@ export class Entities {
       mesh.name = 'mesh'
       // set initial position so there are no weird jumps update after
       const pos = entity.pos ?? entity.position
-      group.userData.worldPos = { x: pos.x, y: pos.y, z: pos.z }
-      this.worldRenderer.sceneOrigin.setPositionFromWorld(group, pos.x, pos.y, pos.z)
+      this.worldRenderer.sceneOrigin.track(group)
+      group.position.set(pos.x, pos.y, pos.z)
 
       // todo use width and height instead
       const boxHelper = new THREE.BoxHelper(
@@ -1339,17 +1343,18 @@ export class Entities {
     if (!e) return
     const ANIMATION_DURATION = justAdded ? 0 : TWEEN_DURATION
     if (entity.position) {
-      // Initialize worldPos if not set
-      if (!e.userData.worldPos) {
-        e.userData.worldPos = { x: entity.position.x, y: entity.position.y, z: entity.position.z }
+      // Initialize tween target from current world position
+      const currentWorld = this.worldRenderer.sceneOrigin.getWorldPosition(e) ?? { x: entity.position.x, y: entity.position.y, z: entity.position.z }
+      if (!e.userData._tweenTarget) {
+        e.userData._tweenTarget = { x: currentWorld.x, y: currentWorld.y, z: currentWorld.z }
       }
       // Stop previous position tween to prevent accumulation
       e.userData._posTween?.stop()
-      // Tween world position, convert to scene coords on each update
-      e.userData._posTween = new TWEEN.Tween(e.userData.worldPos)
+      // Tween a separate target object, apply via proxy on each update
+      e.userData._posTween = new TWEEN.Tween(e.userData._tweenTarget)
         .to({ x: entity.position.x, y: entity.position.y, z: entity.position.z }, ANIMATION_DURATION)
         .onUpdate(() => {
-          this.worldRenderer.sceneOrigin.setPositionFromWorld(e, e.userData.worldPos.x, e.userData.worldPos.y, e.userData.worldPos.z)
+          e.position.set(e.userData._tweenTarget.x, e.userData._tweenTarget.y, e.userData._tweenTarget.z)
         })
         .start()
     }
@@ -1393,8 +1398,9 @@ export class Entities {
     const MAX_DISTANCE_SKIN_LOAD = 128
     const cameraPos = this.worldRenderer.getCameraPosition()
     // Use world positions for accurate distance calculation
-    const entityWorldPos = mesh.userData.worldPos
-      ? new THREE.Vector3(mesh.userData.worldPos.x, mesh.userData.worldPos.y, mesh.userData.worldPos.z)
+    const wp = this.worldRenderer.sceneOrigin.getWorldPosition(mesh)
+    const entityWorldPos = wp
+      ? new THREE.Vector3(wp.x, wp.y, wp.z)
       : mesh.position.clone().add(new THREE.Vector3(this.worldRenderer.sceneOrigin.x, this.worldRenderer.sceneOrigin.y, this.worldRenderer.sceneOrigin.z))
     const distance = entityWorldPos.distanceTo(cameraPos)
     if (distance < MAX_DISTANCE_SKIN_LOAD && distance < (this.worldRenderer.viewDistance * 16)) {

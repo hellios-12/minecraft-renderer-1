@@ -101,9 +101,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   cameraWorldPos = { x: 0, y: 0, z: 0 }
 
   private readonly _tmpCameraPos = new THREE.Vector3()
-  private _lastOriginX = NaN
-  private _lastOriginY = NaN
-  private _lastOriginZ = NaN
+
   private currentPosTween?: tweenJs.Tween<{ x: number, y: number, z: number }>
   private currentRotTween?: tweenJs.Tween<{ pitch: number, yaw: number }>
 
@@ -697,97 +695,6 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
   }
 
-  /** Reposition all scene objects relative to the new scene origin (camera world position) */
-  repositionAllSceneObjects(): void {
-    const ox = this.sceneOrigin.x
-    const oy = this.sceneOrigin.y
-    const oz = this.sceneOrigin.z
-    if (ox === this._lastOriginX && oy === this._lastOriginY && oz === this._lastOriginZ) return
-    this._lastOriginX = ox
-    this._lastOriginY = oy
-    this._lastOriginZ = oz
-
-    // 1. Chunks/sections
-    for (const key in this.sectionObjects) {
-      const section = this.sectionObjects[key]
-      const mesh = section.children.find(child => child.name === 'mesh') as THREE.Mesh | undefined
-      if (mesh && mesh.userData.worldSx !== undefined) {
-        this.sceneOrigin.setPositionFromWorld(mesh, mesh.userData.worldSx, mesh.userData.worldSy, mesh.userData.worldSz)
-        // Handle matrixAutoUpdate = false
-        if (!section.matrixAutoUpdate) {
-          mesh.updateMatrix()
-        }
-      }
-      // Reposition staticChunkMesh (BoxHelper) if it has world data
-      for (const child of section.children) {
-        if (child.userData.worldSx !== undefined && child.name !== 'mesh') {
-          this.sceneOrigin.setPositionFromWorld(child, child.userData.worldSx, child.userData.worldSy, child.userData.worldSz)
-        }
-      }
-      // Reposition signs, banners, heads (children of section group with world positions in userData)
-      for (const child of section.children) {
-        if (child.userData.worldPosX !== undefined) {
-          this.sceneOrigin.setPositionFromWorld(child, child.userData.worldPosX, child.userData.worldPosY, child.userData.worldPosZ)
-        }
-      }
-      // Update the section group matrix if needed
-      if (!section.matrixAutoUpdate) {
-        section.updateMatrix()
-      }
-    }
-
-    // 2. Entities
-    for (const entity of Object.values(this.entities.entities)) {
-      if (entity.userData.worldPos) {
-        this.sceneOrigin.setPositionFromWorld(entity, entity.userData.worldPos.x, entity.userData.worldPos.y, entity.userData.worldPos.z)
-      }
-    }
-    // Player entity
-    if (this.entities.playerEntity?.userData.worldPos) {
-      const wp = this.entities.playerEntity.userData.worldPos
-      this.sceneOrigin.setPositionFromWorld(this.entities.playerEntity, wp.x, wp.y, wp.z)
-    }
-
-    // 3. Fireworks
-    this.fireworks.repositionAll()
-
-    // 4. Cursor block
-    if (this.cursorBlock.blockBreakMesh.userData.worldPos) {
-      const wp = this.cursorBlock.blockBreakMesh.userData.worldPos
-      this.sceneOrigin.setPositionFromWorld(this.cursorBlock.blockBreakMesh, wp.x, wp.y, wp.z)
-    }
-    if (this.cursorBlock.interactionLines?.mesh) {
-      for (const child of this.cursorBlock.interactionLines.mesh.children) {
-        if (child.userData.worldPos) {
-          this.sceneOrigin.setPositionFromWorld(child, child.userData.worldPos.x, child.userData.worldPos.y, child.userData.worldPos.z)
-        }
-      }
-    }
-
-    // 5. Sounds - short-lived, positioned each frame
-
-    // 6. Media panels
-    for (const [id, mediaData] of this.media.customMedia) {
-      if (mediaData.mesh.userData.worldPos) {
-        const wp = mediaData.mesh.userData.worldPos
-        this.sceneOrigin.setPositionFromWorld(mediaData.mesh, wp.x, wp.y, wp.z)
-      }
-      if (mediaData.positionalAudio?.userData.worldPos) {
-        const wp = mediaData.positionalAudio.userData.worldPos
-        this.sceneOrigin.setPositionFromWorld(mediaData.positionalAudio, wp.x, wp.y, wp.z)
-      }
-    }
-
-    // 7. Waypoints
-    for (const waypoint of this.waypoints.getAllWaypoints()) {
-      waypoint.sprite.setPosition(
-        this.sceneOrigin.toSceneX(waypoint.x),
-        this.sceneOrigin.toSceneY(waypoint.y),
-        this.sceneOrigin.toSceneZ(waypoint.z)
-      )
-    }
-  }
-
   setFirstPersonCamera(pos: Vec3 | null, yaw: number, pitch: number) {
     const yOffset = this.playerStateReactive.eyeHeight
 
@@ -929,7 +836,6 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.cameraWorldPos.z = pos.z
     this.sceneOrigin.update(pos.x, pos.y, pos.z)
     this.cameraObject.position.set(0, 0, 0)
-    this.repositionAllSceneObjects()
     this.cameraShake.setBaseRotation(pitch, yaw)
     this.updateCameraSectionPos()
   }
@@ -966,7 +872,6 @@ export class WorldRendererThree extends WorldRendererCommon {
         .onUpdate(() => {
           this.sceneOrigin.update(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
           this.cameraObject.position.set(0, 0, 0)
-          this.repositionAllSceneObjects()
         })
         .start()
       // this.freeFlyState.position = pos
@@ -1147,10 +1052,8 @@ export class WorldRendererThree extends WorldRendererCommon {
       // move head model down as armor have a different offset than blocks
       mesh.position.y -= 23 / 16
       group.add(mesh)
-      group.userData.worldPosX = position.x + 0.5
-      group.userData.worldPosY = position.y + 0.045
-      group.userData.worldPosZ = position.z + 0.5
-      this.sceneOrigin.setPositionFromWorld(group, group.userData.worldPosX, group.userData.worldPosY, group.userData.worldPosZ)
+      this.sceneOrigin.track(group)
+      group.position.set(position.x + 0.5, position.y + 0.045, position.z + 0.5)
       group.rotation.set(
         0,
         -THREE.MathUtils.degToRad(rotation * (isWall ? 90 : 45 / 2)),
@@ -1201,10 +1104,8 @@ export class WorldRendererThree extends WorldRendererCommon {
     const height = (isHanging ? 10 : 8) / 16
     const heightOffset = (isHanging ? 0 : isWall ? 4.333 : 9.333) / 16
     const textPosition = height / 2 + heightOffset
-    group.userData.worldPosX = position.x + 0.5
-    group.userData.worldPosY = position.y + textPosition
-    group.userData.worldPosZ = position.z + 0.5
-    this.sceneOrigin.setPositionFromWorld(group, group.userData.worldPosX, group.userData.worldPosY, group.userData.worldPosZ)
+    this.sceneOrigin.track(group)
+    group.position.set(position.x + 0.5, position.y + textPosition, position.z + 0.5)
     return group
   }
 
@@ -1323,16 +1224,13 @@ export class WorldRendererThree extends WorldRendererCommon {
     const CHUNK_SIZE = 16
     const sectionHeight = this.getSectionHeight()
     let worldX: number, worldY: number, worldZ: number
-    if (object.userData.worldPos) {
-      worldX = object.userData.worldPos.x
-      worldY = object.userData.worldPos.y
-      worldZ = object.userData.worldPos.z
-    } else if (object.userData.worldSx !== undefined) {
-      worldX = object.userData.worldSx
-      worldY = object.userData.worldSy
-      worldZ = object.userData.worldSz
+    const wp = this.sceneOrigin.getWorldPosition(object)
+    if (wp) {
+      worldX = wp.x
+      worldY = wp.y
+      worldZ = wp.z
     } else {
-      // Fallback: convert scene coords back to world coords
+      // Fallback for untracked objects: convert scene coords back to world
       worldX = this.sceneOrigin.toWorldX(object.position.x)
       worldY = this.sceneOrigin.toWorldY(object.position.y)
       worldZ = this.sceneOrigin.toWorldZ(object.position.z)

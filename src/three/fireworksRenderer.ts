@@ -100,8 +100,8 @@ export class FireworksRenderer {
         opacity: 0.8
       })
       debugSphere = new THREE.Mesh(sphereGeometry, sphereMaterial)
-      this.worldRenderer.sceneOrigin.setPositionFromWorld(debugSphere, position.x, position.y, position.z)
-      debugSphere.userData.worldPos = { x: position.x, y: position.y, z: position.z }
+      this.worldRenderer.sceneOrigin.track(debugSphere)
+      debugSphere.position.set(position.x, position.y, position.z)
       debugSphere.renderOrder = 999 // Render before particles
       this.worldRenderer.scene.add(debugSphere)
       console.log(`Debug: Created explosion center sphere at (${position.x}, ${position.y}, ${position.z}) with radius ${sphereRadius}`)
@@ -132,7 +132,8 @@ export class FireworksRenderer {
         : new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
 
       const mesh = new THREE.Mesh(this.particleGeometry, material)
-      this.worldRenderer.sceneOrigin.setPositionFromWorld(mesh, position.x, position.y, position.z)
+      this.worldRenderer.sceneOrigin.track(mesh)
+      mesh.position.set(position.x, position.y, position.z)
 
       // Make particles more visible
       mesh.renderOrder = 1000 // Render on top
@@ -191,8 +192,8 @@ export class FireworksRenderer {
         opacity: 0.8
       })
       debugSphere = new THREE.Mesh(sphereGeometry, sphereMaterial)
-      this.worldRenderer.sceneOrigin.setPositionFromWorld(debugSphere, position.x, position.y, position.z)
-      debugSphere.userData.worldPos = { x: position.x, y: position.y, z: position.z }
+      this.worldRenderer.sceneOrigin.track(debugSphere)
+      debugSphere.position.set(position.x, position.y, position.z)
       debugSphere.renderOrder = 999 // Render before particles
       this.worldRenderer.scene.add(debugSphere)
       console.log(`Debug: Created camera-facing explosion center sphere at (${position.x}, ${position.y}, ${position.z}) with radius ${sphereRadius}`)
@@ -237,7 +238,8 @@ export class FireworksRenderer {
         : new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
 
       const mesh = new THREE.Mesh(this.particleGeometry, material)
-      this.worldRenderer.sceneOrigin.setPositionFromWorld(mesh, position.x, position.y, position.z)
+      this.worldRenderer.sceneOrigin.track(mesh)
+      mesh.position.set(position.x, position.y, position.z)
 
       // Make particles more visible
       mesh.renderOrder = 1000 // Render on top
@@ -330,7 +332,7 @@ export class FireworksRenderer {
     // Convert deltaTime from milliseconds to seconds for proper physics
     const deltaTimeSeconds = deltaTime / 1000
     particle.position.add(particle.velocity.scaled(deltaTimeSeconds))
-    this.worldRenderer.sceneOrigin.setPositionFromWorld(particle.mesh, particle.position.x, particle.position.y, particle.position.z)
+    particle.mesh.position.set(particle.position.x, particle.position.y, particle.position.z)
 
     // Update life and opacity
     const oldLife = particle.life
@@ -362,11 +364,7 @@ export class FireworksRenderer {
     for (const [explosionId, explosion] of this.explosions.entries()) {
       const elapsed = currentTime - explosion.startTime
 
-      // Reposition debug sphere to track scene origin changes
-      if (explosion.debugSphere?.userData.worldPos) {
-        const wp = explosion.debugSphere.userData.worldPos
-        this.worldRenderer.sceneOrigin.setPositionFromWorld(explosion.debugSphere, wp.x, wp.y, wp.z)
-      }
+      // Debug sphere is tracked by sceneOrigin — no manual repositioning needed
 
       if (elapsed >= explosion.duration) {
         // Remove expired explosion
@@ -397,6 +395,7 @@ export class FireworksRenderer {
 
     // Clean up particle meshes
     for (const particle of explosion.particles) {
+      this.worldRenderer.sceneOrigin.untrack(particle.mesh)
       this.worldRenderer.scene.remove(particle.mesh)
       if (particle.mesh.material instanceof THREE.Material) {
         particle.mesh.material.dispose()
@@ -405,6 +404,7 @@ export class FireworksRenderer {
 
     // Clean up debug sphere if it exists
     if (explosion.debugSphere) {
+      this.worldRenderer.sceneOrigin.untrack(explosion.debugSphere)
       this.worldRenderer.scene.remove(explosion.debugSphere)
       explosion.debugSphere.geometry.dispose()
       if (explosion.debugSphere.material instanceof THREE.Material) {

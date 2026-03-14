@@ -614,12 +614,8 @@ export class FireworksManager {
 
     // Position the meshGroup in scene-relative coordinates
     if (position) {
-      fw.meshGroup.position.set(
-        this.sceneOrigin.toSceneX(position.x),
-        this.sceneOrigin.toSceneY(position.y),
-        this.sceneOrigin.toSceneZ(position.z)
-      )
-      fw.meshGroup.userData.worldPos = { x: position.x, y: position.y, z: position.z }
+      this.sceneOrigin.track(fw.meshGroup)
+      fw.meshGroup.position.set(position.x, position.y, position.z)
     }
 
     this.fireworksInstances.push(fw)
@@ -627,16 +623,7 @@ export class FireworksManager {
   }
 
   repositionAll (): void {
-    for (const instance of this.fireworksInstances) {
-      if (instance.meshGroup.userData.worldPos) {
-        const wp = instance.meshGroup.userData.worldPos
-        instance.meshGroup.position.set(
-          this.sceneOrigin.toSceneX(wp.x),
-          this.sceneOrigin.toSceneY(wp.y),
-          this.sceneOrigin.toSceneZ(wp.z)
-        )
-      }
-    }
+    // No-op: tracked objects are automatically repositioned by SceneOrigin
   }
 
   update () {
@@ -657,6 +644,7 @@ export class FireworksManager {
       instance.seed.disposeAll()
 
       if (instance.life <= 0) {
+        this.sceneOrigin.untrack(instance.meshGroup)
         this.scene.remove(instance.meshGroup)
         if (instance instanceof RichFireworks && instance.tailMeshGroup) {
           for (const v of instance.tails) {
@@ -671,6 +659,7 @@ export class FireworksManager {
 
   clear () {
     for (const instance of this.fireworksInstances) {
+      this.sceneOrigin.untrack(instance.meshGroup)
       this.scene.remove(instance.meshGroup)
       instance.seed.disposeAll()
       if (instance.flower) instance.flower.disposeAll()
