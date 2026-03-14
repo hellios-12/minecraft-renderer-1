@@ -54,9 +54,9 @@ export function exportWorldGeometry(
     sections.push({
       key,
       position: {
-        x: mesh.position.x,
-        y: mesh.position.y,
-        z: mesh.position.z
+        x: mesh.userData.worldSx ?? mesh.position.x,
+        y: mesh.userData.worldSy ?? mesh.position.y,
+        z: mesh.userData.worldSz ?? mesh.position.z
       },
       geometry: {
         positions: [...positionAttr.array],

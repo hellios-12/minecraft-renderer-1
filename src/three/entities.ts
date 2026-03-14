@@ -1042,6 +1042,7 @@ export class Entities {
 
     if (entity.delete) {
       if (!e) return
+      e.userData._posTween?.stop()
       if (e.additionalCleanup) e.additionalCleanup()
       e.traverse(c => {
         if (c['additionalCleanup']) c['additionalCleanup']()

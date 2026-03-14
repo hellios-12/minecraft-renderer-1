@@ -107,11 +107,11 @@ export class SkyboxRenderer {
 
     if (this.mesh) {
       // Update skybox position
-      this.mesh.position.copy(cameraPosition)
+      this.mesh.position.set(0, 0, 0)
     } else if (this.skyMesh) {
       // Update gradient sky position
-      this.skyMesh.position.copy(cameraPosition)
-      this.voidMesh?.position.copy(cameraPosition)
+      this.skyMesh.position.set(0, 0, 0)
+      this.voidMesh?.position.set(0, 0, 0)
       this.updateSkyColors() // Update colors based on time of day
     }
   }
