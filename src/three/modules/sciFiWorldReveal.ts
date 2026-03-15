@@ -109,7 +109,6 @@ export class SciFiWorldRevealModule implements RendererModuleController {
 
   render?: () => void = () => {
     if (!this.enabled) return
-    this.repositionWireframes()
     this.update(16)
   }
 
@@ -493,10 +492,6 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   /**
    * Update the reveal animation - call this every frame
    */
-  repositionWireframes(): void {
-    // Tracked objects are auto-repositioned by sceneOrigin
-  }
-
   update(deltaTime: number): void {
     if (!this.enabled || this.revealingSections.size === 0) return
 
