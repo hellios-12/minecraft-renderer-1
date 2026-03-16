@@ -33,6 +33,7 @@ import { FireworksManager } from './fireworks'
 import { downloadWorldGeometry } from './worldGeometryExport'
 import { WorldBlockGeometry } from './worldBlockGeometry'
 import type { RendererModuleManifest, RegisteredModule, RendererModuleController, ModuleInfo } from './rendererModuleSystem'
+import { configStateToForceState, forceStateToConfigState } from './rendererModuleSystem'
 import { BUILTIN_MODULES } from './modules/index'
 
 type SectionKey = string
@@ -74,6 +75,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
   // Module system
   private modules = {} as Record<string, RegisteredModule>
+  onModuleForceStateChange: ((moduleId: string, forceState: boolean | null) => void) | null = null
   sectionsOffsetsAnimations = {} as {
     [chunkKey: string]: {
       time: number,
@@ -314,9 +316,25 @@ export class WorldRendererThree extends WorldRendererCommon {
       id,
       enabled: module.enabled,
       configState: (moduleStates[id] ?? 'auto') as 'enabled' | 'disabled' | 'auto',
+      forceState: configStateToForceState(moduleStates[id]),
       enabledDefault: module.manifest.enabledDefault ?? false,
       cannotBeDisabled: module.manifest.cannotBeDisabled ?? false,
     }))
+  }
+
+  setModuleForceState(moduleId: string, forceState: boolean | null): void {
+    const module = this.modules[moduleId]
+    if (!module) {
+      console.warn(`Module ${moduleId} not found`)
+      return
+    }
+    if (forceState === false && module.manifest.cannotBeDisabled) {
+      console.warn(`Module ${moduleId} cannot be disabled`)
+      return
+    }
+    this.worldRendererConfig.moduleStates[moduleId] = forceStateToConfigState(forceState)
+    this.updateModulesFromConfig()
+    this.onModuleForceStateChange?.(moduleId, forceState)
   }
 
   protected override anyModuleRequiresHeightmap(): boolean {
