@@ -39,3 +39,11 @@ export interface RegisteredModule {
   enabled: boolean
   toggle: () => boolean
 }
+
+export interface ModuleInfo {
+  id: string
+  enabled: boolean
+  configState: 'enabled' | 'disabled' | 'auto'
+  enabledDefault: boolean
+  cannotBeDisabled: boolean
+}

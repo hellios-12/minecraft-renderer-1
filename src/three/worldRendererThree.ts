@@ -32,7 +32,7 @@ import { DEFAULT_TEMPERATURE, SkyboxRenderer } from './skyboxRenderer'
 import { FireworksManager } from './fireworks'
 import { downloadWorldGeometry } from './worldGeometryExport'
 import { WorldBlockGeometry } from './worldBlockGeometry'
-import type { RendererModuleManifest, RegisteredModule, RendererModuleController } from './rendererModuleSystem'
+import type { RendererModuleManifest, RegisteredModule, RendererModuleController, ModuleInfo } from './rendererModuleSystem'
 import { BUILTIN_MODULES } from './modules/index'
 
 type SectionKey = string
@@ -306,6 +306,17 @@ export class WorldRendererThree extends WorldRendererCommon {
    */
   getModule<T = any>(moduleId: string): T | undefined {
     return this.modules[moduleId]?.controller as T | undefined
+  }
+
+  getModulesInfo(): ModuleInfo[] {
+    const { moduleStates } = this.worldRendererConfig
+    return Object.entries(this.modules).map(([id, module]) => ({
+      id,
+      enabled: module.enabled,
+      configState: (moduleStates[id] ?? 'auto') as 'enabled' | 'disabled' | 'auto',
+      enabledDefault: module.manifest.enabledDefault ?? false,
+      cannotBeDisabled: module.manifest.cannotBeDisabled ?? false,
+    }))
   }
 
   protected override anyModuleRequiresHeightmap(): boolean {
