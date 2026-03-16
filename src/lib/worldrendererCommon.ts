@@ -107,6 +107,13 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   protocolCustomBlocks = new Map<string, CustomBlockModels>()
   private heightmapDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
+  // Geometry throttle: first dirty per section is instant, subsequent within window are grouped
+  private sectionDirtyCount = new Map<string, number>()
+  private sectionDirtyTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private sectionDirtyPendingArgs = new Map<string, { pos: Vec3; value: boolean; useChangeWorker: boolean }>()
+  private static readonly GEOMETRY_THROTTLE_THRESHOLD = 1
+  private static readonly GEOMETRY_THROTTLE_DELAY = 100 // ms
+
   blockStateModelInfo = new Map<string, BlockStateModelInfo>()
 
   abstract outputFormat: 'threeJs' | 'webgpu'
@@ -681,6 +688,15 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       clearTimeout(pendingTimer)
       this.heightmapDebounceTimers.delete(debounceKey)
     }
+    // Cancel any pending geometry throttle timers for sections in this chunk
+    for (const [key, timer] of this.sectionDirtyTimers) {
+      if (key.startsWith(`${x},`) && key.endsWith(`,${z}`)) {
+        clearTimeout(timer)
+        this.sectionDirtyTimers.delete(key)
+        this.sectionDirtyCount.delete(key)
+        this.sectionDirtyPendingArgs.delete(key)
+      }
+    }
     for (const worker of this.workers) {
       worker.postMessage({ type: 'unloadChunk', x, z })
     }
@@ -954,14 +970,65 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     if (!this.forceCallFromMesherReplayer && this.mesherLogReader) return
 
     if (this.viewDistance === -1) throw new Error('viewDistance not set')
-    this.reactiveState.world.mesherWork = true
+
     const distance = this.getDistance(pos)
     // todo shouldnt we check loadedChunks instead?
     if (!this.workers.length || distance[0] > this.viewDistance || distance[1] > this.viewDistance) return
+
+    // When unloading chunks (value=false) — always immediate, no throttle
+    if (!value) {
+      this._dispatchDirtyImmediate(pos, value, useChangeWorker)
+      return
+    }
+
     const CHUNK_SIZE = 16
     const sectionHeight = this.getSectionHeight()
     const key = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.y / sectionHeight) * sectionHeight},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
-    // if (this.sectionsOutstanding.has(key)) return
+
+    const currentCount = (this.sectionDirtyCount.get(key) ?? 0) + 1
+    this.sectionDirtyCount.set(key, currentCount)
+
+    if (currentCount <= WorldRendererCommon.GEOMETRY_THROTTLE_THRESHOLD) {
+      // First request in window — dispatch immediately for instant feedback
+      this._dispatchDirtyImmediate(pos, value, useChangeWorker)
+
+      // Schedule trailing dispatch after throttle window
+      if (!this.sectionDirtyTimers.has(key)) {
+        this.sectionDirtyTimers.set(key, setTimeout(() => {
+          const args = this.sectionDirtyPendingArgs.get(key)
+          this.sectionDirtyCount.delete(key)
+          this.sectionDirtyTimers.delete(key)
+          this.sectionDirtyPendingArgs.delete(key)
+          if (args) {
+            this._dispatchDirtyImmediate(args.pos, args.value, args.useChangeWorker)
+          }
+        }, WorldRendererCommon.GEOMETRY_THROTTLE_DELAY))
+      }
+    } else {
+      // Subsequent requests — throttle: store latest args, existing timer will dispatch
+      this.sectionDirtyPendingArgs.set(key, { pos, value, useChangeWorker })
+
+      if (!this.sectionDirtyTimers.has(key)) {
+        this.sectionDirtyTimers.set(key, setTimeout(() => {
+          const args = this.sectionDirtyPendingArgs.get(key)
+          this.sectionDirtyCount.delete(key)
+          this.sectionDirtyTimers.delete(key)
+          this.sectionDirtyPendingArgs.delete(key)
+          if (args) {
+            this._dispatchDirtyImmediate(args.pos, args.value, args.useChangeWorker)
+          }
+        }, WorldRendererCommon.GEOMETRY_THROTTLE_DELAY))
+      }
+    }
+  }
+
+  /** Dispatch dirty message to worker without throttle (original logic) */
+  private _dispatchDirtyImmediate(pos: Vec3, value: boolean, useChangeWorker: boolean) {
+    this.reactiveState.world.mesherWork = true
+    const CHUNK_SIZE = 16
+    const sectionHeight = this.getSectionHeight()
+    const key = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.y / sectionHeight) * sectionHeight},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
+
     this.renderUpdateEmitter.emit('dirty', pos, value)
     // Dispatch sections to workers based on position
     // This guarantees uniformity accross workers and that a given section
@@ -980,7 +1047,6 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     } else {
       this.toWorkerMessagesQueue[hash] ??= []
       this.toWorkerMessagesQueue[hash].push({
-        // this.workers[hash].postMessage({
         type: 'dirty',
         x: pos.x,
         y: pos.y,
@@ -1052,6 +1118,14 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       clearTimeout(timer)
     }
     this.heightmapDebounceTimers.clear()
+
+    // Cancel all pending geometry throttle timers
+    for (const timer of this.sectionDirtyTimers.values()) {
+      clearTimeout(timer)
+    }
+    this.sectionDirtyTimers.clear()
+    this.sectionDirtyCount.clear()
+    this.sectionDirtyPendingArgs.clear()
 
     // Stop all workers
     for (const worker of this.workers) {
