@@ -35,6 +35,7 @@ import { WorldBlockGeometry } from './worldBlockGeometry'
 import type { RendererModuleManifest, RegisteredModule, RendererModuleController, ModuleInfo } from './rendererModuleSystem'
 import { configStateToForceState, forceStateToConfigState } from './rendererModuleSystem'
 import { BUILTIN_MODULES } from './modules/index'
+import { DebugModulesPanel } from './debugModulesPanel'
 
 type SectionKey = string
 
@@ -75,6 +76,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
   // Module system
   private modules = {} as Record<string, RegisteredModule>
+  debugModulesPanel: DebugModulesPanel
   onModuleForceStateChange: ((moduleId: string, forceState: boolean | null) => void) | null = null
   sectionsOffsetsAnimations = {} as {
     [chunkKey: string]: {
@@ -166,6 +168,11 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     // Initialize modules
     this.initializeModules()
+
+    this.debugModulesPanel = new DebugModulesPanel(
+      () => this.getModulesInfo(),
+      (moduleId, forceState) => this.setModuleForceState(moduleId, forceState)
+    )
   }
 
   /**
@@ -335,6 +342,18 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.worldRendererConfig.moduleStates[moduleId] = forceStateToConfigState(forceState)
     this.updateModulesFromConfig()
     this.onModuleForceStateChange?.(moduleId, forceState)
+  }
+
+  showDebugModulesPanel(): void {
+    this.debugModulesPanel.show()
+  }
+
+  hideDebugModulesPanel(): void {
+    this.debugModulesPanel.hide()
+  }
+
+  toggleDebugModulesPanel(): void {
+    this.debugModulesPanel.toggle()
   }
 
   protected override anyModuleRequiresHeightmap(): boolean {
@@ -1200,6 +1219,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   destroy(): void {
+    this.debugModulesPanel.dispose()
     this.disposeModules()
     this.fireworksLegacy.destroy()
     super.destroy()
