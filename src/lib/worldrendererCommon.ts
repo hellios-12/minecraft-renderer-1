@@ -16,6 +16,7 @@ import { getPlayerStateUtils } from '../graphicsBackend/playerState'
 type PlayerStateUtils = ReturnType<typeof getPlayerStateUtils>
 import { MesherLogReader } from './mesherlogReader'
 import { setSkinsConfig } from './utils/skins'
+import { calculateSkyLightSimple } from './skyLight'
 import { WorldViewWorker } from '../worldView'
 import { generateSpiralMatrix } from './spiral'
 import { PlayerStateReactive } from '../playerState/playerState'
@@ -539,19 +540,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 
   getMesherConfig(): MesherConfig {
-    let skyLight = 15
     const timeOfDay = this.timeOfTheDay
-    if (timeOfDay < 0 || timeOfDay > 24_000) {
-      //
-    } else if (timeOfDay <= 6000 || timeOfDay >= 18_000) {
-      skyLight = 15
-    } else if (timeOfDay > 6000 && timeOfDay < 12_000) {
-      skyLight = 15 - ((timeOfDay - 6000) / 6000) * 15
-    } else if (timeOfDay >= 12_000 && timeOfDay < 18_000) {
-      skyLight = ((timeOfDay - 12_000) / 6000) * 15
-    }
-
-    skyLight = Math.floor(skyLight)
+    const skyLight = (timeOfDay < 0 || timeOfDay > 24_000) ? 15 : calculateSkyLightSimple(timeOfDay)
     return {
       version: this.version,
       enableLighting: this.worldRendererConfig.enableLighting,

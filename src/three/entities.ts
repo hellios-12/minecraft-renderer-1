@@ -789,6 +789,7 @@ export class Entities {
       skinTexture.needsUpdate = true
       playerObject.skin.map = skinTexture as any
       playerObject.skin.modelType = inferModelType(skinCanvas)
+      playerObject.skin['isCustom'] = skinUrl !== stevePngUrl
 
       let earsCanvas: HTMLCanvasElement | undefined
       if (!playerCustomSkinImage) {

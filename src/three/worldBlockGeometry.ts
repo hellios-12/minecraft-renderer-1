@@ -130,6 +130,8 @@ export class WorldBlockGeometry {
       }
     }
     this.sectionObjects[data.key] = object
+    // Store section key on object for easier lookup
+    ;(object as any).sectionKey = data.key
     if (this.displayOptions.inWorldRenderingConfig._renderByChunks) {
       object.visible = false
       const chunkKey = `${chunkCoords[0]},${chunkCoords[2]}`

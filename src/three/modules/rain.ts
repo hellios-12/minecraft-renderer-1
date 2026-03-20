@@ -16,6 +16,11 @@ const FALL_SPEED_MAX = 24
 const HORIZONTAL_DRIFT = 1.2
 const RESPAWN_BELOW = -5
 
+const moduleOptions = {
+  particleCount: 2000,
+  speedFactor: 1,
+}
+
 export class RainModule implements RendererModuleController {
   private instancedMesh?: THREE.InstancedMesh
   private geometry?: THREE.BoxGeometry
