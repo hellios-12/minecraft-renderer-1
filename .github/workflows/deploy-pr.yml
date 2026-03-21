@@ -101,7 +101,7 @@ jobs:
 
       - name: Install client dependencies
         working-directory: client
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build client
         working-directory: client
