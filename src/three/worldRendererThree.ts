@@ -66,6 +66,14 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
   waypoints: WaypointsRenderer
   cinimaticScript: CinimaticScriptRunner
+  /**
+   * Three.js camera used for rendering.
+   *
+   * **WARNING:** `camera.position` is scene-local (near origin due to sceneOrigin rebasing),
+   * NOT world-space. In first-person mode it's `(0,0,0)`; in third-person it's `(0,0,zOffset)`.
+   *
+   * Use `getCameraPosition()` or `cameraWorldPos` for actual world-space coordinates.
+   */
   camera!: THREE.PerspectiveCamera
   renderTimeAvg = 0
   // Memory usage tracking (in bytes)
@@ -99,6 +107,9 @@ export class WorldRendererThree extends WorldRendererCommon {
   sceneOrigin = new SceneOrigin(this.scene)
   /** Camera world position stored in float64 (JS number) for precision */
   cameraWorldPos = { x: 0, y: 0, z: 0 }
+
+  /** Whether we've warned about camera.position access (one-time dev warning) */
+  private _cameraPositionAccessWarned = false
 
   private readonly _tmpCameraPos = new THREE.Vector3()
 
@@ -328,8 +339,63 @@ export class WorldRendererThree extends WorldRendererCommon {
     return Object.values(this.modules).some(m => m.enabled && m.manifest.requiresHeightmap)
   }
 
+  /** Returns the active camera container (may differ in VR mode). Used for position resets and rotation. */
   get cameraObject() {
     return this.cameraGroupVr ?? this.cameraContainer
+  }
+
+  /**
+   * Wraps camera.position in a Proxy that logs a one-time warning when .set/.setX/.setY/.setZ
+   * or .x/.y/.z assignment is used with values that look like world coords (|v| > 20).
+   * camera.position is scene-local (0,0,0 or 0,0,zOffset). Use cameraWorldPos + sceneOrigin.update().
+   */
+  private _wrapCameraPositionWithWarning() {
+    const realPos = this.camera.position
+    const self = this
+    const WORLD_COORD_THRESHOLD = 20 // our zOffset is ~4, so 20 catches mistaken world coords
+    const looksLikeWorldCoords = (x: number, y: number, z: number) =>
+      Math.abs(x) > WORLD_COORD_THRESHOLD || Math.abs(y) > WORLD_COORD_THRESHOLD || Math.abs(z) > WORLD_COORD_THRESHOLD
+    const warnOnce = () => {
+      if (!self._cameraPositionAccessWarned && typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') {
+        self._cameraPositionAccessWarned = true
+        console.warn(
+          '[WorldRendererThree] Do not set camera.position to world coordinates — it is scene-local. ' +
+          'Use cameraWorldPos and sceneOrigin.update() to move the camera.'
+        )
+      }
+    }
+    const proxy = new Proxy(realPos, {
+      set(target, prop, value) {
+        if ((prop === 'x' || prop === 'y' || prop === 'z') && typeof value === 'number' && Math.abs(value) > WORLD_COORD_THRESHOLD) {
+          warnOnce()
+        }
+        ;(target as any)[prop] = value
+        return true
+      },
+      get(target, prop, receiver) {
+        const value = (target as any)[prop]
+        if (prop === 'set') {
+          return function (x: number, y: number, z: number) {
+            if (looksLikeWorldCoords(x, y, z)) warnOnce()
+            return (target as THREE.Vector3).set(x, y, z)
+          }
+        }
+        if (prop === 'setX' || prop === 'setY' || prop === 'setZ') {
+          return function (v: number) {
+            if (Math.abs(v) > WORLD_COORD_THRESHOLD) warnOnce()
+            return (target as any)[prop](v)
+          }
+        }
+        if (prop === 'copy') {
+          return function (v: THREE.Vector3) {
+            if (looksLikeWorldCoords(v.x, v.y, v.z)) warnOnce()
+            return (target as THREE.Vector3).copy(v)
+          }
+        }
+        return typeof value === 'function' ? value.bind(target) : value
+      }
+    })
+    Object.defineProperty(this.camera, 'position', { value: proxy, configurable: true, enumerable: true })
   }
 
   worldSwitchActions() {
@@ -387,6 +453,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     const size = this.renderer.getSize(new THREE.Vector2())
     this.camera = new THREE.PerspectiveCamera(75, size.x / size.y, 0.1, 1000)
+    this._wrapCameraPositionWithWarning()
     this.cameraContainer = new THREE.Object3D()
     this.cameraContainer.add(this.camera)
     this.scene.add(this.cameraContainer)
