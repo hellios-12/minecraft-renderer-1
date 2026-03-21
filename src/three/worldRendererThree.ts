@@ -30,6 +30,7 @@ import { FireworksRenderer } from './fireworksRenderer'
 import { CinimaticScriptRunner, CinimaticScript } from './cinimaticScript'
 import { DEFAULT_TEMPERATURE, SkyboxRenderer } from './skyboxRenderer'
 import { FireworksManager } from './fireworks'
+import { SceneOrigin } from './sceneOrigin'
 import { downloadWorldGeometry } from './worldGeometryExport'
 import { WorldBlockGeometry } from './worldBlockGeometry'
 import type { RendererModuleManifest, RegisteredModule, RendererModuleController } from './rendererModuleSystem'
@@ -66,6 +67,14 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
   waypoints: WaypointsRenderer
   cinimaticScript: CinimaticScriptRunner
+  /**
+   * Three.js camera used for rendering.
+   *
+   * **WARNING:** `camera.position` is scene-local (near origin due to sceneOrigin rebasing),
+   * NOT world-space. In first-person mode it's `(0,0,0)`; in third-person it's `(0,0,zOffset)`.
+   *
+   * Use `getCameraPosition()` or `cameraWorldPos` for actual world-space coordinates.
+   */
   camera!: THREE.PerspectiveCamera
   renderTimeAvg = 0
   // Memory usage tracking (in bytes)
@@ -96,9 +105,28 @@ export class WorldRendererThree extends WorldRendererCommon {
   DEBUG_RAYCAST = false
   skyboxRenderer: SkyboxRenderer
   fireworks: FireworksManager
+  sceneOrigin = new SceneOrigin(this.scene)
+  /** Camera world position stored in float64 (JS number) for precision */
+  cameraWorldPos = { x: 0, y: 0, z: 0 }
 
-  private currentPosTween?: tweenJs.Tween<THREE.Vector3>
+  /** Whether we've warned about camera.position access (one-time dev warning) */
+  private _cameraPositionAccessWarned = false
+
+  private readonly _tmpCameraPos = new THREE.Vector3()
+
+  private currentPosTween?: tweenJs.Tween<{ x: number, y: number, z: number }>
   private currentRotTween?: tweenJs.Tween<{ pitch: number, yaw: number }>
+
+  // Pre-allocated objects for getThirdPersonCamera (avoid per-frame allocs)
+  private readonly _tpDirection = new THREE.Vector3()
+  private readonly _tpPitchQuat = new THREE.Quaternion()
+  private readonly _tpYawQuat = new THREE.Quaternion()
+  private readonly _tpFinalQuat = new THREE.Quaternion()
+  private readonly _tpScenePos = new THREE.Vector3()
+  private readonly _tpAxisX = new THREE.Vector3(1, 0, 0)
+  private readonly _tpAxisY = new THREE.Vector3(0, 1, 0)
+  private readonly _tpRaycaster = new THREE.Raycaster()
+  private readonly _tpChunkWorldPos = new THREE.Vector3()
 
   get tilesRendered() {
     return Object.values(this.sectionObjects).reduce((acc, obj) => acc + (obj as any).tilesCount, 0)
@@ -145,13 +173,13 @@ export class WorldRendererThree extends WorldRendererCommon {
       (pos, yaw, pitch) => this.setCinimaticCamera(pos, yaw, pitch),
       (fov) => this.setCinimaticFov(fov),
       () => ({
-        position: new Vec3(this.cameraObject.position.x, this.cameraObject.position.y, this.cameraObject.position.z),
+        position: new Vec3(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z),
         yaw: this.cameraShake.getBaseRotation().yaw,
         pitch: this.cameraShake.getBaseRotation().pitch,
         fov: this.camera.fov
       })
     )
-    this.fireworks = new FireworksManager(this.scene)
+    this.fireworks = new FireworksManager(this.scene, this.sceneOrigin)
 
     // this.fountain = new Fountain(this.scene, this.scene, {
     //   position: new THREE.Vector3(0, 10, 0),
@@ -312,8 +340,63 @@ export class WorldRendererThree extends WorldRendererCommon {
     return Object.values(this.modules).some(m => m.enabled && m.manifest.requiresHeightmap)
   }
 
+  /** Returns the active camera container (may differ in VR mode). Used for position resets and rotation. */
   get cameraObject() {
     return this.cameraGroupVr ?? this.cameraContainer
+  }
+
+  /**
+   * Wraps camera.position in a Proxy that logs a one-time warning when .set/.setX/.setY/.setZ
+   * or .x/.y/.z assignment is used with values that look like world coords (|v| > 20).
+   * camera.position is scene-local (0,0,0 or 0,0,zOffset). Use cameraWorldPos + sceneOrigin.update().
+   */
+  private _wrapCameraPositionWithWarning() {
+    const realPos = this.camera.position
+    const self = this
+    const WORLD_COORD_THRESHOLD = 20 // our zOffset is ~4, so 20 catches mistaken world coords
+    const looksLikeWorldCoords = (x: number, y: number, z: number) =>
+      Math.abs(x) > WORLD_COORD_THRESHOLD || Math.abs(y) > WORLD_COORD_THRESHOLD || Math.abs(z) > WORLD_COORD_THRESHOLD
+    const warnOnce = () => {
+      if (!self._cameraPositionAccessWarned && typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') {
+        self._cameraPositionAccessWarned = true
+        console.warn(
+          '[WorldRendererThree] Do not set camera.position to world coordinates — it is scene-local. ' +
+          'Use cameraWorldPos and sceneOrigin.update() to move the camera.'
+        )
+      }
+    }
+    const proxy = new Proxy(realPos, {
+      set(target, prop, value) {
+        if ((prop === 'x' || prop === 'y' || prop === 'z') && typeof value === 'number' && Math.abs(value) > WORLD_COORD_THRESHOLD) {
+          warnOnce()
+        }
+        ;(target as any)[prop] = value
+        return true
+      },
+      get(target, prop, receiver) {
+        const value = (target as any)[prop]
+        if (prop === 'set') {
+          return function (x: number, y: number, z: number) {
+            if (looksLikeWorldCoords(x, y, z)) warnOnce()
+            return (target as THREE.Vector3).set(x, y, z)
+          }
+        }
+        if (prop === 'setX' || prop === 'setY' || prop === 'setZ') {
+          return function (v: number) {
+            if (Math.abs(v) > WORLD_COORD_THRESHOLD) warnOnce()
+            return (target as any)[prop](v)
+          }
+        }
+        if (prop === 'copy') {
+          return function (v: THREE.Vector3) {
+            if (looksLikeWorldCoords(v.x, v.y, v.z)) warnOnce()
+            return (target as THREE.Vector3).copy(v)
+          }
+        }
+        return typeof value === 'function' ? value.bind(target) : value
+      }
+    })
+    Object.defineProperty(this.camera, 'position', { value: proxy, configurable: true, enumerable: true })
   }
 
   worldSwitchActions() {
@@ -332,7 +415,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   downloadWorldGeometry() {
-    downloadWorldGeometry(this, this.cameraObject.position, this.cameraShake.getBaseRotation(), 'world-geometry.json')
+    downloadWorldGeometry(this, new THREE.Vector3(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z), this.cameraShake.getBaseRotation(), 'world-geometry.json')
   }
 
   updateEntity(e, isPosUpdate = false) {
@@ -357,6 +440,11 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   resetScene() {
+    this.sceneOrigin.update(0, 0, 0)
+    this.cameraWorldPos.x = 0
+    this.cameraWorldPos.y = 0
+    this.cameraWorldPos.z = 0
+
     this.scene.matrixAutoUpdate = false // for perf
     this.scene.background = new THREE.Color(this.initOptions.config.sceneBackground)
     this.scene.add(this.ambientLight)
@@ -366,6 +454,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     const size = this.renderer.getSize(new THREE.Vector2())
     this.camera = new THREE.PerspectiveCamera(75, size.x / size.y, 0.1, 1000)
+    this._wrapCameraPositionWithWarning()
     this.cameraContainer = new THREE.Object3D()
     this.cameraContainer.add(this.camera)
     this.scene.add(this.cameraContainer)
@@ -395,7 +484,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     })
     this.onReactivePlayerStateUpdated('perspective', (value) => {
       // Update camera perspective when it changes
-      const vecPos = new Vec3(this.cameraObject.position.x, this.cameraObject.position.y, this.cameraObject.position.z)
+      const vecPos = new Vec3(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
       this.updateCamera(vecPos, this.cameraShake.getBaseRotation().yaw, this.cameraShake.getBaseRotation().pitch)
       // todo also update camera when block within camera was changed
     })
@@ -653,10 +742,8 @@ export class WorldRendererThree extends WorldRendererCommon {
     return tex
   }
 
-  getCameraPosition() {
-    const worldPos = new THREE.Vector3()
-    this.camera.getWorldPosition(worldPos)
-    return worldPos
+  getCameraPosition(target?: THREE.Vector3): THREE.Vector3 {
+    return (target ?? this._tmpCameraPos).set(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
   }
 
   getSectionCameraPosition() {
@@ -685,7 +772,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   getThirdPersonCamera(pos: THREE.Vector3 | null, yaw: number, pitch: number) {
-    pos ??= this.cameraObject.position
+    pos ??= new THREE.Vector3(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
 
     // Calculate camera offset based on perspective
     const isBack = this.playerStateReactive.perspective === 'third_person_back'
@@ -696,12 +783,12 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     // Create a direction vector that represents where the camera is looking
     // This matches the Three.js camera coordinate system
-    const direction = new THREE.Vector3(0, 0, -1) // Forward direction in camera space
+    const direction = this._tpDirection.set(0, 0, -1) // Forward direction in camera space
 
     // Apply the same rotation that's applied to the camera container
-    const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch)
-    const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw)
-    const finalQuat = new THREE.Quaternion().multiplyQuaternions(yawQuat, pitchQuat)
+    const pitchQuat = this._tpPitchQuat.setFromAxisAngle(this._tpAxisX, pitch)
+    const yawQuat = this._tpYawQuat.setFromAxisAngle(this._tpAxisY, yaw)
+    const finalQuat = this._tpFinalQuat.multiplyQuaternions(yawQuat, pitchQuat)
 
     // Transform the direction vector by the camera's rotation
     direction.applyQuaternion(finalQuat)
@@ -717,9 +804,16 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.debugRaycast(pos, direction, distance)
     }
 
+    // Convert world position to scene-relative coordinates for raycasting
+    const scenePos = this._tpScenePos.set(
+      this.sceneOrigin.toSceneX(pos.x),
+      this.sceneOrigin.toSceneY(pos.y),
+      this.sceneOrigin.toSceneZ(pos.z)
+    )
+
     // Perform raycast to avoid camera going through blocks
-    const raycaster = new THREE.Raycaster()
-    raycaster.set(pos, direction)
+    const raycaster = this._tpRaycaster
+    raycaster.set(scenePos, direction)
     raycaster.far = distance // Limit raycast distance
 
     // Filter to only nearby chunks for performance
@@ -731,9 +825,9 @@ export class WorldRendererThree extends WorldRendererCommon {
         if (!mesh) return false
 
         // Check distance from player position to chunk
-        const chunkWorldPos = new THREE.Vector3()
+        const chunkWorldPos = this._tpChunkWorldPos
         mesh.getWorldPosition(chunkWorldPos)
-        const distance = pos.distanceTo(chunkWorldPos)
+        const distance = scenePos.distanceTo(chunkWorldPos)
         return distance < 80 // Only check chunks within 80 blocks
       })
 
@@ -775,10 +869,17 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.debugHitPoint = undefined
     }
 
+    // Convert world position to scene-relative coordinates
+    const scenePos = new THREE.Vector3(
+      this.sceneOrigin.toSceneX(pos.x),
+      this.sceneOrigin.toSceneY(pos.y),
+      this.sceneOrigin.toSceneZ(pos.z)
+    )
+
     // Create raycast arrow
     this.debugRaycastHelper = new THREE.ArrowHelper(
       direction.clone().normalize(),
-      pos,
+      scenePos,
       distance,
       0xff_00_00, // Red color
       distance * 0.1,
@@ -790,7 +891,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     const hitGeometry = new THREE.SphereGeometry(0.2, 8, 8)
     const hitMaterial = new THREE.MeshBasicMaterial({ color: 0x00_ff_00 })
     this.debugHitPoint = new THREE.Mesh(hitGeometry, hitMaterial)
-    this.debugHitPoint.position.copy(pos).add(direction.clone().multiplyScalar(distance))
+    this.debugHitPoint.position.copy(scenePos).add(direction.clone().multiplyScalar(distance))
     this.scene.add(this.debugHitPoint)
   }
 
@@ -798,7 +899,11 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   setCinimaticCamera(pos: Vec3, yaw: number, pitch: number): void {
     // Directly set camera position and rotation for cinematic mode
-    this.cameraObject.position.set(pos.x, pos.y, pos.z)
+    this.cameraWorldPos.x = pos.x
+    this.cameraWorldPos.y = pos.y
+    this.cameraWorldPos.z = pos.z
+    this.sceneOrigin.update(pos.x, pos.y, pos.z)
+    this.cameraObject.position.set(0, 0, 0)
     this.cameraShake.setBaseRotation(pitch, yaw)
     this.updateCameraSectionPos()
   }
@@ -830,7 +935,13 @@ export class WorldRendererThree extends WorldRendererCommon {
       const tweenDelay = this.displayOptions.inWorldRenderingConfig.instantCameraUpdate
         ? 0
         : (this.playerStateUtils.isSpectatingEntity() ? 150 : 50)
-      this.currentPosTween = new tweenJs.Tween(this.cameraObject.position).to({ x: pos.x, y: pos.y, z: pos.z }, tweenDelay).start()
+      this.currentPosTween = new tweenJs.Tween(this.cameraWorldPos)
+        .to({ x: pos.x, y: pos.y, z: pos.z }, tweenDelay)
+        .onUpdate(() => {
+          this.sceneOrigin.update(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
+          this.cameraObject.position.set(0, 0, 0)
+        })
+        .start()
       // this.freeFlyState.position = pos
     }
 
@@ -854,14 +965,14 @@ export class WorldRendererThree extends WorldRendererCommon {
       const { perspective } = this.playerStateReactive
       if (perspective === 'third_person_back' || perspective === 'third_person_front') {
         // Use getThirdPersonCamera for proper raycasting with max distance of 4
-        const currentCameraPos = this.cameraObject.position
+        const currentWorldPos = new THREE.Vector3(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
         const thirdPersonPos = this.getThirdPersonCamera(
-          new THREE.Vector3(currentCameraPos.x, currentCameraPos.y, currentCameraPos.z),
+          currentWorldPos,
           yaw,
           pitch
         )
 
-        const distance = currentCameraPos.distanceTo(new THREE.Vector3(thirdPersonPos.x, thirdPersonPos.y, thirdPersonPos.z))
+        const distance = currentWorldPos.distanceTo(new THREE.Vector3(thirdPersonPos.x, thirdPersonPos.y, thirdPersonPos.z))
         // Apply Z offset based on perspective and calculated distance
         const zOffset = perspective === 'third_person_back' ? distance : -distance
         this.camera.position.set(0, 0, zOffset)
@@ -1013,6 +1124,7 @@ export class WorldRendererThree extends WorldRendererCommon {
       // move head model down as armor have a different offset than blocks
       mesh.position.y -= 23 / 16
       group.add(mesh)
+      this.sceneOrigin.track(group)
       group.position.set(position.x + 0.5, position.y + 0.045, position.z + 0.5)
       group.rotation.set(
         0,
@@ -1064,6 +1176,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     const height = (isHanging ? 10 : 8) / 16
     const heightOffset = (isHanging ? 0 : isWall ? 4.333 : 9.333) / 16
     const textPosition = height / 2 + heightOffset
+    this.sceneOrigin.track(group)
     group.position.set(position.x + 0.5, position.y + textPosition, position.z + 0.5)
     return group
   }
@@ -1179,12 +1292,24 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   shouldObjectVisible(object: THREE.Object3D) {
-    // Get chunk coordinates
+    // Get chunk coordinates - use world coords from userData if available, otherwise convert from scene coords
     const CHUNK_SIZE = 16
     const sectionHeight = this.getSectionHeight()
-    const chunkX = Math.floor(object.position.x / CHUNK_SIZE) * CHUNK_SIZE
-    const chunkZ = Math.floor(object.position.z / CHUNK_SIZE) * CHUNK_SIZE
-    const sectionY = Math.floor(object.position.y / sectionHeight) * sectionHeight
+    let worldX: number, worldY: number, worldZ: number
+    const wp = this.sceneOrigin.getWorldPosition(object)
+    if (wp) {
+      worldX = wp.x
+      worldY = wp.y
+      worldZ = wp.z
+    } else {
+      // Fallback for untracked objects: convert scene coords back to world
+      worldX = this.sceneOrigin.toWorldX(object.position.x)
+      worldY = this.sceneOrigin.toWorldY(object.position.y)
+      worldZ = this.sceneOrigin.toWorldZ(object.position.z)
+    }
+    const chunkX = Math.floor(worldX / CHUNK_SIZE) * CHUNK_SIZE
+    const chunkZ = Math.floor(worldZ / CHUNK_SIZE) * CHUNK_SIZE
+    const sectionY = Math.floor(worldY / sectionHeight) * sectionHeight
 
     const chunkKey = `${chunkX},${chunkZ}`
     const sectionKey = `${chunkX},${sectionY},${chunkZ}`
@@ -1230,7 +1355,7 @@ export class WorldRendererThree extends WorldRendererCommon {
         }
       }
 
-      // Apply the offset to the section object
+      // Apply the offset to the section object (compose with camera-relative base position)
       const section = this.sectionObjects[key]
       if (section) {
         section.position.set(

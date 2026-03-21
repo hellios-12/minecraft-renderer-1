@@ -202,7 +202,7 @@ export class ThreeJsMedia {
       positionalAudio = new THREE.PositionalAudio(soundSystem.audioListener)
       positionalAudio.setRefDistance(6)
       positionalAudio.setVolume(volume)
-      scene.add(positionalAudio)
+      this.worldRenderer.sceneOrigin.addAndTrack(positionalAudio)
       positionalAudio.position.set(props.position.x, props.position.y, props.position.z)
 
       // Connect video to positional audio
@@ -460,9 +460,9 @@ export class ThreeJsMedia {
       if (mediaData.positionalAudio) {
         // mediaData.positionalAudio.stop()
         // mediaData.positionalAudio.disconnect()
-        scene.remove(mediaData.positionalAudio)
+        this.worldRenderer.sceneOrigin.removeAndUntrack(mediaData.positionalAudio)
       }
-      scene.remove(mediaData.mesh)
+      this.worldRenderer.sceneOrigin.removeAndUntrack(mediaData.mesh)
       mediaData.texture.dispose()
 
       // Get the inner mesh from the group
@@ -548,7 +548,8 @@ export class ThreeJsMedia {
     mesh.geometry.translate(0.5, 0.5, 0)
     mesh.geometry.attributes.position.needsUpdate = true
 
-    // Now place the mesh at the start position
+    // Now place the mesh at the start position (convert world → scene coords)
+    this.worldRenderer.sceneOrigin.track(mesh)
     mesh.position.set(startPosition.x, startPosition.y, startPosition.z)
 
     // Create a group to hold our mesh and markers
@@ -560,7 +561,7 @@ export class ThreeJsMedia {
       new THREE.BoxGeometry(0.1, 0.1, 0.1),
       new THREE.MeshBasicMaterial({ color: 0xff_00_00 })
     )
-    startMarker.position.copy(new THREE.Vector3(startPosition.x, startPosition.y, startPosition.z))
+    startMarker.position.set(startPosition.x, startPosition.y, startPosition.z)
     debugGroup.add(startMarker)
 
     // Add a marker at the end position (width units away in the rotated direction)
@@ -590,9 +591,14 @@ export class ThreeJsMedia {
     debugGroup.add(endCornerMarker)
 
     // Also add a visual helper to show the rotation direction
+    const sceneStartPos = new THREE.Vector3(
+      this.worldRenderer.sceneOrigin.toSceneX(startPosition.x),
+      this.worldRenderer.sceneOrigin.toSceneY(startPosition.y),
+      this.worldRenderer.sceneOrigin.toSceneZ(startPosition.z)
+    )
     const directionHelper = new THREE.ArrowHelper(
       new THREE.Vector3(Math.cos(rotation), 0, Math.sin(rotation)),
-      new THREE.Vector3(startPosition.x, startPosition.y, startPosition.z),
+      sceneStartPos,
       1,
       0xff_00_00
     )

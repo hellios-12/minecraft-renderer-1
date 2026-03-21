@@ -254,15 +254,18 @@ export class SciFiWorldRevealModule implements RendererModuleController {
       current = current.parent
     }
 
-    // Fallback: try to derive key from mesh position
-    // Section keys are in format "x,y,z" where x, y, z are section coordinates
-    // Mesh position is at geometry.sx, geometry.sy, geometry.sz
-    const pos = mesh.position
+    // Fallback: try to derive key from mesh world position
+    // mesh.position is scene-relative (near 0 in camera-relative rendering),
+    // so use stored world coords or convert back to world coords
+    const wp = this.worldRenderer.sceneOrigin.getWorldPosition(mesh)
+    const worldX = wp?.x ?? this.worldRenderer.sceneOrigin.toWorldX(mesh.position.x)
+    const worldY = wp?.y ?? this.worldRenderer.sceneOrigin.toWorldY(mesh.position.y)
+    const worldZ = wp?.z ?? this.worldRenderer.sceneOrigin.toWorldZ(mesh.position.z)
     const CHUNK_SIZE = 16
     const sectionHeight = this.worldRenderer.getSectionHeight()
-    const sectionX = Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE
-    const sectionY = Math.floor(pos.y / sectionHeight) * sectionHeight
-    const sectionZ = Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE
+    const sectionX = Math.floor(worldX / CHUNK_SIZE) * CHUNK_SIZE
+    const sectionY = Math.floor(worldY / sectionHeight) * sectionHeight
+    const sectionZ = Math.floor(worldZ / CHUNK_SIZE) * CHUNK_SIZE
     const derivedKey = `${sectionX},${sectionY},${sectionZ}`
 
     // Verify this key exists in sectionObjects
@@ -390,13 +393,15 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     }
     // Main wireframe
     const wireframe = new THREE.LineSegments(wireframeGeom, this.wireframeMaterial.clone())
+    this.worldRenderer.sceneOrigin.track(wireframe)
     wireframe.position.set(geometry.sx, geometry.sy, geometry.sz)
     wireframe.name = 'scifi-wireframe'
     wireframe.renderOrder = 1000
 
     // Glow layer
     const glowWireframe = new THREE.LineSegments(wireframeGeom.clone(), this.wireframeGlowMaterial.clone())
-    glowWireframe.position.copy(wireframe.position)
+    this.worldRenderer.sceneOrigin.track(glowWireframe)
+    glowWireframe.position.set(geometry.sx, geometry.sy, geometry.sz)
     glowWireframe.scale.set(1.02, 1.02, 1.02)
     glowWireframe.name = 'scifi-glow'
     glowWireframe.renderOrder = 999
@@ -612,8 +617,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
    * Dispose a wireframe group and remove from scene
    */
   private disposeWireframeGroup(group: THREE.Group): void {
-    // Remove from scene first
-    this.scene.remove(group)
+    this.worldRenderer.sceneOrigin.removeAndUntrackAll(group)
 
     // Collect all objects to dispose
     const toDispose: THREE.Object3D[] = []

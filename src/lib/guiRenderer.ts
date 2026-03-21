@@ -267,7 +267,6 @@ const generateAtlas = async (appViewer: AppViewer, images: Record<string, HTMLIm
 }
 
 export const generateGuiAtlas = async (appViewer: AppViewer) => {
-  console.trace('generateGuiAtlas')
   const { blockModelsResolved, itemsModelsResolved } = getNonFullBlocksModels(appViewer)
 
   // Generate blocks atlas

@@ -100,9 +100,9 @@ export class FireworksRenderer {
         opacity: 0.8
       })
       debugSphere = new THREE.Mesh(sphereGeometry, sphereMaterial)
-      debugSphere.position.set(position.x, position.y, position.z)
       debugSphere.renderOrder = 999 // Render before particles
-      this.worldRenderer.scene.add(debugSphere)
+      this.worldRenderer.sceneOrigin.addAndTrack(debugSphere)
+      debugSphere.position.set(position.x, position.y, position.z)
       console.log(`Debug: Created explosion center sphere at (${position.x}, ${position.y}, ${position.z}) with radius ${sphereRadius}`)
     }
 
@@ -131,18 +131,18 @@ export class FireworksRenderer {
         : new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
 
       const mesh = new THREE.Mesh(this.particleGeometry, material)
-      mesh.position.set(position.x, position.y, position.z)
 
       // Make particles more visible
       mesh.renderOrder = 1000 // Render on top
+
+      // Add to scene (must be before position.set so proxy captures coordinates)
+      this.worldRenderer.sceneOrigin.addAndTrack(mesh)
+      mesh.position.set(position.x, position.y, position.z)
 
       // DEBUG: Add particle size info to console
       if (i < 5) {
         console.log(`Debug: Particle ${i} mesh created at (${mesh.position.x}, ${mesh.position.y}, ${mesh.position.z}) with size ${FireworksRenderer.DEFAULT_PARTICLE_SIZE}`)
       }
-
-      // Add to scene
-      this.worldRenderer.scene.add(mesh)
 
       const particle: FireworkParticle = {
         position: position.clone(),
@@ -190,9 +190,9 @@ export class FireworksRenderer {
         opacity: 0.8
       })
       debugSphere = new THREE.Mesh(sphereGeometry, sphereMaterial)
-      debugSphere.position.set(position.x, position.y, position.z)
       debugSphere.renderOrder = 999 // Render before particles
-      this.worldRenderer.scene.add(debugSphere)
+      this.worldRenderer.sceneOrigin.addAndTrack(debugSphere)
+      debugSphere.position.set(position.x, position.y, position.z)
       console.log(`Debug: Created camera-facing explosion center sphere at (${position.x}, ${position.y}, ${position.z}) with radius ${sphereRadius}`)
     }
 
@@ -235,13 +235,13 @@ export class FireworksRenderer {
         : new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
 
       const mesh = new THREE.Mesh(this.particleGeometry, material)
-      mesh.position.set(position.x, position.y, position.z)
 
       // Make particles more visible
       mesh.renderOrder = 1000 // Render on top
 
-      // Add to scene
-      this.worldRenderer.scene.add(mesh)
+      // Add to scene (must be before position.set so proxy captures coordinates)
+      this.worldRenderer.sceneOrigin.addAndTrack(mesh)
+      mesh.position.set(position.x, position.y, position.z)
 
       const particle: FireworkParticle = {
         position: position.clone(),
@@ -360,6 +360,8 @@ export class FireworksRenderer {
     for (const [explosionId, explosion] of this.explosions.entries()) {
       const elapsed = currentTime - explosion.startTime
 
+      // Debug sphere is tracked by sceneOrigin — no manual repositioning needed
+
       if (elapsed >= explosion.duration) {
         // Remove expired explosion
         console.log(`Debug: Removing expired explosion ${explosionId} after ${elapsed}ms`)
@@ -389,7 +391,7 @@ export class FireworksRenderer {
 
     // Clean up particle meshes
     for (const particle of explosion.particles) {
-      this.worldRenderer.scene.remove(particle.mesh)
+      this.worldRenderer.sceneOrigin.removeAndUntrack(particle.mesh)
       if (particle.mesh.material instanceof THREE.Material) {
         particle.mesh.material.dispose()
       }
@@ -397,7 +399,7 @@ export class FireworksRenderer {
 
     // Clean up debug sphere if it exists
     if (explosion.debugSphere) {
-      this.worldRenderer.scene.remove(explosion.debugSphere)
+      this.worldRenderer.sceneOrigin.removeAndUntrack(explosion.debugSphere)
       explosion.debugSphere.geometry.dispose()
       if (explosion.debugSphere.material instanceof THREE.Material) {
         explosion.debugSphere.material.dispose()

@@ -35,7 +35,7 @@ export class WorldBlockGeometry {
           releaseBannerTexture((child as any).bannerTexture)
         }
       })
-      this.scene.remove(object)
+      this.worldRenderer.sceneOrigin.removeAndUntrackAll(object)
       disposeObject(object)
       delete this.sectionObjects[data.key]
     }
@@ -65,6 +65,7 @@ export class WorldBlockGeometry {
     this.addSectionMemoryUsage(geometry)
 
     const mesh = new THREE.Mesh(geometry, this.material)
+    this.worldRenderer.sceneOrigin.track(mesh, { updateMatrix: true })
     mesh.position.set(data.geometry.sx, data.geometry.sy, data.geometry.sz)
     mesh.name = 'mesh'
     object = new THREE.Group()
@@ -76,9 +77,10 @@ export class WorldBlockGeometry {
       new THREE.BoxGeometry(CHUNK_SIZE, sectionHeight, CHUNK_SIZE),
       new THREE.MeshBasicMaterial({ color: 0x00_00_00, transparent: true, opacity: 0 })
     )
-    staticChunkMesh.position.set(data.geometry.sx, data.geometry.sy, data.geometry.sz)
     const boxHelper = new THREE.BoxHelper(staticChunkMesh, 0xff_ff_00)
     boxHelper.name = 'helper'
+    this.worldRenderer.sceneOrigin.track(boxHelper, { updateMatrix: true })
+    boxHelper.position.set(data.geometry.sx, data.geometry.sy, data.geometry.sz)
     object.add(boxHelper)
     object.name = 'chunk'
       ; (object as any).tilesCount = data.geometry.positions.length / 3 / 4
@@ -126,6 +128,9 @@ export class WorldBlockGeometry {
         const bannerTexture = getBannerTexture(this.worldRenderer, blockName, nbt.simplify(bannerBlockEntity))
         if (!bannerTexture) continue
         const banner = createBannerMesh(new Vec3(+x, +y, +z), rotation, isWall, bannerTexture)
+        const { x: bwx, y: bwy, z: bwz } = banner.position
+        this.worldRenderer.sceneOrigin.track(banner)
+        banner.position.set(bwx, bwy, bwz)
         object.add(banner)
       }
     }
@@ -145,6 +150,8 @@ export class WorldBlockGeometry {
 
     this.worldRenderer.updatePosDataChunk(data.key)
     object.matrixAutoUpdate = false
+    // Force matrix update after setting camera-relative position (matrixAutoUpdate is false)
+    object.updateMatrix()
     mesh.onAfterRender = (renderer, scene, camera, geometry, material, group) => {
       // mesh.matrixAutoUpdate = false
     }
@@ -223,7 +230,7 @@ export class WorldBlockGeometry {
     for (const mesh of Object.values(this.sectionObjects)) {
       // Track memory usage removal for all sections
       this.removeSectionMemoryUsage(mesh)
-      this.scene.remove(mesh)
+      this.worldRenderer.sceneOrigin.removeAndUntrackAll(mesh)
     }
     this.sectionObjects = {}
     this.waitingChunksToDisplay = {}
@@ -250,7 +257,7 @@ export class WorldBlockGeometry {
             releaseBannerTexture((child as any).bannerTexture)
           }
         })
-        this.scene.remove(mesh)
+        this.worldRenderer.sceneOrigin.removeAndUntrackAll(mesh)
         disposeObject(mesh)
       }
       delete this.sectionObjects[key]
@@ -268,7 +275,7 @@ export class WorldBlockGeometry {
               releaseBannerTexture((child as any).bannerTexture)
             }
           })
-          this.scene.remove(mesh)
+          this.worldRenderer.sceneOrigin.removeAndUntrackAll(mesh)
           disposeObject(mesh)
         }
         delete this.sectionObjects[key]

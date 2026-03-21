@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { SceneOrigin } from './sceneOrigin'
 import { createCanvas } from '../lib/utils'
 
 // Shader code
@@ -362,7 +363,8 @@ export class BasicFireworks {
 
     const pm = new ParticleSeedMesh(num, vels, this.texture)
     if (startPosition) {
-      pm.mesh.position.set(startPosition.x, startPosition.y, startPosition.z)
+      // World positioning is handled by meshGroup; seed starts at group origin
+      pm.mesh.position.set(0, 0, 0)
     } else {
       const x = Math.random() * 80 - 40
       const y = -50
@@ -581,13 +583,15 @@ export class RichFireworks extends BasicFireworks {
 export class FireworksManager {
   fireworksInstances: Array<BasicFireworks | RichFireworks>
   scene: THREE.Scene
+  sceneOrigin: SceneOrigin
   texture: THREE.Texture
   particleSize: number
   maxFireworks: number
 
-  constructor (scene: THREE.Scene, config?: FireworksManagerConfig) {
+  constructor (scene: THREE.Scene, sceneOrigin: SceneOrigin, config?: FireworksManagerConfig) {
     this.fireworksInstances = []
     this.scene = scene
+    this.sceneOrigin = sceneOrigin
     this.texture = createFireworksTexture()
     this.particleSize = config?.defaultParticleSize ?? FIREWORKS_CONFIG.defaultParticleSize
     this.maxFireworks = config?.maxActiveFireworks ?? FIREWORKS_CONFIG.maxActiveFireworks
@@ -609,7 +613,16 @@ export class FireworksManager {
     }
 
     this.fireworksInstances.push(fw)
-    this.scene.add(fw.meshGroup)
+    if (position) {
+      this.sceneOrigin.addAndTrack(fw.meshGroup)
+      fw.meshGroup.position.set(position.x, position.y, position.z)
+    } else {
+      this.scene.add(fw.meshGroup)
+    }
+  }
+
+  repositionAll (): void {
+    // No-op: tracked objects are automatically repositioned by SceneOrigin
   }
 
   update () {
@@ -630,7 +643,7 @@ export class FireworksManager {
       instance.seed.disposeAll()
 
       if (instance.life <= 0) {
-        this.scene.remove(instance.meshGroup)
+        this.sceneOrigin.removeAndUntrack(instance.meshGroup)
         if (instance instanceof RichFireworks && instance.tailMeshGroup) {
           for (const v of instance.tails) {
             v.disposeAll()
@@ -644,7 +657,7 @@ export class FireworksManager {
 
   clear () {
     for (const instance of this.fireworksInstances) {
-      this.scene.remove(instance.meshGroup)
+      this.sceneOrigin.removeAndUntrack(instance.meshGroup)
       instance.seed.disposeAll()
       if (instance.flower) instance.flower.disposeAll()
       if (instance instanceof RichFireworks) {
