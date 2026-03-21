@@ -22,14 +22,17 @@ jobs:
         run: |
           BODY="${{ github.event.comment.body }}"
           ARG=$(echo "$BODY" | sed -n 's/^\/deploy[[:space:]]*//p' | tr -d '[:space:]')
-          if [[ -z "$ARG" || "$ARG" == "no" ]]; then
-            echo "ref=${{ env.CLIENT_DEFAULT_BRANCH }}" >> $GITHUB_OUTPUT
-            echo "Using default branch: ${{ env.CLIENT_DEFAULT_BRANCH }}"
+          if [[ "$ARG" == "no" ]]; then
+            echo "ref=" >> $GITHUB_OUTPUT
+            echo "Using default branch (no ref)"
+          elif [[ -z "$ARG" ]]; then
+            echo "ref=refs/pull/${{ env.CLIENT_PR }}/head" >> $GITHUB_OUTPUT
+            echo "Using client PR: ${{ env.CLIENT_PR }}"
           elif [[ "$ARG" =~ ^[0-9]+$ ]]; then
             echo "ref=refs/pull/${ARG}/head" >> $GITHUB_OUTPUT
             echo "Using PR: $ARG"
           else
-            echo "ref=${{ env.CLIENT_DEFAULT_BRANCH }}" >> $GITHUB_OUTPUT
+            echo "ref=" >> $GITHUB_OUTPUT
             echo "Invalid PR number, using default branch"
           fi
 
@@ -118,14 +121,11 @@ jobs:
         working-directory: prismarine-web
         run: vercel build  --token=${{ secrets.VERCEL_TOKEN }}
 
-      - name: Deploy to Vercel
-        working-directory: prismarine-web
+      - name: Deploy Project Artifacts to Vercel
+        uses: mathiasvr/command-output@v2.0.0
+        with:
+          run: vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
         id: deploy
-        run: |
-          url=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }} 2>&1)
-          echo "url<<EOF" >> $GITHUB_OUTPUT
-          echo "$url" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Comment on PR
         uses: mshick/add-pr-comment@v2
@@ -133,4 +133,4 @@ jobs:
           allow-repeats: true
           pull-request-number: ${{ github.event.issue.number }}
           message: |
-            Deployed to Vercel Preview: ${{ steps.deploy.outputs.url }}
+            Deployed to Vercel Preview: ${{ steps.deploy.outputs.stdout }}
