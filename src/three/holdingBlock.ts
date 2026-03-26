@@ -92,6 +92,7 @@ export default class HoldingBlock implements IHoldingBlock {
   equipProgress = 0 // 0 = fully visible, 1 = hidden
   stopUpdate = false
   lastHeldItem: HandItemBlock | undefined
+  currentDisplayType: 'hand' | 'item' | 'block' = 'hand'
   isSwinging = false
   nextIterStopCallbacks: Array<() => void> | undefined
   idleAnimator: HandIdleAnimator | undefined
@@ -318,7 +319,7 @@ export default class HoldingBlock implements IHoldingBlock {
     this.cameraGroup.position.copy(camera.position)
     this.cameraGroup.rotation.copy(camera.rotation)
 
-    const type = this.lastHeldItem?.type ?? 'hand'
+    const type = this.currentDisplayType
     const swingProgress = this.swingAnimator?.getSwingProgress() ?? 0
 
     let matrix: THREE.Matrix4
@@ -397,6 +398,7 @@ export default class HoldingBlock implements IHoldingBlock {
     if (!handItem) {
       this.holdingBlock?.removeFromParent()
       this.holdingBlock = undefined
+      this.currentDisplayType = 'hand'
       this.swingAnimator?.stopSwing()
       this.swingAnimator = undefined
       this.idleAnimator = undefined
@@ -409,6 +411,7 @@ export default class HoldingBlock implements IHoldingBlock {
     // Update the model without changing the group structure
     this.holdingBlock?.removeFromParent()
     this.holdingBlock = result.model
+    this.currentDisplayType = result.type
     this.armTransformGroup.add(result.model)
 
 
@@ -443,6 +446,7 @@ export default class HoldingBlock implements IHoldingBlock {
     }
 
     if (!handItem) {
+      this.currentDisplayType = 'hand'
       this.swingAnimator = undefined
       this.idleAnimator = undefined
       this.blockSwapAnimation = undefined
@@ -454,6 +458,7 @@ export default class HoldingBlock implements IHoldingBlock {
     if (!result || switchRequest !== this.switchRequest) return
 
     this.holdingBlock = result.model
+    this.currentDisplayType = result.type
     this.armTransformGroup.add(this.holdingBlock)
 
     if (playAppearAnimation) {
