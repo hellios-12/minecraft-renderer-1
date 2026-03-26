@@ -98,6 +98,9 @@ export default class HoldingBlock implements IHoldingBlock {
   idleAnimator: HandIdleAnimator | undefined
   ready = false
   lastUpdate = 0
+  xBob = 0
+  yBob = 0
+  lastBobUpdateTime = 0
   playerHand: THREE.Object3D | undefined
   offHandDisplay = false
   offHandModeLegacy = false
@@ -316,8 +319,31 @@ export default class HoldingBlock implements IHoldingBlock {
   updateCameraGroup() {
     if (this.stopUpdate) return
     const { camera } = this
+
+    // Hand rotation momentum (xBob/yBob) — vanilla Minecraft inertia effect
+    // Use base rotation from CameraShake (actual player view angles)
+    const now = performance.now()
+    const baseRotation = this.worldRenderer.cameraShake.getBaseRotation()
+    const actualPitch = baseRotation.pitch
+    const actualYaw = baseRotation.yaw
+    if (this.lastBobUpdateTime === 0) {
+      this.xBob = actualPitch
+      this.yBob = actualYaw
+      this.lastBobUpdateTime = now
+    } else {
+      const dt = Math.min((now - this.lastBobUpdateTime) / 1000, 0.1)
+      this.lastBobUpdateTime = now
+      const factor = 1 - Math.pow(0.5, dt * 20)
+      this.xBob += (actualPitch - this.xBob) * factor
+      this.yBob += (actualYaw - this.yBob) * factor
+    }
+    const pitchOffset = (actualPitch - this.xBob) * -0.1
+    const yawOffset = (actualYaw - this.yBob) * -0.1
+
     this.cameraGroup.position.copy(camera.position)
     this.cameraGroup.rotation.copy(camera.rotation)
+    this.cameraGroup.rotation.x += pitchOffset
+    this.cameraGroup.rotation.y += yawOffset
 
     const type = this.currentDisplayType
     const swingProgress = this.swingAnimator?.getSwingProgress() ?? 0
