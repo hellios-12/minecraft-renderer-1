@@ -15,6 +15,7 @@ import { PlayerStateRenderer } from '../playerState/playerState'
 import { getThreeBlockModelGroup } from '../mesher/standaloneRenderer'
 import { IndexedData } from 'minecraft-data'
 import { WorldRendererConfig } from '../graphicsBackend'
+import { computeCameraBob, type CameraBobInput } from '../lib/cameraBobbing'
 
 const _tempMat = new THREE.Matrix4()
 
@@ -101,6 +102,8 @@ export default class HoldingBlock implements IHoldingBlock {
   xBob = 0
   yBob = 0
   lastBobUpdateTime = 0
+  private lastBobWalkDist = 0
+  private lastBobTickTime = 0
   playerHand: THREE.Object3D | undefined
   offHandDisplay = false
   offHandModeLegacy = false
@@ -342,6 +345,36 @@ export default class HoldingBlock implements IHoldingBlock {
 
     this.cameraGroup.position.copy(camera.position)
     this.cameraGroup.rotation.copy(camera.rotation)
+
+    // ─── bobView: Walking hand bob (vanilla-accurate) ───
+    const viewBobbing = this.worldRenderer.displayOptions.inWorldRenderingConfig.viewBobbing
+    if (viewBobbing) {
+      const ps = this.worldRenderer.playerStateReactive
+
+      // Track tick timing for partialTick (same approach as CameraBobbingModule)
+      if (ps.walkDist !== this.lastBobWalkDist) {
+        this.lastBobTickTime = now
+        this.lastBobWalkDist = ps.walkDist
+      }
+      const partialTick = Math.min((now - this.lastBobTickTime) / 50, 1)
+
+      const bob = computeCameraBob({
+        walkDist: ps.walkDist,
+        prevWalkDist: ps.prevWalkDist,
+        bob: ps.bob,
+        prevBob: ps.prevBob,
+        partialTick
+      })
+
+      // Apply bobView position (translate)
+      this.cameraGroup.position.x += bob.position.x
+      this.cameraGroup.position.y += bob.position.y
+
+      // Apply bobView rotation (roll Z + pitch X)
+      this.cameraGroup.rotation.z += bob.rotation.z
+      this.cameraGroup.rotation.x += bob.rotation.x
+    }
+
     this.cameraGroup.rotation.x += pitchOffset
     this.cameraGroup.rotation.y += yawOffset
 
@@ -493,7 +526,7 @@ export default class HoldingBlock implements IHoldingBlock {
 
     this.swingAnimator = new HandSwingAnimator()
     this.swingAnimator.type = result.type
-    // Idle animation disabled temporarily — will be re-added with vanilla bobView
+    // Idle animation disabled — walking bob is handled by vanilla bobView applied to cameraGroup
     this.idleAnimator = undefined
   }
 
