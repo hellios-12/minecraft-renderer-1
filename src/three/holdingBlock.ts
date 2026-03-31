@@ -385,9 +385,10 @@ export default class HoldingBlock implements IHoldingBlock {
       }
       const partialTick = Math.min((now - this.lastBobTickTime) / 50, 1)
 
+      const handBobSpeedMultiplier = 1.8
       const bob = computeCameraBob({
-        walkDist: ps.walkDist,
-        prevWalkDist: ps.prevWalkDist,
+        walkDist: ps.walkDist * handBobSpeedMultiplier,
+        prevWalkDist: ps.prevWalkDist * handBobSpeedMultiplier,
         bob: ps.bob,
         prevBob: ps.prevBob,
         partialTick
