@@ -71,6 +71,10 @@ export const getBackendMethods = (worldRenderer: WorldRendererThree): any => {
       const module = worldRenderer.getModule<import('./modules/blockBreakParticles').BlockBreakParticlesModule>('blockBreakParticles')
       module?.spawnBlockBreakParticles(x, y, z, blockName, floorMap)
     },
+    spawnBlockCrackParticle(x: number, y: number, z: number, face: number, blockName: string, floorMap: number[]) {
+      const module = worldRenderer.getModule<import('./modules/blockBreakParticles').BlockBreakParticlesModule>('blockBreakParticles')
+      module?.spawnCrackParticle(x, y, z, face, blockName, floorMap)
+    },
     async loadGeometryExport(exportData: any) {
       // Import dynamically to avoid circular dependencies
       const { applyWorldGeometryExport } = await import('./worldGeometryExport')

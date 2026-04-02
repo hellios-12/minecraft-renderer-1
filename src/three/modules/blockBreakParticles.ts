@@ -157,13 +157,45 @@ export class BlockBreakParticlesModule implements RendererModuleController {
     }
   }
 
+  spawnCrackParticle(worldX: number, worldY: number, worldZ: number, face: number, blockName: string, floorMap: number[]): void {
+    if (!this.enabled) return
+
+    const texInfo = this.resolveBlockTexture(blockName)
+    if (!texInfo) return
+
+    // Random position within block, inset 0.1 on each axis
+    let px = worldX + Math.random() * 0.8 + 0.1
+    let py = worldY + Math.random() * 0.8 + 0.1
+    let pz = worldZ + Math.random() * 0.8 + 0.1
+
+    // Override position on the hit face axis to be at face + 0.1 offset outward
+    switch (face) {
+      case 0: py = worldY - 0.1; break
+      case 1: py = worldY + 1.0 + 0.1; break
+      case 2: pz = worldZ - 0.1; break
+      case 3: pz = worldZ + 1.0 + 0.1; break
+      case 4: px = worldX - 0.1; break
+      case 5: px = worldX + 1.0 + 0.1; break
+    }
+
+    // Small random velocity, heavily damped
+    const xd = (Math.random() * 2 - 1) * 0.4 * 0.2
+    const yd = (Math.random() * 2 - 1) * 0.4 * 0.2 + 0.1 * 0.2
+    const zd = (Math.random() * 2 - 1) * 0.4 * 0.2
+
+    const maxAge = Math.floor(4 / (Math.random() * 0.9 + 0.1))
+
+    this.createParticle(px, py, pz, xd, yd, zd, maxAge, texInfo, floorMap, worldX, worldZ, 0.6)
+  }
+
   private createParticle(
     px: number, py: number, pz: number,
     xd: number, yd: number, zd: number,
     maxAge: number,
     texInfo: { u: number; v: number; su: number; sv: number },
     floorMap: number[],
-    blockX: number, blockZ: number
+    blockX: number, blockZ: number,
+    scaleFactor = 1.0
   ): void {
     this.ensureMaterial()
 
@@ -197,7 +229,7 @@ export class BlockBreakParticlesModule implements RendererModuleController {
     particle.blockX = Math.floor(blockX)
     particle.blockZ = Math.floor(blockZ)
 
-    const scale = 0.1 * (0.5 + Math.random() * 0.5) * 2
+    const scale = 0.1 * (0.5 + Math.random() * 0.5) * 2 * scaleFactor
     particle.mesh.scale.set(scale, scale, scale)
     particle.mesh.position.set(px, py, pz)
     particle.mesh.visible = true
