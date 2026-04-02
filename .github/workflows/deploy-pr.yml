@@ -48,6 +48,7 @@ jobs:
 
       - name: Update npm and enable Corepack
         run: |
+          npm install -g npm@~11.10.0
           npm install -g npm@latest
           corepack enable
 
