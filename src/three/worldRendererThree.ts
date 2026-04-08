@@ -34,8 +34,10 @@ import { FireworksManager } from './fireworks'
 import { SceneOrigin } from './sceneOrigin'
 import { downloadWorldGeometry } from './worldGeometryExport'
 import { WorldBlockGeometry } from './worldBlockGeometry'
-import type { RendererModuleManifest, RegisteredModule, RendererModuleController } from './rendererModuleSystem'
+import type { RendererModuleManifest, RegisteredModule, RendererModuleController, ModuleInfo } from './rendererModuleSystem'
+import { configStateToForceState, forceStateToConfigState } from './rendererModuleSystem'
 import { BUILTIN_MODULES } from './modules/index'
+import { DebugModulesPanel } from './debugModulesPanel'
 
 type SectionKey = string
 
@@ -84,6 +86,8 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
   // Module system
   private modules = {} as Record<string, RegisteredModule>
+  debugModulesPanel: DebugModulesPanel
+  onModuleForceStateChange: ((moduleId: string, forceState: boolean | null) => void) | null = null
   sectionsOffsetsAnimations = {} as {
     [chunkKey: string]: {
       time: number,
@@ -193,6 +197,11 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     // Initialize modules
     this.initializeModules()
+
+    this.debugModulesPanel = new DebugModulesPanel(
+      () => this.getModulesInfo(),
+      (moduleId, forceState) => this.setModuleForceState(moduleId, forceState)
+    )
   }
 
   /**
@@ -335,6 +344,45 @@ export class WorldRendererThree extends WorldRendererCommon {
    */
   getModule<T = any>(moduleId: string): T | undefined {
     return this.modules[moduleId]?.controller as T | undefined
+  }
+
+  getModulesInfo(): ModuleInfo[] {
+    const { moduleStates } = this.worldRendererConfig
+    return Object.entries(this.modules).map(([id, module]) => ({
+      id,
+      enabled: module.enabled,
+      configState: (moduleStates[id] ?? 'auto') as 'enabled' | 'disabled' | 'auto',
+      forceState: configStateToForceState(moduleStates[id]),
+      enabledDefault: module.manifest.enabledDefault ?? false,
+      cannotBeDisabled: module.manifest.cannotBeDisabled ?? false,
+    }))
+  }
+
+  setModuleForceState(moduleId: string, forceState: boolean | null): void {
+    const module = this.modules[moduleId]
+    if (!module) {
+      console.warn(`Module ${moduleId} not found`)
+      return
+    }
+    if (forceState === false && module.manifest.cannotBeDisabled) {
+      console.warn(`Module ${moduleId} cannot be disabled`)
+      return
+    }
+    this.worldRendererConfig.moduleStates[moduleId] = forceStateToConfigState(forceState)
+    this.updateModulesFromConfig()
+    this.onModuleForceStateChange?.(moduleId, forceState)
+  }
+
+  showDebugModulesPanel(): void {
+    this.debugModulesPanel.show()
+  }
+
+  hideDebugModulesPanel(): void {
+    this.debugModulesPanel.hide()
+  }
+
+  toggleDebugModulesPanel(): void {
+    this.debugModulesPanel.toggle()
   }
 
   protected override anyModuleRequiresHeightmap(): boolean {
@@ -1308,6 +1356,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   destroy(): void {
+    this.debugModulesPanel.dispose()
     this.disposeModules()
     this.fireworksLegacy.destroy()
     super.destroy()
