@@ -76,6 +76,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   enableChunksLoadDelay = false
   texturesVersion?: string
   viewDistance = -1
+  onRenderDistanceChanged?: (viewDistance: number) => void
   chunksLength = 0
   allChunksFinished = false
   messageQueue: any[] = []
@@ -812,6 +813,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.viewDistance = d
       this.chunksLength = d === 0 ? 1 : generateSpiralMatrix(d).length
       this.allChunksFinished = Object.keys(this.finishedChunks).length === this.chunksLength
+      this.onRenderDistanceChanged?.(d)
     })
 
     worldEmitter.on('markAsLoaded', ({ x, z }) => {

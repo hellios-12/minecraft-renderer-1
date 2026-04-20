@@ -146,6 +146,9 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     // Initialize chunk mesh manager
     this.chunkMeshManager = new ChunkMeshManager(this, this.scene, this.material, this.worldSizeParams.worldHeight, this.viewDistance)
+    this.onRenderDistanceChanged = (viewDistance) => {
+      this.chunkMeshManager.updateViewDistance(viewDistance)
+    }
 
     this.cursorBlock = new CursorBlock(this)
     this.holdingBlock = createHoldingBlock(this)
@@ -1123,6 +1126,9 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
     const end = performance.now()
     const totalTime = end - start
+    if (this.worldRendererConfig.autoLowerRenderDistance) {
+      this.chunkMeshManager.recordRenderTime(totalTime)
+    }
     this.renderTimeAvgCount++
     this.renderTimeAvg = ((this.renderTimeAvg * (this.renderTimeAvgCount - 1)) + totalTime) / this.renderTimeAvgCount
     this.renderTimeMax = Math.max(this.renderTimeMax, totalTime)
