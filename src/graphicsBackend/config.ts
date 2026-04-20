@@ -32,6 +32,8 @@ export const defaultWorldRendererConfig = {
   // Rendering engine settings
   dayCycle: true,
   smoothLighting: true,
+  shadingTheme: 'high-contrast' as 'high-contrast' | 'vanilla',
+  cardinalLight: 'default' as 'default' | 'nether',
   enableLighting: true,
   starfield: true,
   defaultSkybox: true,

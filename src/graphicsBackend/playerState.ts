@@ -15,6 +15,7 @@ export const getInitialPlayerState = (): PlayerStateReactive => proxy({
   backgroundColor: [0, 0, 0] as [number, number, number],
   ambientLight: 0,
   directionalLight: 0,
+  cardinalLight: 'default',
   eyeHeight: 0,
   gameMode: undefined,
   lookingAtBlock: undefined,

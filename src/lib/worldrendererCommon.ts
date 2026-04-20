@@ -122,6 +122,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   soundSystem: SoundSystem | undefined
 
   abstract changeBackgroundColor(color: [number, number, number]): void
+  abstract changeCardinalLight(cardinalLight: string): void
 
   /** Override in subclass to check if any enabled module requires heightmap data */
   protected anyModuleRequiresHeightmap(): boolean {
@@ -307,6 +308,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   watchReactivePlayerState() {
     this.onReactivePlayerStateUpdated('backgroundColor', (value) => {
       this.changeBackgroundColor(value)
+    })
+    this.onReactivePlayerStateUpdated('cardinalLight', (value) => {
+      this.changeCardinalLight(value)
     })
   }
 
@@ -547,6 +551,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       enableLighting: this.worldRendererConfig.enableLighting,
       skyLight,
       smoothLighting: this.worldRendererConfig.smoothLighting,
+      shadingTheme: this.worldRendererConfig.shadingTheme,
+      cardinalLight: this.worldRendererConfig.cardinalLight,
       outputFormat: this.outputFormat,
       // textureSize: this.resourcesManager.currentResources!.blocksAtlasParser.atlas.latest.width,
       debugModelVariant: this.worldRendererConfig.debugModelVariant,

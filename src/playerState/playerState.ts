@@ -9,6 +9,7 @@ export const getInitialPlayerState = () => proxy({
   backgroundColor: [0, 0, 0] as [number, number, number],
   ambientLight: 0,
   directionalLight: 0,
+  cardinalLight: 'default' as 'default' | 'nether',
   eyeHeight: 0,
   gameMode: undefined as GameMode | undefined,
   lookingAtBlock: undefined as {

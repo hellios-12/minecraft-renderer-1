@@ -22,7 +22,7 @@ export class WorldBlockGeometry {
   constructor(
     private readonly worldRenderer: WorldRendererThree,
     private readonly scene: THREE.Scene,
-    private readonly material: THREE.MeshLambertMaterial,
+    private readonly material: THREE.MeshBasicMaterial,
     private readonly displayOptions: any
   ) { }
 

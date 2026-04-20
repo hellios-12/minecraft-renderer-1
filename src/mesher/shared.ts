@@ -11,6 +11,8 @@ export const defaultMesherConfig = {
   enableLighting: true,
   skyLight: 15,
   smoothLighting: false,
+  shadingTheme: 'high-contrast' as 'high-contrast' | 'vanilla',
+  cardinalLight: 'default' as 'default' | 'nether',
   outputFormat: 'threeJs' as 'threeJs' | 'webgpu',
   // textureSize: 1024, // for testing
   debugModelVariant: undefined as undefined | number[],
