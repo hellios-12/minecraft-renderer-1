@@ -18,7 +18,7 @@ export const defaultWorldRendererConfig = {
 
   // Debug settings
   showChunkBorders: false,
-  enableDebugOverlay: false,
+  enableDebugOverlay: true,
   debugModelVariant: undefined as undefined | number[],
   futuristicReveal: false,
 
@@ -28,6 +28,7 @@ export const defaultWorldRendererConfig = {
   addChunksBatchWaitTime: 200,
   _experimentalSmoothChunkLoading: true,
   _renderByChunks: false,
+  autoLowerRenderDistance: false,
 
   // Rendering engine settings
   dayCycle: true,
