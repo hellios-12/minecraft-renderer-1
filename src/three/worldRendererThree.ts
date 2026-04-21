@@ -748,7 +748,11 @@ export class WorldRendererThree extends WorldRendererCommon {
   handleWorkerMessage(data: { geometry: MesherGeometryOutput, key, type }): void {
     if (data.type === 'geometry') {
       const chunkCoords = data.key.split(',')
-      if (!this.loadedChunks[chunkCoords[0] + ',' + chunkCoords[2]] || !data.geometry.positions.length || !this.active) return
+      if (!this.loadedChunks[chunkCoords[0] + ',' + chunkCoords[2]] || !this.active) return
+      if (!data.geometry.positions.length) {
+        this.chunkMeshManager.releaseSection(data.key)
+        return
+      }
       this.chunkMeshManager.updateSection(data.key, data.geometry)
       this.updatePosDataChunk(data.key)
     }
