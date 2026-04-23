@@ -1170,10 +1170,11 @@ export class WorldRendererThree extends WorldRendererCommon {
         object.visible = isVisible
       }
     } else {
-      for (const object of Object.values(this.sectionObjects)) {
-        if (object._waitingForChunkDisplay) continue
-        object.visible = true
-      }
+      // No debug visibility override active — defer to the manager so the
+      // performance-based override distance (set by `recordRenderTime` /
+      // `autoLowerRenderDistance`) is honored, instead of force-showing every
+      // section every frame and clobbering it.
+      this.chunkMeshManager.updateSectionsVisibility()
     }
   }
 

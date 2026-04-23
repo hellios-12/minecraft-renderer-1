@@ -190,6 +190,11 @@ export class ChunkMeshManager {
     // Stamp the section key so modules (e.g. sciFiWorldReveal) can resolve
     // mesh -> section without falling back to sceneOrigin world-position math.
     ;(sectionObject as any).sectionKey = sectionKey
+    // Tag the group so `WorldRendererThree.getThirdPersonCamera` raycast can
+    // still find chunk meshes — the old `WorldBlockGeometry` set this name
+    // unconditionally; the pooling port lost that and only the border-helper
+    // path used to restore it.
+    sectionObject.name = 'chunk'
 
     try {
       // Add signs container
@@ -333,7 +338,14 @@ export class ChunkMeshManager {
       // — `removeAndUntrackAll` above only walks `sectionObject` descendants.
       if (sectionObject.boxHelper) {
         this.worldRenderer.sceneOrigin.removeAndUntrack(sectionObject.boxHelper)
+        this.scene.remove(sectionObject.boxHelper)
         sectionObject.boxHelper.geometry.dispose()
+        const helperMat = sectionObject.boxHelper.material as THREE.Material | THREE.Material[]
+        if (Array.isArray(helperMat)) {
+          for (const m of helperMat) m.dispose()
+        } else {
+          helperMat.dispose()
+        }
         sectionObject.boxHelper = undefined
       }
       delete this.sectionObjects[sectionKey]
@@ -583,6 +595,7 @@ export class ChunkMeshManager {
 
     this.meshPool.length = 0
     this.activeSections.clear()
+    this.chunkBoxMaterial.dispose()
   }
 
   // Private helper methods
