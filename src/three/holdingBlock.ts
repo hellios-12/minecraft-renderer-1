@@ -1,6 +1,5 @@
 import * as THREE from 'three'
 import * as tweenJs from '@tweenjs/tween.js'
-import PrismarineItem from 'prismarine-item'
 import { WorldBlockProvider } from 'mc-assets/dist/worldBlockProvider'
 import { BlockModel } from 'mc-assets'
 import { DebugGui } from '../lib/DebugGui'
@@ -16,8 +15,14 @@ import { getThreeBlockModelGroup } from '../mesher/standaloneRenderer'
 import { IndexedData } from 'minecraft-data'
 import { WorldRendererConfig } from '../graphicsBackend'
 import { computeCameraBob, type CameraBobInput } from '../lib/cameraBobbing'
+import { getFirstPersonItemSpecificProps, getHandItemRenderKey } from './holdingBlockItemIdentity'
 
 const _tempMat = new THREE.Matrix4()
+const wrapPi = (a: number) => {
+  a = (a + Math.PI) % (Math.PI * 2)
+  if (a < 0) a += Math.PI * 2
+  return a - Math.PI
+}
 
 // Vanilla renderPlayerArm transform chain
 function buildBareHandMatrix(swingProgress: number, equipProgress: number): THREE.Matrix4 {
@@ -93,6 +98,7 @@ export default class HoldingBlock implements IHoldingBlock {
   equipProgress = 0 // 0 = fully visible, 1 = hidden
   stopUpdate = false
   lastHeldItem: HandItemBlock | undefined
+  lastHeldItemRenderKey: string | undefined
   currentDisplayType: 'hand' | 'item' | 'block' = 'hand'
   isSwinging = false
   nextIterStopCallbacks: Array<() => void> | undefined
@@ -115,6 +121,7 @@ export default class HoldingBlock implements IHoldingBlock {
 
   constructor(public worldRenderer: WorldRendererThree, public offHand = false) {
     this.initCameraGroup()
+    this.swingAnimator = new HandSwingAnimator()
     this.unsubs.push(
       this.worldRenderer.onReactivePlayerStateUpdated('heldItemMain', () => {
         if (!this.offHand) {
@@ -331,44 +338,32 @@ export default class HoldingBlock implements IHoldingBlock {
   }
 
   isDifferentItem(block: HandItemBlock | undefined) {
-    const Item = PrismarineItem(this.worldRenderer.version)
-    if (!this.lastHeldItem) {
-      return true
-    }
-    if (this.lastHeldItem.name !== block?.name) {
-      return true
-    }
-    // eslint-disable-next-line sonarjs/prefer-single-boolean-return
-    if (!Item.equal(this.lastHeldItem.fullItem, block?.fullItem ?? {}) || JSON.stringify(this.lastHeldItem.fullItem.components) !== JSON.stringify(block?.fullItem?.components)) {
-      return true
-    }
-
-    return false
+    return this.lastHeldItemRenderKey !== getHandItemRenderKey(this.worldRenderer, block)
   }
 
   updateCameraGroup() {
     if (this.stopUpdate) return
     const { camera } = this
 
-    // Hand rotation momentum (xBob/yBob) — vanilla Minecraft inertia effect
-    // Use base rotation from CameraShake (actual player view angles)
     const now = performance.now()
     const baseRotation = this.worldRenderer.cameraShake.getBaseRotation()
     const actualPitch = baseRotation.pitch
     const actualYaw = baseRotation.yaw
+
     if (this.lastBobUpdateTime === 0) {
       this.xBob = actualPitch
       this.yBob = actualYaw
-      this.lastBobUpdateTime = now
     } else {
       const dt = Math.min((now - this.lastBobUpdateTime) / 1000, 0.1)
-      this.lastBobUpdateTime = now
-      const factor = 1 - Math.pow(0.5, dt * 20)
-      this.xBob += (actualPitch - this.xBob) * factor
-      this.yBob += (actualYaw - this.yBob) * factor
+      const pitchFactor = 1 - Math.pow(0.5, dt * 28)
+      const yawFactor = 1 - Math.pow(0.5, dt * 36)
+      this.xBob += (actualPitch - this.xBob) * pitchFactor
+      this.yBob += wrapPi(actualYaw - this.yBob) * yawFactor
     }
-    const pitchOffset = (actualPitch - this.xBob) * -0.1
-    const yawOffset = (actualYaw - this.yBob) * -0.1
+
+    this.lastBobUpdateTime = now
+    const pitchOffset = (actualPitch - this.xBob) * -0.05
+    const yawOffset = wrapPi(actualYaw - this.yBob) * -0.035
 
     this.cameraGroup.position.copy(camera.position)
     this.cameraGroup.rotation.copy(camera.rotation)
@@ -430,11 +425,7 @@ export default class HoldingBlock implements IHoldingBlock {
       const result = this.worldRenderer.entities.getItemMesh({
         ...handItem.fullItem,
         itemId: handItem.id,
-      }, {
-        'minecraft:display_context': 'firstperson',
-        'minecraft:use_duration': this.worldRenderer.playerStateReactive.itemUsageTicks,
-        'minecraft:using_item': !!this.worldRenderer.playerStateReactive.itemUsageTicks,
-      }, false, this.lastItemModelName)
+      }, getFirstPersonItemSpecificProps(this.worldRenderer), false, this.lastItemModelName)
       if (result) {
         const { mesh: itemMesh, isBlock, modelName } = result
         if (isBlock) {
@@ -486,8 +477,11 @@ export default class HoldingBlock implements IHoldingBlock {
       this.holdingBlock?.removeFromParent()
       this.holdingBlock = undefined
       this.currentDisplayType = 'hand'
-      this.swingAnimator?.stopSwing()
-      this.swingAnimator = undefined
+      const swingAnimator = this.swingAnimator
+      swingAnimator?.stopSwing()
+      if (swingAnimator) {
+        swingAnimator.type = 'hand'
+      }
       this.idleAnimator = undefined
       return
     }
@@ -515,10 +509,14 @@ export default class HoldingBlock implements IHoldingBlock {
 
   switchRequest = 0
   async setNewItem(handItem?: HandItemBlock) {
-    if (!this.isDifferentItem(handItem)) return
+    const nextRenderKey = getHandItemRenderKey(this.worldRenderer, handItem)
+    const itemChanged = this.lastHeldItemRenderKey !== nextRenderKey
+    this.lastHeldItem = handItem
+    if (!itemChanged) return
+
+    this.lastHeldItemRenderKey = nextRenderKey
     this.lastItemModelName = undefined
     const switchRequest = ++this.switchRequest
-    this.lastHeldItem = handItem
 
     let playAppearAnimation = false
     if (this.holdingBlock) {
@@ -534,7 +532,11 @@ export default class HoldingBlock implements IHoldingBlock {
 
     if (!handItem) {
       this.currentDisplayType = 'hand'
-      this.swingAnimator = undefined
+      const swingAnimator = this.swingAnimator
+      swingAnimator?.stopSwing()
+      if (swingAnimator) {
+        swingAnimator.type = 'hand'
+      }
       this.idleAnimator = undefined
       this.blockSwapAnimation = undefined
       return
@@ -552,8 +554,10 @@ export default class HoldingBlock implements IHoldingBlock {
       await this.playBlockSwapAnimation('appeared')
     }
 
-    this.swingAnimator = new HandSwingAnimator()
-    this.swingAnimator.type = result.type
+    const swingAnimator = this.swingAnimator
+    if (swingAnimator) {
+      swingAnimator.type = result.type
+    }
     // Idle animation disabled — walking bob is handled by vanilla bobView applied to cameraGroup
     this.idleAnimator = undefined
   }
