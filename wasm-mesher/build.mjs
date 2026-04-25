@@ -15,11 +15,11 @@ const common = {
 build({
     ...common,
     entryPoints: [path.join(import.meta.dirname, './test-chunk.ts')],
-    outfile: path.join(import.meta.dirname, './wasm-mesher.cjs'),
+    outfile: path.join(import.meta.dirname, './test-chunk.cjs'),
 })
 
 build({
     ...common,
     entryPoints: [path.join(import.meta.dirname, './test-section-boundary.ts')],
-    outfile: path.join(import.meta.dirname, './wasm-mesher-boundary.cjs'),
+    outfile: path.join(import.meta.dirname, './test-section-boundary.cjs'),
 })
