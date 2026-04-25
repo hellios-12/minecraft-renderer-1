@@ -2,7 +2,7 @@ import { Vec3 } from 'vec3'
 import { World } from './world'
 import { getSectionGeometry, setBlockStatesData as setMesherData } from './models'
 import { BlockStateModelInfo } from './shared'
-import { INVISIBLE_BLOCKS } from './worldConstants'
+import { handleGetHeightmap } from './computeHeightmap'
 
 globalThis.structuredClone ??= (value) => JSON.parse(JSON.stringify(value))
 
@@ -152,26 +152,8 @@ const handleMessage = data => {
       break
     }
     case 'getHeightmap': {
-      const heightmap = new Int16Array(256)
-
-      const blockPos = new Vec3(0, 0, 0)
-      for (let z = 0; z < 16; z++) {
-        for (let x = 0; x < 16; x++) {
-          const blockX = x + data.x
-          const blockZ = z + data.z
-          blockPos.x = blockX
-          blockPos.z = blockZ
-          blockPos.y = world.config.worldMaxY
-          let block = world.getBlock(blockPos)
-          while (block && INVISIBLE_BLOCKS.has(block.name) && blockPos.y > world.config.worldMinY) {
-            blockPos.y -= 1
-            block = world.getBlock(blockPos)
-          }
-          const index = z * 16 + x
-          heightmap[index] = block ? blockPos.y : -32768
-        }
-      }
-      postMessage({ type: 'heightmap', key: `${Math.floor(data.x / 16)},${Math.floor(data.z / 16)}`, heightmap })
+      const { key, heightmap } = handleGetHeightmap(world, data.x, data.z)
+      postMessage({ type: 'heightmap', key, heightmap })
 
       break
     }

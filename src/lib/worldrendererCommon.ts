@@ -90,6 +90,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   workersProcessAverageTime = 0
   workersProcessAverageTimeCount = 0
   maxWorkersProcessTime = 0
+  workersPreAverageTime = 0
+  workersWasmAverageTime = 0
+  workersPostAverageTime = 0
+  workersPhaseSampleCount = 0
+  private static readonly PHASE_PERF_LOG_INTERVAL = 64
   geometryReceiveCount = {} as Record<number, number>
   allLoadedIn: undefined | number
   onWorldSwitched = [] as Array<() => void>
@@ -440,6 +445,21 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.workersProcessAverageTimeCount++
         this.workersProcessAverageTime = ((this.workersProcessAverageTime * (this.workersProcessAverageTimeCount - 1)) + data.processTime) / this.workersProcessAverageTimeCount
         this.maxWorkersProcessTime = Math.max(this.maxWorkersProcessTime, data.processTime)
+      }
+      if (typeof data.pre === 'number' && typeof data.wasm === 'number' && typeof data.post === 'number'
+          && (data.pre > 0 || data.wasm > 0 || data.post > 0)) {
+        const n = ++this.workersPhaseSampleCount
+        this.workersPreAverageTime = ((this.workersPreAverageTime * (n - 1)) + data.pre) / n
+        this.workersWasmAverageTime = ((this.workersWasmAverageTime * (n - 1)) + data.wasm) / n
+        this.workersPostAverageTime = ((this.workersPostAverageTime * (n - 1)) + data.post) / n
+        if (this.worldRendererConfig.debugWasmPerf && n % WorldRendererCommon.PHASE_PERF_LOG_INTERVAL === 0) {
+          const total = this.workersPreAverageTime + this.workersWasmAverageTime + this.workersPostAverageTime
+          const prePct = total > 0 ? (this.workersPreAverageTime / total) * 100 : 0
+          const wasmPct = total > 0 ? (this.workersWasmAverageTime / total) * 100 : 0
+          const postPct = total > 0 ? (this.workersPostAverageTime / total) * 100 : 0
+          // eslint-disable-next-line no-console
+          console.log(`[wasm-mesher perf] n=${n} pre=${this.workersPreAverageTime.toFixed(2)}ms (${prePct.toFixed(1)}%) wasm=${this.workersWasmAverageTime.toFixed(2)}ms (${wasmPct.toFixed(1)}%) post=${this.workersPostAverageTime.toFixed(2)}ms (${postPct.toFixed(1)}%)`)
+        }
       }
     }
 

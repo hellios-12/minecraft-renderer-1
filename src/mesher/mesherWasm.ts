@@ -4,6 +4,7 @@ import { renderWasmOutputToGeometry } from '../wasm-lib/render-from-wasm'
 import { setBlockStatesData as setMesherData } from './models'
 import { defaultMesherConfig, type MesherGeometryOutput, IS_FULL_WORLD_SECTION, SECTION_HEIGHT } from './shared'
 import { worldColumnKey, World } from './world'
+import { handleGetHeightmap } from './computeHeightmap'
 
 let wasm: typeof import('../../wasm/wasm_mesher.js') | null = null
 let wasmInitialized = false
@@ -165,8 +166,14 @@ const handleMessage = async (data: any) => {
       allDataReady = false
       break
     }
-    // Note: getCustomBlockModel and getHeightmap not implemented in WASM version
-    // as they require World class functionality
+    case 'getHeightmap': {
+      const { key, heightmap } = handleGetHeightmap(world, data.x, data.z)
+      postMessage({ type: 'heightmap', key, heightmap }, [heightmap.buffer])
+
+      break
+    }
+    // Note: getCustomBlockModel not implemented in WASM version
+    // as it requires World class functionality
   }
 }
 
@@ -225,8 +232,12 @@ setInterval(async () => {
     const chunk = world.getColumn(x, z)
 
     let processTime = 0
+    let prePhase = 0
+    let wasmPhase = 0
+    let postPhase = 0
     if (chunk?.getSection(new Vec3(x, y, z)) && wasm) {
       const start = performance.now()
+      const t0 = start
 
       try {
         // Convert chunk to WASM format (always recompute since section is dirty)
@@ -267,8 +278,10 @@ setInterval(async () => {
         } = conversions[0]
 
         let wasmResult
+        let t1: number
         if (chunkCount === 1 || !(wasm as any).generate_geometry_multi) {
           const { blockStates, blockLight, skyLight, biomesArray } = conversions[0]
+          t1 = performance.now()
           wasmResult = wasm.generate_geometry(
             x, y, z, sectionHeight,
             worldMinY, worldMaxY,
@@ -298,6 +311,7 @@ setInterval(async () => {
             biomesAll.set(c.biomesArray, perChunkLen * i)
           }
 
+          t1 = performance.now()
           wasmResult = (wasm as any).generate_geometry_multi(
             x, y, z, sectionHeight,
             worldMinY, worldMaxY,
@@ -311,13 +325,10 @@ setInterval(async () => {
           )
         }
 
-        // Post heightmap derived from WASM's block iteration — replaces the getHeightmap request
-        if (wasmResult.heightmap?.length === 256) {
-          const heightmapData = new Int16Array(wasmResult.heightmap)
-          const chunkKey = `${x / 16},${z / 16}`
-          postMessage({ type: 'heightmap', key: chunkKey, heightmap: heightmapData }, [heightmapData.buffer])
-        }
+        // Heightmap is now produced by the dedicated 'getHeightmap' handler (full-column,
+        // parity with JS mesher). Per-section heightmaps from WASM are intentionally ignored.
 
+        const t2 = performance.now()
 
         // Convert WASM output to MesherGeometryOutput format
         const sectionKeyStr = worldColumnKey(x, z)
@@ -374,6 +385,10 @@ setInterval(async () => {
         ].filter(Boolean)
 
         postMessage({ type: 'geometry', key, geometry, workerIndex }, transferable)
+        const t3 = performance.now()
+        prePhase = t1 - t0
+        wasmPhase = t2 - t1
+        postPhase = t3 - t2
         processTime = performance.now() - start
       } catch (err) {
         console.error(`[WASM Mesher] Error processing section ${key}:`, err)
@@ -411,8 +426,11 @@ setInterval(async () => {
     const dirtyTimes = dirtySections.get(key)
     if (!dirtyTimes) throw new Error('dirtySections.get(key) is falsy')
     for (let i = 0; i < dirtyTimes; i++) {
-      postMessage({ type: 'sectionFinished', key, workerIndex, processTime })
+      postMessage({ type: 'sectionFinished', key, workerIndex, processTime, pre: prePhase, wasm: wasmPhase, post: postPhase })
       processTime = 0
+      prePhase = 0
+      wasmPhase = 0
+      postPhase = 0
     }
     dirtySections.delete(key)
   }

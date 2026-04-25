@@ -914,11 +914,11 @@ export function renderWasmOutputToGeometry(
     },
   }
 
-  console.log(`[WASM] Final geometry summary:`)
-  console.log(`[WASM]   Total vertices: ${positions.length / 3}`)
-  console.log(`[WASM]   Total triangles: ${indices.length / 3}`)
-  console.log(`[WASM]   Positions: [${positions.slice(0, 12).join(',')}...] (first 4 vertices)`)
-  console.log(`[WASM]   Indices: [${indices.slice(0, 12).join(',')}...] (first 2 faces)`)
+  log(`[WASM] Final geometry summary:`)
+  log(`[WASM]   Total vertices: ${positions.length / 3}`)
+  log(`[WASM]   Total triangles: ${indices.length / 3}`)
+  log(`[WASM]   Positions: [${positions.slice(0, 12).join(',')}...] (first 4 vertices)`)
+  log(`[WASM]   Indices: [${indices.slice(0, 12).join(',')}...] (first 2 faces)`)
 
   return result
 }
