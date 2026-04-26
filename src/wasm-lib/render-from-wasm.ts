@@ -63,6 +63,7 @@ interface CachedBlockModel {
   blockProps: Record<string, any>
   models: any // BlockModelPartsResolved
   isCube: boolean
+  boundingBox: string
   // Precomputed per-model variant
   modelVariants: Array<{
     model: any
@@ -180,6 +181,7 @@ function getCachedBlockModel(
       models,
       modelVariants,
       isCube,
+      boundingBox: blockObj.boundingBox,
     }
 
     cache.set(cacheKey, cached)
@@ -696,6 +698,11 @@ export function renderWasmOutputToGeometry(
         globalShift = vecsub3(globalShift, matmul3(globalMatrix, globalShift))
       }
 
+      // Mirror JS mesher: doAO = model.ao ?? block.boundingBox !== 'empty'.
+      // When false, faces are emitted full-bright without AO/light sampling and without
+      // triangle-flip reordering (matches JS `light = 1` and standard winding).
+      const doAO = (model as any).ao ?? cachedModel.boundingBox !== 'empty'
+
       for (const element of model.elements ?? []) {
         let localMatrix = null as any
         let localShift = null as any
@@ -790,8 +797,13 @@ export function renderWasmOutputToGeometry(
 
             let ao = 3
             let cornerLightResult = 15
+            let light: number
 
-            if (useModelLighting) {
+            if (!doAO) {
+              // JS parity: skip AO/light sampling, emit full-bright vertex.
+              computedAoValues[cornerIdx] = 3
+              light = 1
+            } else if (useModelLighting) {
               const cursor = new Vec3(bx, by, bz)
 
               const dx = pos[0] * 2 - 1
@@ -852,9 +864,11 @@ export function renderWasmOutputToGeometry(
               cornerLightResult = baseLight * 15
             }
 
-            const light = (ao + 1) / 4 * (cornerLightResult / 15)
+            if (doAO) {
+              light = (ao + 1) / 4 * (cornerLightResult / 15)
+            }
 
-            colors.push(tint[0] * light, tint[1] * light, tint[2] * light)
+            colors.push(tint[0] * light!, tint[1] * light!, tint[2] * light!)
 
             const baseu = (pos[3] - 0.5) * uvcs - (pos[4] - 0.5) * uvsn + 0.5
             const basev = (pos[3] - 0.5) * uvsn + (pos[4] - 0.5) * uvcs + 0.5
@@ -868,7 +882,7 @@ export function renderWasmOutputToGeometry(
           const aoValues = computedAoValues
 
           let tri1: number[], tri2: number[]
-          if (aoValues[0] + aoValues[3] >= aoValues[1] + aoValues[2]) {
+          if (doAO && aoValues[0] + aoValues[3] >= aoValues[1] + aoValues[2]) {
             tri1 = [baseIndex, baseIndex + 3, baseIndex + 2]
             tri2 = [baseIndex, baseIndex + 1, baseIndex + 3]
           } else {
