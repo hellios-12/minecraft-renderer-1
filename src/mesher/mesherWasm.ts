@@ -344,7 +344,7 @@ function processColumnTick() {
     const { x, z, sections } = group
     const targetChunk = world.getColumn(x, z)
 
-    let exportedMap: Map<string, import('../three/worldGeometryExport').ExportedSection> | null = null
+    let exportedMap: Map<string, { exported: import('../three/worldGeometryExport').ExportedSection, blocksCount: number }> | null = null
     let processTime = 0
     let prePhase = 0
     let wasmPhase = 0
@@ -357,9 +357,17 @@ function processColumnTick() {
     let preCacheHits = 0
     let preCacheMisses = 0
     let hadError = false
+    // Outer-scope timestamps so we can finalize `processTime` and
+    // `postPhase` AFTER the per-section emit loop runs (the loop builds
+    // typed arrays, walks block-entity metadata, and calls postMessage —
+    // all of which are part of the worker's real cost and must be
+    // attributed to the column).
+    let columnStart = 0
+    let postStart = 0
 
     if (targetChunk && wasm) {
-      const start = performance.now()
+      columnStart = performance.now()
+      const start = columnStart
       const t0 = start
       try {
         const chunksToUse = collectChunksForColumn(x, z)
@@ -459,6 +467,7 @@ function processColumnTick() {
         }
 
         const t2 = performance.now()
+        postStart = t2
 
         // Split full-column output back into per-section ExportedSection
         // entries — only for the section keys the main thread actually
@@ -472,12 +481,12 @@ function processColumnTick() {
           { version, world, sectionHeight }
         )
 
-        const t3 = performance.now()
         prePhase = t1 - t0
         wasmPhase = t2 - t1
-        postPhase = t3 - t2
         preOther = Math.max(0, prePhase - (preTargetConvert + preNeighborConvert + preTypedArrayBuild))
-        processTime = performance.now() - start
+        // NOTE: `postPhase` and `processTime` are finalized AFTER the
+        // per-section emit loop below — see the `Finalize column phase
+        // numbers` block.
       } catch (err) {
         console.error(`[WASM Mesher] Error processing column ${x},${z}:`, err)
         hadError = true
@@ -489,55 +498,26 @@ function processColumnTick() {
     // the first requested section (others get zeros) so totals don't
     // double-count.
     //
-    // Coherent chunk appearance:
-    // We do NOT need a dedicated `columnFinished` worker message or a
-    // `columnGroupId` field on geometry messages. The existing display
-    // contract already produces a coherent per-column reveal when the
-    // user enables the "Batch Chunks Display" (`_renderByChunks`) option:
-    //
-    //   1. ChunkMeshManager.addSectionMesh
-    //      (src/three/chunkMeshManager.ts ~L266) — when `_renderByChunks`
-    //      is on AND `worldRenderer.finishedChunks[chunkKey]` is false,
-    //      the freshly created section object is set to
-    //      `visible = false` and pushed onto
-    //      `waitingChunksToDisplay[chunkKey]`.
-    //
-    //   2. WorldRendererCommon.handleMessage (sectionFinished branch,
-    //      src/lib/worldrendererCommon.ts ~L385–L418) decrements
-    //      `sectionsWaiting`, marks `finishedSections[key]`, and once
-    //      every expected section key of the column is finished sets
-    //      `finishedChunks[chunkKey] = true` and emits `chunkFinished`.
-    //
-    //   3. WorldRendererThree (src/three/worldRendererThree.ts ~L204
-    //      and ~L755) listens for `chunkFinished` and calls
-    //      `chunkMeshManager.finishChunkDisplay(chunkKey)`, which flips
-    //      visibility on every queued section of that column at once.
-    //
-    // Because this column-mode loop posts a geometry + sectionFinished
-    // pair for each requested section key of the column in a single
-    // worker tick, those messages arrive back-to-back on the main thread
-    // and step (2) only flips `chunkFinished` once the LAST per-column
-    // sectionFinished is processed — at which point step (3) reveals the
-    // entire column atomically. We therefore intentionally rely on
-    // `_renderByChunks` rather than postMessage batch atomicity (which
-    // does not exist between individual messages).
-    //
-    // Implications:
-    //   - When the user has `_renderByChunks` OFF, behavior matches the
-    //     legacy per-section path: sections appear as their geometry
-    //     arrives. This is acceptable parity, not a regression.
-    //   - For block-edit re-meshes where the column was already finished
-    //     previously, ChunkMeshManager (L276) correctly bypasses
-    //     batching to avoid flicker. Column mode does not change this.
-    //   - The request tracker still gates per-section emission, so
-    //     `sectionFinished` count on the main thread is exactly the
-    //     count the main thread requested.
-    let firstEvent = true
+    // Coherent chunk appearance: column mode relies on the existing
+    // `_renderByChunks` / `chunkFinished` contract on the main thread.
+    // ChunkMeshManager batches sections per column and reveals them
+    // atomically once `WorldRendererCommon` sees the last
+    // `sectionFinished` for the column. No dedicated `columnFinished`
+    // worker message is needed.
+    // Pass 1: build geometry + postMessage for each requested section.
+    // We collect finished keys here and emit `sectionFinished` only in
+    // Pass 2 below, after `postPhase` / `processTime` have been
+    // finalized — otherwise the totals attached to the first event
+    // would miss the typed-array allocation, block-entity walk, and
+    // postMessage cost of every section in this column.
+    const finished: Array<{ key: string, count: number }> = []
     for (const s of sections) {
       const { key, x: sx, y: sy, z: sz, count } = s
 
       if (exportedMap && !hadError) {
-        const exported = exportedMap.get(key)
+        const entry = exportedMap.get(key)
+        const exported = entry?.exported
+        const sectionBlocksCount = entry?.blocksCount ?? 0
         // Block entity metadata still needs a per-section world walk
         // (signs/heads/banners), matching the legacy per-section path.
         const signs: Record<string, SignMeta> = {}
@@ -589,10 +569,12 @@ function processColumnTick() {
             signs,
             banners,
             hadErrors: false,
-            // Column-mode does not propagate per-section block_count
-            // (splitColumnWasmOutputToSections returns ExportedSection
-            // only). Set to 0; the field is informational.
-            blocksCount: 0,
+            // Per-section block bucket size from the column split. The
+            // field is informational (used by `chunkMeshManager` for the
+            // `B:` debug overlay stat) and matches the per-section path's
+            // semantics: number of blocks that contributed faces to this
+            // section's geometry.
+            blocksCount: sectionBlocksCount,
           }
           transferable = [
             geometry.positions?.buffer,
@@ -619,39 +601,42 @@ function processColumnTick() {
       // legacy behavior for sections whose chunk has been unloaded
       // mid-tick) but still emit sectionFinished below so the main
       // thread's sectionsWaiting counter unblocks.
+      finished.push({ key, count })
+    }
 
-      const pt = firstEvent ? processTime : 0
-      const pre = firstEvent ? prePhase : 0
-      const w = firstEvent ? wasmPhase : 0
-      const post = firstEvent ? postPhase : 0
-      const ptc = firstEvent ? preTargetConvert : 0
-      const pnc = firstEvent ? preNeighborConvert : 0
-      const pncn = firstEvent ? preNeighborCount : 0
-      const ptab = firstEvent ? preTypedArrayBuild : 0
-      const po = firstEvent ? preOther : 0
-      const pch = firstEvent ? preCacheHits : 0
-      const pcm = firstEvent ? preCacheMisses : 0
-      let attributed = false
+    // Finalize column phase numbers — now they include split + per-
+    // section typed-array build + block-entity walk + geometry
+    // postMessage cost.
+    if (columnStart > 0 && !hadError) {
+      const tEnd = performance.now()
+      if (postStart > 0) postPhase = tEnd - postStart
+      processTime = tEnd - columnStart
+    }
+
+    // Pass 2: emit sectionFinished events. Column-level perf metrics
+    // are attributed to the first emitted sectionFinished (others get
+    // zeros) so totals don't double-count.
+    let attributed = false
+    for (const { key, count } of finished) {
       for (let i = 0; i < count; i++) {
         emitSectionFinished({
           type: 'sectionFinished',
           key,
           workerIndex,
-          processTime: !attributed ? pt : 0,
-          pre: !attributed ? pre : 0,
-          wasm: !attributed ? w : 0,
-          post: !attributed ? post : 0,
-          preTargetConvert: !attributed ? ptc : 0,
-          preNeighborConvert: !attributed ? pnc : 0,
-          preNeighborCount: !attributed ? pncn : 0,
-          preTypedArrayBuild: !attributed ? ptab : 0,
-          preOther: !attributed ? po : 0,
-          preCacheHits: !attributed ? pch : 0,
-          preCacheMisses: !attributed ? pcm : 0,
+          processTime: !attributed ? processTime : 0,
+          pre: !attributed ? prePhase : 0,
+          wasm: !attributed ? wasmPhase : 0,
+          post: !attributed ? postPhase : 0,
+          preTargetConvert: !attributed ? preTargetConvert : 0,
+          preNeighborConvert: !attributed ? preNeighborConvert : 0,
+          preNeighborCount: !attributed ? preNeighborCount : 0,
+          preTypedArrayBuild: !attributed ? preTypedArrayBuild : 0,
+          preOther: !attributed ? preOther : 0,
+          preCacheHits: !attributed ? preCacheHits : 0,
+          preCacheMisses: !attributed ? preCacheMisses : 0,
         })
         attributed = true
       }
-      firstEvent = false
     }
   }
 }

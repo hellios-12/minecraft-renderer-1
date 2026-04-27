@@ -1015,7 +1015,7 @@ export function splitColumnWasmOutputToSections(
   fullColumnOutput: WasmGeometryOutput,
   requestedSectionKeys: Array<{ x: number, y: number, z: number }>,
   ctx: { version: string, world?: World, sectionHeight?: number }
-): Map<string, ExportedSection> {
+): Map<string, { exported: ExportedSection, blocksCount: number }> {
   const { version, world } = ctx
   const sectionHeight = ctx.sectionHeight ?? 16
 
@@ -1034,7 +1034,7 @@ export function splitColumnWasmOutputToSections(
     bucket.push(block)
   }
 
-  const out = new Map<string, ExportedSection>()
+  const out = new Map<string, { exported: ExportedSection, blocksCount: number }>()
   for (const { x, y, z } of requestedSectionKeys) {
     // `y` here is the section's world-Y origin (multiple of sectionHeight),
     // matching the convention used by `mesherWasm.ts` (section keys are
@@ -1058,7 +1058,7 @@ export function splitColumnWasmOutputToSections(
       sectionPosition,
       world
     )
-    out.set(sectionKey, exported)
+    out.set(sectionKey, { exported, blocksCount: sectionBlocks.length })
   }
 
   return out

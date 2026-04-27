@@ -101,7 +101,7 @@ test('splitColumnWasmOutputToSections: per-section split is equivalent to manual
       { x: r.x + 8, y: r.y + 8, z: r.z + 8 },
       undefined
     )
-    const got = split.get(`${r.x},${r.y},${r.z}`)!
+    const got = split.get(`${r.x},${r.y},${r.z}`)!.exported
     expect(got.key).toBe(reference.key)
     expect(got.position).toEqual(reference.position)
     expect(got.geometry.positions).toEqual(reference.geometry.positions)
@@ -111,12 +111,13 @@ test('splitColumnWasmOutputToSections: per-section split is equivalent to manual
     expect(got.geometry.indices).toEqual(reference.geometry.indices)
   }
 
-  // Empty section returns a real (non-undefined) ExportedSection with
-  // empty geometry buffers.
-  const empty = split.get('0,32,0')!
-  expect(empty).toBeDefined()
-  expect(empty.geometry.positions).toEqual([])
-  expect(empty.geometry.indices).toEqual([])
+  // Empty section returns a real (non-undefined) entry with empty geometry
+  // buffers and zero blocksCount.
+  const emptyEntry = split.get('0,32,0')!
+  expect(emptyEntry).toBeDefined()
+  expect(emptyEntry.exported.geometry.positions).toEqual([])
+  expect(emptyEntry.exported.geometry.indices).toEqual([])
+  expect(emptyEntry.blocksCount).toBe(0)
 
   // Seam preservation: the Y=15/16 sections produce non-empty geometry,
   // and crucially the y=15 section does NOT contain the (Y=15 top-face)
@@ -127,12 +128,16 @@ test('splitColumnWasmOutputToSections: per-section split is equivalent to manual
   // at the seam, each block in those sections contributes 1 horizontal
   // face + 4 side faces = 5 quads; both sections also have identical
   // block counts (256 blocks), so their vertex/index counts must match.
-  const lower = split.get('0,0,0')!
-  const upper = split.get('0,16,0')!
+  const lower = split.get('0,0,0')!.exported
+  const upper = split.get('0,16,0')!.exported
   expect(lower.geometry.positions.length).toBeGreaterThan(0)
   expect(upper.geometry.positions.length).toBeGreaterThan(0)
   expect(lower.geometry.positions.length).toBe(upper.geometry.positions.length)
   expect(lower.geometry.indices.length).toBe(upper.geometry.indices.length)
+  // blocksCount must reflect the per-section bucket size, not the column
+  // total. Both seam sections contain 256 blocks each.
+  expect(split.get('0,0,0')!.blocksCount).toBe(256)
+  expect(split.get('0,16,0')!.blocksCount).toBe(256)
 })
 
 test('splitColumnWasmOutputToSections: empty requested-keys list returns empty map', () => {
@@ -151,6 +156,7 @@ test('splitColumnWasmOutputToSections: blocks outside requested sections are dro
     { version: VERSION }
   )
   const empty = out.get('0,32,0')!
-  expect(empty.geometry.positions).toEqual([])
-  expect(empty.geometry.indices).toEqual([])
+  expect(empty.exported.geometry.positions).toEqual([])
+  expect(empty.exported.geometry.indices).toEqual([])
+  expect(empty.blocksCount).toBe(0)
 })
