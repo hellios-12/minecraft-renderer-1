@@ -176,6 +176,36 @@ const handleMessage = async (data: any) => {
         const chunkKey = `${data.x},${data.z}`
         world.customBlockModels.set(chunkKey, data.customBlockModels)
       }
+      // Safety-net heightmap push for fully empty columns. With WASM
+      // mesher as the sole path, the main thread no longer requests
+      // `getHeightmap` on chunk load — heightmaps come from
+      // `processColumnTick`. But a fully empty column (no sections, or
+      // all sections missing) never enters that path because
+      // `setSectionDirty` short-circuits when `chunk.getSection(pos)` is
+      // falsy, so `processColumnTick` never sees it. Without this push
+      // downstream consumers (e.g. `rain.ts`) would have no heightmap
+      // entry for such columns. We send a cheap sentinel-filled
+      // `Int16Array(256).fill(-32768)` — no JS heightmap scan — only when
+      // we detect zero sections; non-empty columns get their real
+      // heightmap from the next `processColumnTick`.
+      const sectionH = SECTION_HEIGHT
+      const minY = config?.worldMinY ?? 0
+      const maxY = config?.worldMaxY ?? 256
+      const column = world.getColumn(data.x, data.z)
+      let hasAnySection = false
+      for (let y = minY; y < maxY; y += sectionH) {
+        if (column?.getSection?.(new Vec3(0, y, 0))) {
+          hasAnySection = true
+          break
+        }
+      }
+      if (!hasAnySection) {
+        const emptyHeightmap = new Int16Array(256).fill(EMPTY_COLUMN_HEIGHTMAP_SENTINEL)
+        postMessage(
+          { type: 'heightmap', key: `${data.x >> 4},${data.z >> 4}`, heightmap: emptyHeightmap },
+          [emptyHeightmap.buffer]
+        )
+      }
       break
     }
     case 'unloadChunk': {
