@@ -213,6 +213,198 @@ pub fn parse_dump(buffer: &[u8], num_sections: usize, max_bits_per_block: u8, ma
     })
 }
 
+/// PoC bench helper: parses dump WITHOUT materializing block_states/biomes Vecs.
+/// Goal — isolate raw parse cost from the marshalling cost (Rust→JS Uint16Array copy
+/// + JS object construction) measured by `parse_dump`. Returns a checksum so the
+/// optimizer cannot eliminate the work.
+pub fn parse_dump_checksum(
+    buffer: &[u8],
+    num_sections: usize,
+    max_bits_per_block: u8,
+    max_bits_per_biome: u8,
+) -> io::Result<u64> {
+    let mut reader = DumpReader::new(buffer);
+    let mut checksum: u64 = 0;
+    for _s in 0..num_sections {
+        let _solid_count = reader.read_i16_be()?;
+        let block_container = parse_container(&mut reader, MAX_BITS_PER_BLOCK, max_bits_per_block)?;
+        for i in 0..BLOCK_SECTION_VOLUME {
+            checksum = checksum.wrapping_add(block_container.get(i) as u64);
+        }
+        let biome_container = parse_container(&mut reader, MAX_BITS_PER_BIOME, max_bits_per_biome)?;
+        for i in 0..BIOME_SECTION_VOLUME {
+            checksum = checksum.wrapping_add(biome_container.get(i) as u64);
+        }
+    }
+    Ok(checksum)
+}
+
+/// Parse dump into full-column layout that matches `convertChunkToWasm`:
+///   blocks/biomes use index = x + z*16 + (y - 0)*256, where y goes 0..(num_sections*16).
+///   Biomes are expanded from 4×4×4 (64 per section) to per-block (4096 per section)
+///   the same way prismarine-chunk's `getBiome(pos)` does it: `(x>>2, y>>2, z>>2)`.
+///
+/// This is the input layout that the existing JS path (`convertChunkToWasm`) hands to
+/// `generate_geometry`. Producing it directly from the dump buffer eliminates the
+/// per-block JS getter loop AND the per-section reorder step.
+pub struct FullColumnResult {
+    pub block_states: Vec<u16>, // num_sections * 4096, layout x + z*16 + y*256
+    pub biomes: Vec<u8>,        // same size, biome per block (expanded from 4x4x4)
+    pub bytes_read: usize,
+}
+
+pub fn parse_dump_full_column(
+    buffer: &[u8],
+    num_sections: usize,
+    max_bits_per_block: u8,
+    max_bits_per_biome: u8,
+) -> io::Result<FullColumnResult> {
+    let mut reader = DumpReader::new(buffer);
+    let total = num_sections * BLOCK_SECTION_VOLUME;
+    let mut block_states = vec![0u16; total];
+    let mut biomes = vec![0u8; total];
+
+    for s in 0..num_sections {
+        let _solid_count = reader.read_i16_be()?;
+        let block_container = parse_container(&mut reader, MAX_BITS_PER_BLOCK, max_bits_per_block)?;
+        // dump_parser per-section index = (y_in_section << 8) | (z << 4) | x
+        // full-column index = x + z*16 + y_abs*256, where y_abs = s*16 + y_in_section
+        let base_y_blocks = s * 16 * 256;
+        for y_in in 0..16usize {
+            let row_y = base_y_blocks + y_in * 256;
+            let src_y = y_in << 8;
+            for z in 0..16usize {
+                let row_yz = row_y + z * 16;
+                let src_yz = src_y | (z << 4);
+                for x in 0..16usize {
+                    block_states[row_yz + x] = block_container.get(src_yz | x) as u16;
+                }
+            }
+        }
+
+        let biome_container = parse_container(&mut reader, MAX_BITS_PER_BIOME, max_bits_per_biome)?;
+        // dump biomes: 4×4×4 per section, index = (y4 << 4) | (z4 << 2) | x4
+        // expanded: each block (x,y_in,z) → biome at (x>>2, y_in>>2, z>>2)
+        for y_in in 0..16usize {
+            let y4 = y_in >> 2;
+            let row_y = base_y_blocks + y_in * 256;
+            for z in 0..16usize {
+                let z4 = z >> 2;
+                let row_yz = row_y + z * 16;
+                for x in 0..16usize {
+                    let x4 = x >> 2;
+                    let bidx = (y4 << 4) | (z4 << 2) | x4;
+                    biomes[row_yz + x] = biome_container.get(bidx) as u8;
+                }
+            }
+        }
+    }
+
+    Ok(FullColumnResult {
+        block_states,
+        biomes,
+        bytes_read: reader.position(),
+    })
+}
+
+/// Test bit `i` of a "longs" mask laid out as [low0, high0, low1, high1, ...].
+/// This matches the mineflayer/protodef BitSet representation after we flip the
+/// per-long order on the JS side (see assemble_light_full_column doc).
+#[inline]
+fn mask_bit_get(mask: &[u32], i: usize) -> bool {
+    let long_idx = i >> 6;          // / 64
+    let bit_in_long = i & 63;
+    let pair = long_idx * 2;
+    if pair + 1 >= mask.len() { return false; }
+    let val = if bit_in_long < 32 { mask[pair] } else { mask[pair + 1] };
+    let bit = bit_in_long & 31;
+    ((val >> bit) & 1) == 1
+}
+
+/// Assemble a full-column (`num_sections * 4096` bytes) light array from per-section
+/// 2048-byte buffers, indexed by `mask`.
+///
+/// Light protocol detail: mask bit `i` corresponds to chunk section `i - 1` because
+/// the network protocol includes one border section above the world AND one below.
+/// So mask bit 1 = our section 0, bit 2 = section 1, ..., bit (num_sections) = section
+/// (num_sections - 1). Border sections (bit 0 and bit num_sections+1) are present in
+/// the network packet but irrelevant for in-world rendering.
+///
+/// `sections_concat` is the concatenation of all *present* light sections (each 2048
+/// bytes), in mask-bit order. Empty sections (in `empty_mask`) are skipped in
+/// `sections_concat` but their light values are 0.
+///
+/// Sections not present in `mask` AND not in `empty_mask` get `default_value` (e.g. 15
+/// for skylight, matching prismarine-chunk's getSkyLight default).
+pub fn assemble_light_full_column(
+    sections_concat: &[u8],
+    mask: &[u32],
+    empty_mask: &[u32],
+    num_sections: usize,
+    default_value: u8,
+) -> io::Result<Vec<u8>> {
+    let total = num_sections * BLOCK_SECTION_VOLUME;
+    let mut out = vec![default_value; total];
+    let mut data_cursor = 0usize;
+
+    // Iterate ALL mask bits in order so we advance the data cursor correctly,
+    // but only write to `out` for bits 1..=num_sections (skip border sections).
+    let total_bits = num_sections + 2; // border below + sections + border above
+    for mask_bit in 0..total_bits {
+        let is_present = mask_bit_get(mask, mask_bit);
+        let is_empty = mask_bit_get(empty_mask, mask_bit);
+        if !is_present && !is_empty { continue; }
+
+        // empty sections have no data in concat but ARE acknowledged via empty_mask.
+        // For empty sections we fill the corresponding chunk section with zeros (mineflayer
+        // semantics: empty light section = all zero light values).
+        let section_idx_in_chunk: i32 = mask_bit as i32 - 1;
+        let in_chunk = section_idx_in_chunk >= 0 && (section_idx_in_chunk as usize) < num_sections;
+
+        if is_empty {
+            if in_chunk {
+                let s = section_idx_in_chunk as usize;
+                let base = s * 16 * 256;
+                for y in 0..16 { for z in 0..16 { for x in 0..16 {
+                    out[base + y * 256 + z * 16 + x] = 0;
+                }}}
+            }
+            continue;
+        }
+
+        // present (non-empty): consume 2048 bytes from concat, unpack 4 bits per value
+        if data_cursor + LIGHT_SECTION_BUFFER_BYTES > sections_concat.len() {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,
+                format!("light data underflow at mask_bit={} cursor={} len={}",
+                    mask_bit, data_cursor, sections_concat.len())));
+        }
+        let section = &sections_concat[data_cursor..data_cursor + LIGHT_SECTION_BUFFER_BYTES];
+        data_cursor += LIGHT_SECTION_BUFFER_BYTES;
+
+        if !in_chunk { continue; } // border section, skip writing
+        let s = section_idx_in_chunk as usize;
+        let base = s * 16 * 256;
+        // Light layout: 4 bits per block, byte i contains values for blocks (2i, 2i+1)
+        // in section-local index = (y_in << 8) | (z << 4) | x.
+        // We need to translate per-section index → full-column index.
+        for byte_idx in 0..LIGHT_SECTION_BUFFER_BYTES {
+            let byte = section[byte_idx];
+            let v0 = byte & 0x0F;
+            let v1 = (byte >> 4) & 0x0F;
+            let block0 = byte_idx * 2;
+            let block1 = block0 + 1;
+            // section-local: (y_in << 8) | (z << 4) | x  ⇒  inverse:
+            for (block_local, value) in [(block0, v0), (block1, v1)] {
+                let y_in = block_local >> 8;
+                let z = (block_local >> 4) & 0xF;
+                let x = block_local & 0xF;
+                out[base + y_in * 256 + z * 16 + x] = value;
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Raspakovyvaet odnu light-sekciyu (2048 bayt = BitArrayNoSpan bpv=4 capacity=4096).
 pub fn unpack_light_section(buffer: &[u8]) -> io::Result<Vec<u8>> {
     if buffer.len() != LIGHT_SECTION_BUFFER_BYTES {
