@@ -1,6 +1,5 @@
 import { BlockType } from '../playground/shared'
 
-export const IS_FULL_WORLD_SECTION = false
 export const SECTION_HEIGHT = 16
 
 // only here for easier testing
@@ -17,7 +16,8 @@ export const defaultMesherConfig = {
   // textureSize: 1024, // for testing
   debugModelVariant: undefined as undefined | number[],
   clipWorldBelowY: undefined as undefined | number,
-  disableBlockEntityTextures: false
+  disableBlockEntityTextures: false,
+  disableConversionCache: false,
 }
 
 export type CustomBlockModels = {
@@ -64,7 +64,26 @@ export type MesherGeometryOutput = {
 
 export interface MesherMainEvents {
   geometry: { type: 'geometry'; key: string; geometry: MesherGeometryOutput; workerIndex: number };
-  sectionFinished: { type: 'sectionFinished'; key: string; workerIndex: number; processTime?: number };
+  sectionFinished: {
+    type: 'sectionFinished';
+    key: string;
+    workerIndex: number;
+    processTime?: number;
+    pre?: number;
+    wasm?: number;
+    post?: number;
+    // Pre-stage substages (added for column-mode perf instrumentation).
+    // All times in ms. `preNeighborConvert` is a SUM across neighbors;
+    // divide by `preNeighborCount` for per-neighbor average.
+    preTargetConvert?: number;
+    preNeighborConvert?: number;
+    preNeighborCount?: number;
+    preTypedArrayBuild?: number;
+    preOther?: number;
+    // Per-event counts for the column-mode conversion cache.
+    preCacheHits?: number;
+    preCacheMisses?: number;
+  };
   blockStateModelInfo: { type: 'blockStateModelInfo'; info: Record<string, BlockStateModelInfo> };
   heightmap: { type: 'heightmap'; key: string; heightmap: Int16Array };
 }

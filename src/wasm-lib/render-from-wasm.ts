@@ -63,6 +63,7 @@ interface CachedBlockModel {
   blockProps: Record<string, any>
   models: any // BlockModelPartsResolved
   isCube: boolean
+  boundingBox: string
   // Precomputed per-model variant
   modelVariants: Array<{
     model: any
@@ -85,10 +86,51 @@ interface WasmBlockFaceData {
   light_data: number[][]
 }
 
-interface WasmGeometryOutput {
+export interface WasmGeometryOutput {
   blocks: WasmBlockFaceData[]
   block_count: number
   block_iterations: number
+  /**
+   * Per-(x,z) max non-invisible block Y for the meshed column, indexed as
+   * `z * 16 + x`. Sentinel value `-32768` = no block in that column.
+   *
+   * Populated by Rust `Mesher::generate_with_world` (see
+   * `wasm-mesher/src/mesher.rs`, field `heightmap`). serde_wasm_bindgen
+   * serializes `Vec<i16>` as a plain JS `number[]`, which is why the type
+   * here is `ArrayLike<number>` rather than `Int16Array` — the runtime
+   * adapter `extractColumnHeightmap` handles both shapes.
+   *
+   * Used at runtime by `mesherWasm.ts` `processColumnTick`: every column
+   * tick the WASM heightmap is extracted via `extractColumnHeightmap` and
+   * posted to the main thread as a `'heightmap'` message. JS
+   * `computeHeightmap` is now only a fallback (length mismatch / missing
+   * field) and a safety-net for empty columns at chunk load. Empty-column
+   * semantics are aligned: both Rust and JS use `-32768` (see
+   * `EMPTY_COLUMN_HEIGHTMAP_SENTINEL`).
+   */
+  heightmap?: ArrayLike<number> | null
+}
+
+/**
+ * Extract a 256-entry Int16Array heightmap from a full-column WASM mesher
+ * result, indexed as `z * 16 + x` (matching the JS `computeHeightmap`
+ * convention). Returns `null` when the WASM output does not carry a
+ * heightmap or carries one of unexpected length — in that case the
+ * caller MUST fall back to JS `computeHeightmap` rather than guess.
+ *
+ * This adapter is the single place that converts Rust's `Vec<i16>` heightmap
+ * shape into a transferable typed array. Tests exercise this same adapter so
+ * future runtime usage and parity assertions cannot drift apart.
+ */
+export function extractColumnHeightmap(
+  wasmOutput: { heightmap?: ArrayLike<number> | null } | null | undefined
+): Int16Array | null {
+  const raw = wasmOutput?.heightmap
+  if (!raw || raw.length !== 256) return null
+  if (raw instanceof Int16Array) return new Int16Array(raw)
+  const out = new Int16Array(256)
+  for (let i = 0; i < 256; i++) out[i] = raw[i]
+  return out
 }
 
 /**
@@ -180,6 +222,7 @@ function getCachedBlockModel(
       models,
       modelVariants,
       isCube,
+      boundingBox: blockObj.boundingBox,
     }
 
     cache.set(cacheKey, cached)
@@ -696,6 +739,11 @@ export function renderWasmOutputToGeometry(
         globalShift = vecsub3(globalShift, matmul3(globalMatrix, globalShift))
       }
 
+      // Mirror JS mesher: doAO = model.ao ?? block.boundingBox !== 'empty'.
+      // When false, faces are emitted full-bright without AO/light sampling and without
+      // triangle-flip reordering (matches JS `light = 1` and standard winding).
+      const doAO = (model as any).ao ?? cachedModel.boundingBox !== 'empty'
+
       for (const element of model.elements ?? []) {
         let localMatrix = null as any
         let localShift = null as any
@@ -722,8 +770,12 @@ export function renderWasmOutputToGeometry(
             Math.round(transformedDir[2]),
           ]
           const dirKey = `${transformedDirI[0]},${transformedDirI[1]},${transformedDirI[2]}`
+          // faceIdx may be undefined for diagonal-rotated faces (e.g. signs at 45/135/225/315 deg).
+          // Such faces are not representable in the 6-axis WASM visible_faces / ao_data / light_data
+          // arrays. We still emit them (mirrors JS mesher behavior); cullface and AO/light data
+          // lookups are skipped, and the model-lighting fallback below derives AO/light by
+          // sampling neighbors via transformedDirI (its rounded form, same as for cardinal axes).
           const faceIdx = dirKeyToIndex[dirKey]
-          if (faceIdx === undefined) continue
 
           const minx = element.from[0]
           const miny = element.from[1]
@@ -732,13 +784,13 @@ export function renderWasmOutputToGeometry(
           const maxy = element.to[1]
           const maxz = element.to[2]
 
-          if (matchingEFace.cullface) {
+          if (matchingEFace.cullface && faceIdx !== undefined) {
             if ((block.visible_faces & (1 << faceIdx)) === 0) {
               continue
             }
           }
 
-          const faceDataIndex = wasmFaceToDataIndex[faceIdx]
+          const faceDataIndex = faceIdx === undefined ? undefined : wasmFaceToDataIndex[faceIdx]
           const aoValuesRaw = faceDataIndex === undefined ? undefined : block.ao_data[faceDataIndex]
           const lightValuesRaw = faceDataIndex === undefined ? undefined : block.light_data[faceDataIndex]
 
@@ -786,8 +838,13 @@ export function renderWasmOutputToGeometry(
 
             let ao = 3
             let cornerLightResult = 15
+            let light: number
 
-            if (useModelLighting) {
+            if (!doAO) {
+              // JS parity: skip AO/light sampling, emit full-bright vertex.
+              computedAoValues[cornerIdx] = 3
+              light = 1
+            } else if (useModelLighting) {
               const cursor = new Vec3(bx, by, bz)
 
               const dx = pos[0] * 2 - 1
@@ -848,9 +905,11 @@ export function renderWasmOutputToGeometry(
               cornerLightResult = baseLight * 15
             }
 
-            const light = (ao + 1) / 4 * (cornerLightResult / 15)
+            if (doAO) {
+              light = (ao + 1) / 4 * (cornerLightResult / 15)
+            }
 
-            colors.push(tint[0] * light, tint[1] * light, tint[2] * light)
+            colors.push(tint[0] * light!, tint[1] * light!, tint[2] * light!)
 
             const baseu = (pos[3] - 0.5) * uvcs - (pos[4] - 0.5) * uvsn + 0.5
             const basev = (pos[3] - 0.5) * uvsn + (pos[4] - 0.5) * uvcs + 0.5
@@ -864,7 +923,7 @@ export function renderWasmOutputToGeometry(
           const aoValues = computedAoValues
 
           let tri1: number[], tri2: number[]
-          if (aoValues[0] + aoValues[3] >= aoValues[1] + aoValues[2]) {
+          if (doAO && aoValues[0] + aoValues[3] >= aoValues[1] + aoValues[2]) {
             tri1 = [baseIndex, baseIndex + 3, baseIndex + 2]
             tri2 = [baseIndex, baseIndex + 1, baseIndex + 3]
           } else {
@@ -914,13 +973,99 @@ export function renderWasmOutputToGeometry(
     },
   }
 
-  console.log(`[WASM] Final geometry summary:`)
-  console.log(`[WASM]   Total vertices: ${positions.length / 3}`)
-  console.log(`[WASM]   Total triangles: ${indices.length / 3}`)
-  console.log(`[WASM]   Positions: [${positions.slice(0, 12).join(',')}...] (first 4 vertices)`)
-  console.log(`[WASM]   Indices: [${indices.slice(0, 12).join(',')}...] (first 2 faces)`)
+  log(`[WASM] Final geometry summary:`)
+  log(`[WASM]   Total vertices: ${positions.length / 3}`)
+  log(`[WASM]   Total triangles: ${indices.length / 3}`)
+  log(`[WASM]   Positions: [${positions.slice(0, 12).join(',')}...] (first 4 vertices)`)
+  log(`[WASM]   Indices: [${indices.slice(0, 12).join(',')}...] (first 2 faces)`)
 
   return result
+}
+
+/**
+ * Split a single full-column WASM mesher result into per-section
+ * `ExportedSection` outputs by filtering `wasmResult.blocks` per requested
+ * section's Y range and invoking `renderWasmOutputToGeometry` once per
+ * section.
+ *
+ * Why split at the block level (and not after geometry generation):
+ *   - Liquids (water/lava), signs/heads/banners metadata, AO/light arrays
+ *     and index numbering are computed inside `renderWasmOutputToGeometry`.
+ *     Splitting *finished* vertex/index buffers would silently break those.
+ *   - Filtering blocks by Y range and re-running the post-processor per
+ *     section keeps the output identical to the existing per-section path.
+ *
+ * Y=15/16 (and any other inter-section) seam handling:
+ *   - The Rust mesher produced `wasmResult` over the full column, so each
+ *     block's `visible_faces`, `ao_data` and `light_data` already account
+ *     for its true neighbors — including the block above at the section
+ *     seam (e.g. a Y=15 top face is correctly suppressed when Y=16 is
+ *     opaque, even though Y=16 lives in the next render section).
+ *   - This helper therefore does NOT need to widen the per-section block
+ *     window: a strict `[sy*sectionHeight, sy*sectionHeight + sectionHeight)`
+ *     filter on `block.position[1]` is sufficient. The neighbor information
+ *     is already baked into each block's per-face mask/AO/light arrays.
+ *
+ * Empty sections: sections with no blocks in range still get a call into
+ * `renderWasmOutputToGeometry` with an empty `blocks` array, so the
+ * returned `ExportedSection` shape matches what the per-section path
+ * produces for an empty section (empty positions/normals/colors/uvs/
+ * indices arrays).
+ *
+ * Note: this pure helper is not gated internally; callers decide whether
+ * column meshing is enabled.
+ */
+export function splitColumnWasmOutputToSections(
+  fullColumnOutput: WasmGeometryOutput,
+  requestedSectionKeys: Array<{ x: number, y: number, z: number }>,
+  ctx: { version: string, world?: World, sectionHeight?: number }
+): Map<string, { exported: ExportedSection, blocksCount: number }> {
+  const { version, world } = ctx
+  const sectionHeight = ctx.sectionHeight ?? 16
+
+  // Bucket blocks by section Y once, so we don't re-scan the full column
+  // for every requested section. Bucket key = section-relative chunk Y
+  // (i.e. floor(by / sectionHeight)).
+  const blocksByChunkY = new Map<number, WasmBlockFaceData[]>()
+  for (const block of fullColumnOutput.blocks) {
+    const by = block.position[1]
+    const chunkY = Math.floor(by / sectionHeight)
+    let bucket = blocksByChunkY.get(chunkY)
+    if (!bucket) {
+      bucket = []
+      blocksByChunkY.set(chunkY, bucket)
+    }
+    bucket.push(block)
+  }
+
+  const out = new Map<string, { exported: ExportedSection, blocksCount: number }>()
+  for (const { x, y, z } of requestedSectionKeys) {
+    // `y` here is the section's world-Y origin (multiple of sectionHeight),
+    // matching the convention used by `mesherWasm.ts` (section keys are
+    // `${chunkX*16},${sectionY},${chunkZ*16}` with sectionY a world-Y
+    // multiple of 16). Translate to chunk-Y bucket index.
+    const chunkY = Math.floor(y / sectionHeight)
+    const sectionBlocks = blocksByChunkY.get(chunkY) ?? []
+
+    const sectionView: WasmGeometryOutput = {
+      blocks: sectionBlocks,
+      block_count: sectionBlocks.length,
+      block_iterations: fullColumnOutput.block_iterations,
+    }
+
+    const sectionKey = `${x},${y},${z}`
+    const sectionPosition = { x: x + 8, y: y + 8, z: z + 8 }
+    const exported = renderWasmOutputToGeometry(
+      sectionView,
+      version,
+      sectionKey,
+      sectionPosition,
+      world
+    )
+    out.set(sectionKey, { exported, blocksCount: sectionBlocks.length })
+  }
+
+  return out
 }
 
 /**
