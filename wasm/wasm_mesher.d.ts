@@ -66,6 +66,31 @@ export function parseChunkDump118FullColumnAll(dump_buffer: Uint8Array, sky_ligh
 export function parseChunkDump118NoMarshal(buffer: Uint8Array, num_sections: number, max_bits_per_block: number, max_bits_per_biome: number): number;
 
 /**
+ * Parse a 1.17 chunk-section payload (the bytes inside `chunkData` of a
+ * `map_chunk` packet) into a flat `Uint16Array` of block states.
+ *
+ * `chunk_data` — exactly the bytes between the `chunkData` length prefix and
+ * the `blockEntities` count in the wire packet (i.e. what
+ * `prismarine-chunk` 1.17 `ChunkColumn.load(data, bitMap)` consumes). The
+ * JS-side caller (mineflayer/protodef) does the outer-packet parsing and
+ * hands the slice in directly.
+ *
+ * `bit_map_lo_hi` — section mask flattened to `[low0, high0, low1, high1,
+ * ...]` u32 pairs. Bit `s` indicates that section index `s` is present in
+ * `chunk_data`. Sections without a set bit decode to all-zeros.
+ *
+ * Returns `{ blockStates: Uint16Array(num_sections * 4096), bytesRead,
+ *            bytesTotal }`.
+ * Layout of `blockStates` is `(s * 4096) | (y_in << 8) | (z << 4) | x`,
+ * matching what the WASM mesher already consumes for 1.18+ blocks.
+ *
+ * Light is **not** produced here — in 1.17 it arrives in a separate
+ * `update_light` packet. The JS bridge fills in defaults (sky=15, block=0)
+ * or merges real data from a paired `update_light` cache.
+ */
+export function parseChunkSectionsV17(chunk_data: Uint8Array, bit_map_lo_hi: Uint32Array, num_sections: number, max_bits_per_block: number): any;
+
+/**
  * Stage-3 entry: parse a raw `map_chunk` packet (1.18+) into the same shape as
  * `parseChunkDump118FullColumnAll` so the worker can drop it straight into
  * `generate_geometry`.
@@ -97,6 +122,7 @@ export interface InitOutput {
   readonly generateGeometryFromDump118: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number) => any;
   readonly parseChunkDump118FullColumn: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly parseMapChunkV18Plus: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
+  readonly parseChunkSectionsV17: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_exn_store: (a: number) => void;

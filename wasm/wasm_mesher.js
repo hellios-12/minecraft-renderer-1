@@ -480,6 +480,43 @@ export function parseChunkDump118NoMarshal(buffer, num_sections, max_bits_per_bl
 }
 
 /**
+ * Parse a 1.17 chunk-section payload (the bytes inside `chunkData` of a
+ * `map_chunk` packet) into a flat `Uint16Array` of block states.
+ *
+ * `chunk_data` — exactly the bytes between the `chunkData` length prefix and
+ * the `blockEntities` count in the wire packet (i.e. what
+ * `prismarine-chunk` 1.17 `ChunkColumn.load(data, bitMap)` consumes). The
+ * JS-side caller (mineflayer/protodef) does the outer-packet parsing and
+ * hands the slice in directly.
+ *
+ * `bit_map_lo_hi` — section mask flattened to `[low0, high0, low1, high1,
+ * ...]` u32 pairs. Bit `s` indicates that section index `s` is present in
+ * `chunk_data`. Sections without a set bit decode to all-zeros.
+ *
+ * Returns `{ blockStates: Uint16Array(num_sections * 4096), bytesRead,
+ *            bytesTotal }`.
+ * Layout of `blockStates` is `(s * 4096) | (y_in << 8) | (z << 4) | x`,
+ * matching what the WASM mesher already consumes for 1.18+ blocks.
+ *
+ * Light is **not** produced here — in 1.17 it arrives in a separate
+ * `update_light` packet. The JS bridge fills in defaults (sky=15, block=0)
+ * or merges real data from a paired `update_light` cache.
+ * @param {Uint8Array} chunk_data
+ * @param {Uint32Array} bit_map_lo_hi
+ * @param {number} num_sections
+ * @param {number} max_bits_per_block
+ * @returns {any}
+ */
+export function parseChunkSectionsV17(chunk_data, bit_map_lo_hi, num_sections, max_bits_per_block) {
+    const ptr0 = passArray8ToWasm0(chunk_data, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray32ToWasm0(bit_map_lo_hi, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.parseChunkSectionsV17(ptr0, len0, ptr1, len1, num_sections, max_bits_per_block);
+    return ret;
+}
+
+/**
  * Stage-3 entry: parse a raw `map_chunk` packet (1.18+) into the same shape as
  * `parseChunkDump118FullColumnAll` so the worker can drop it straight into
  * `generate_geometry`.

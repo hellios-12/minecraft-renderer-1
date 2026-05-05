@@ -446,3 +446,52 @@ pub fn parse_map_chunk_v18plus_js(
     js_sys::Reflect::set(&obj, &JsValue::from_str("bytesRead"), &JsValue::from_f64(result.bytes_read as f64)).unwrap();
     obj.into()
 }
+
+/// Parse a 1.17 chunk-section payload (the bytes inside `chunkData` of a
+/// `map_chunk` packet) into a flat `Uint16Array` of block states.
+///
+/// `chunk_data` — exactly the bytes between the `chunkData` length prefix and
+/// the `blockEntities` count in the wire packet (i.e. what
+/// `prismarine-chunk` 1.17 `ChunkColumn.load(data, bitMap)` consumes). The
+/// JS-side caller (mineflayer/protodef) does the outer-packet parsing and
+/// hands the slice in directly.
+///
+/// `bit_map_lo_hi` — section mask flattened to `[low0, high0, low1, high1,
+/// ...]` u32 pairs. Bit `s` indicates that section index `s` is present in
+/// `chunk_data`. Sections without a set bit decode to all-zeros.
+///
+/// Returns `{ blockStates: Uint16Array(num_sections * 4096), bytesRead,
+///            bytesTotal }`.
+/// Layout of `blockStates` is `(s * 4096) | (y_in << 8) | (z << 4) | x`,
+/// matching what the WASM mesher already consumes for 1.18+ blocks.
+///
+/// Light is **not** produced here — in 1.17 it arrives in a separate
+/// `update_light` packet. The JS bridge fills in defaults (sky=15, block=0)
+/// or merges real data from a paired `update_light` cache.
+#[wasm_bindgen(js_name = parseChunkSectionsV17)]
+pub fn parse_chunk_sections_v17_js(
+    chunk_data: &[u8],
+    bit_map_lo_hi: &[u32],
+    num_sections: u32,
+    max_bits_per_block: u8,
+) -> JsValue {
+    let result = match parser_v17::parse_chunk_sections_v17(
+        chunk_data,
+        bit_map_lo_hi,
+        num_sections as usize,
+        max_bits_per_block,
+    ) {
+        Ok(r) => r,
+        Err(e) => wasm_bindgen::throw_str(&format!("parseChunkSectionsV17 error: {}", e)),
+    };
+
+    let obj = js_sys::Object::new();
+    let blocks_view = js_sys::Uint16Array::new_with_length(result.block_states.len() as u32);
+    blocks_view.copy_from(&result.block_states);
+    js_sys::Reflect::set(&obj, &JsValue::from_str("blockStates"), &blocks_view).unwrap();
+    js_sys::Reflect::set(&obj, &JsValue::from_str("bytesRead"),
+        &JsValue::from_f64(result.bytes_read as f64)).unwrap();
+    js_sys::Reflect::set(&obj, &JsValue::from_str("bytesTotal"),
+        &JsValue::from_f64(result.bytes_total as f64)).unwrap();
+    obj.into()
+}
