@@ -52,6 +52,27 @@ export interface RawMapChunkData {
   numSections: number
 }
 
+/**
+ * Pre-parsed `map_chunk` payload for protocol 756 (1.17/1.17.1).
+ * The 1.17 wire format is split across two packets (`map_chunk` for
+ * blocks/biomes/heightmaps and `update_light` for lighting), so we feed the
+ * WASM parser only the section bytes plus the bit-mask. Mineflayer already
+ * does the cheap top-level parsing for us; we just hand the
+ * already-extracted `chunkData` and `bitMap` to the worker.
+ */
+export interface ParsedMapChunkV17Data {
+  x: number
+  z: number
+  protocol: number
+  numSections: number
+  maxBitsPerBlock: number
+  chunkData: Uint8Array
+  /** Section bit mask flattened as [lo0, hi0, lo1, hi1, ...] u32 pairs. */
+  bitMapLoHi: Uint32Array
+  /** Optional flat biomes (1024 entries, 4×4×4 cells per column). */
+  biomes?: Int32Array
+}
+
 /** Biome update event data */
 export interface BiomeUpdateData {
   biome: any
@@ -73,6 +94,7 @@ export type WorldViewEvents = {
   unloadChunk: (data: UnloadChunkData) => void
   loadChunk: (data: LoadChunkData) => void
   setRawMapChunk: (data: RawMapChunkData) => void
+  setParsedMapChunkV17: (data: ParsedMapChunkV17Data) => void
   updateLight: (data: { pos: Vec3 }) => void
   onWorldSwitch: () => void
   end: () => void

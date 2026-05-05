@@ -147,6 +147,18 @@ interface RawMapChunkEntry {
 const rawMapChunkCache = new Map<string, RawMapChunkEntry>()
 const rawCacheKey = (x: number, z: number) => `${x},${z}`
 
+// 1.17 path: pre-extracted section bytes + bit mask (mineflayer already
+// did the cheap top-level packet parsing on the main thread).
+interface ParsedV17Entry {
+  protocol: number
+  numSections: number
+  maxBitsPerBlock: number
+  chunkData: Uint8Array
+  bitMapLoHi: Uint32Array
+  biomes?: Int32Array
+}
+const parsedV17Cache = new Map<string, ParsedV17Entry>()
+
 // Mirrors `convertChunkToWasm`'s output (same layout: x + z*16 + y*256,
 // y outer) so it can be dropped straight into `generate_geometry`.
 const convertRawMapChunkToWasm = (
@@ -185,6 +197,56 @@ const convertRawMapChunkToWasm = (
     blockLight: parsed.blockLight,
     skyLight: parsed.skyLight,
     biomesArray: parsed.biomes,
+    invisibleBlocks: meta.invisibleBlocks,
+    transparentBlocks: meta.transparentBlocks,
+    noAoBlocks: meta.noAoBlocks,
+    cullIdenticalBlocks: meta.cullIdenticalBlocks,
+    occludingBlocks: meta.occludingBlocks,
+    blockCount,
+  }
+}
+
+// 1.17 conversion: WASM gives us only blockStates (light arrives in a
+// separate `update_light` packet; not wired yet). We synthesise the
+// remaining buffers with safe defaults — full daylight (skyLight=15) and
+// no block light — so the renderer produces visible geometry.
+const convertParsedV17ToWasm = (
+  entry: ParsedV17Entry,
+  version: string
+): ChunkConversionResult | null => {
+  if (!wasm || !(wasm as any).parseChunkSectionsV17) return null
+  let parsed: any
+  try {
+    parsed = (wasm as any).parseChunkSectionsV17(
+      entry.chunkData,
+      entry.bitMapLoHi,
+      entry.numSections,
+      entry.maxBitsPerBlock,
+    )
+  } catch (err) {
+    console.warn('[WASM Mesher] parseChunkSectionsV17 failed, falling back:', err)
+    return null
+  }
+  const blockStates: Uint16Array = parsed.blockStates
+  const totalBlocks = blockStates.length
+  const blockLight = new Uint8Array(totalBlocks)
+  const skyLight = new Uint8Array(totalBlocks)
+  skyLight.fill(15)
+  // Default biome 1 (plains) — matches `convertChunkToWasm` fallback.
+  // TODO: expand entry.biomes (4×4×4 cells per column) to per-block once
+  // we have parity-tested 1.17 biome handling.
+  const biomesArray = new Uint8Array(totalBlocks)
+  biomesArray.fill(1)
+  let blockCount = 0
+  for (let i = 0; i < totalBlocks; i++) {
+    if (blockStates[i] !== 0) blockCount++
+  }
+  const meta = getBlockMeta(version)
+  return {
+    blockStates,
+    blockLight,
+    skyLight,
+    biomesArray,
     invisibleBlocks: meta.invisibleBlocks,
     transparentBlocks: meta.transparentBlocks,
     noAoBlocks: meta.noAoBlocks,
@@ -274,6 +336,7 @@ const handleMessage = async (data: any) => {
     case 'unloadChunk': {
       invalidateConversion(data.x, data.z)
       rawMapChunkCache.delete(rawCacheKey(data.x, data.z))
+      parsedV17Cache.delete(rawCacheKey(data.x, data.z))
       if (!world) break
       world.removeColumn(data.x, data.z)
       world.customBlockModels.delete(`${data.x},${data.z}`)
@@ -295,6 +358,7 @@ const handleMessage = async (data: any) => {
       // column after a block update — drop it so the next mesh tick walks
       // the (now-updated) prismarine column instead.
       rawMapChunkCache.delete(rawCacheKey(chunkX, chunkZ))
+      parsedV17Cache.delete(rawCacheKey(chunkX, chunkZ))
       const chunkKey = `${chunkX},${chunkZ}`
       if (data.customBlockModels) {
         world?.customBlockModels.set(chunkKey, data.customBlockModels)
@@ -316,12 +380,26 @@ const handleMessage = async (data: any) => {
       invalidateConversion(data.x, data.z)
       break
     }
+    case 'setParsedMapChunkV17': {
+      // 1.17 path: pre-extracted section bytes + bit mask from mineflayer.
+      parsedV17Cache.set(rawCacheKey(data.x, data.z), {
+        protocol: data.protocol as number,
+        numSections: data.numSections as number,
+        maxBitsPerBlock: data.maxBitsPerBlock as number,
+        chunkData: data.chunkData as Uint8Array,
+        bitMapLoHi: data.bitMapLoHi as Uint32Array,
+        biomes: data.biomes as Int32Array | undefined,
+      })
+      invalidateConversion(data.x, data.z)
+      break
+    }
     case 'reset': {
       world = undefined as any
       dirtySections.clear()
       requestTracker.clear()
       clearConversionCache()
       rawMapChunkCache.clear()
+      parsedV17Cache.clear()
       globalVar.mcData = null
       globalVar.loadedData = null
       allDataReady = false
@@ -475,6 +553,7 @@ function processColumnTick() {
         const conversions = chunksToUse.map(({ x: cx, z: cz, chunk }) => {
           const cs = performance.now()
           const rawEntry = rawMapChunkCache.get(rawCacheKey(cx, cz))
+          const v17Entry = parsedV17Cache.get(rawCacheKey(cx, cz))
           const { result: conv, hit } = getOrConvertColumn(
             cx,
             cz,
@@ -488,6 +567,11 @@ function processColumnTick() {
               // back to the JS column walk otherwise.
               if (rawEntry) {
                 const fast = convertRawMapChunkToWasm(rawEntry, version)
+                if (fast) return fast
+              }
+              // 1.17 path: pre-parsed sections from main thread.
+              if (v17Entry) {
+                const fast = convertParsedV17ToWasm(v17Entry, version)
                 if (fast) return fast
               }
               return convertChunkToWasm(
