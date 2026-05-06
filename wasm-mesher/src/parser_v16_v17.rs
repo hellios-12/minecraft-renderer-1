@@ -63,7 +63,7 @@ pub const NUM_SECTIONS_V17: usize = 16;
 ///
 /// Also returns `bytes_read` so callers can sanity-check they consumed the
 /// whole `chunk_data` slice.
-pub fn parse_chunk_sections_v17(
+pub fn parse_chunk_sections_v16_v17(
     chunk_data: &[u8],
     bit_map: &[u32],
     num_sections: usize,
@@ -379,7 +379,7 @@ mod tests {
             biomes_cells[i] = i32::from_le_bytes([c[0], c[1], c[2], c[3]]);
         }
 
-        let result = parse_chunk_sections_v17(
+        let result = parse_chunk_sections_v16_v17(
             &chunk_data,
             &bit_map,
             fix.meta.num_sections,

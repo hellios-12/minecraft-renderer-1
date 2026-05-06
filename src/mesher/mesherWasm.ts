@@ -256,14 +256,14 @@ const convertParsedV17ToWasm = (
   lightEntry: UpdateLightV17Entry | undefined,
   version: string
 ): ChunkConversionResult | null => {
-  if (!wasm || !(wasm as any).parseChunkSectionsV17) return null
+  if (!wasm || !(wasm as any).parseChunkSectionsV16V17) return null
   // Empty `Int32Array` signals "no biomes captured" — WASM falls back to
   // `default_biome` for every block. Plains (id 1) matches the JS path.
   const biomesCells = entry.biomes ?? new Int32Array(0)
   const DEFAULT_BIOME = 1
   let parsed: any
   try {
-    parsed = (wasm as any).parseChunkSectionsV17(
+    parsed = (wasm as any).parseChunkSectionsV16V17(
       entry.chunkData,
       entry.bitMapLoHi,
       entry.numSections,
@@ -272,7 +272,7 @@ const convertParsedV17ToWasm = (
       DEFAULT_BIOME,
     )
   } catch (err) {
-    console.warn('[WASM Mesher] parseChunkSectionsV17 failed, falling back:', err)
+    console.warn('[WASM Mesher] parseChunkSectionsV16V17 failed, falling back:', err)
     return null
   }
   const blockStates: Uint16Array = parsed.blockStates

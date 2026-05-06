@@ -873,7 +873,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
     worldEmitter.on('setParsedMapChunkV17', (data) => {
       // 1.17 path: forward the pre-extracted section bytes + bit mask so the
-      // worker can call `parseChunkSectionsV17` instead of walking the JS
+      // worker can call `parseChunkSectionsV16V17` instead of walking the JS
       // column. Lighting is supplied later (or defaulted) — see worker.
       for (const worker of this.workers) {
         worker.postMessage({
