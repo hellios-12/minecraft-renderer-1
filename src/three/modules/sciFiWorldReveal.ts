@@ -15,6 +15,8 @@ const INITIAL_WAVE_SPREAD_MS = 650
 const CHUNK_WIREFRAME_MS = 120
 const CHUNK_REVEAL_MS = 280
 
+const MAX_CONCURRENT_REVEALS = 20
+
 interface RevealingSection {
   key: string
   wireframeGroup: THREE.Group
@@ -54,17 +56,43 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   // Track which chunks have been revealed
   private readonly revealedChunks = new Set<string>()
 
+  // Queue for sections that exceed the concurrent cap
+  private readonly pendingRevealQueue: Array<{ key: string; geometry: MesherGeometryOutput }> = []
+
+  // Frame counter for update throttling
+  private updateFrameCounter = 0
+
+  // Perf instrumentation (accumulators)
+  private perfStats = {
+    wireframeCalls: 0,
+    wireframeTotalMs: 0,
+    wireframeMaxMs: 0,
+    wireframeSlowCalls: 0, // calls > 2ms
+    updateCalls: 0,
+    updateTotalMs: 0,
+    updateMaxMs: 0,
+    updateSlowCalls: 0, // calls > 1ms
+    maxConcurrentSeen: 0,
+    queueOverflows: 0,
+    phaseWireframeTotalMs: 0,
+    phaseTransitioningTotalMs: 0,
+    phaseTransitionEvents: 0,
+    cloneCalls: 0,
+    cloneTotalMs: 0,
+    cloneMaxMs: 0,
+  }
+  private perfWarnThresholdWireframeMs = 2
+  private perfWarnThresholdUpdateMs = 1
+  private perfWarnThresholdCloneMs = 5
+  private perfWarnEnabled = true
+
   // Store original methods for patching
   private originalFinishChunk: ((chunkKey: string) => void) | null = null
   private originalDestroy: (() => void) | null = null
   private originalSceneAdd: ((...object: THREE.Object3D[]) => THREE.Scene) | null = null
   private originalHandleWorkerMessage: ((data: { geometry: MesherGeometryOutput; key: string; type: string }) => void) | null = null
 
-  private configEnabled = true
-
   constructor(private readonly worldRenderer: WorldRendererThree) {
-    this.configEnabled = this.worldRenderer.worldRendererConfig.futuristicReveal === true
-
     this.wireframeMaterial = new THREE.LineBasicMaterial({
       color: SCI_FI_CYAN,
       transparent: true,
@@ -83,7 +111,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   }
 
   enable(): void {
-    if (!this.configEnabled) return
+    if (!this.worldRenderer.worldRendererConfig.futuristicReveal) return
     if (this.enabled) return
     this.enabled = true
     this.patchWorldRenderer()
@@ -103,6 +131,10 @@ export class SciFiWorldRevealModule implements RendererModuleController {
       this.enable()
     }
     return this.enabled
+  }
+
+  autoEnableCheck(): boolean {
+    return this.worldRenderer.worldRendererConfig.futuristicReveal === true
   }
 
   render?: (deltaTime: number) => void = (deltaTime) => {
@@ -148,14 +180,12 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     wr.handleWorkerMessage = (data: any) => {
       this.originalHandleWorkerMessage!(data)
 
-      if (this.enabled && data?.type === 'geometry') {
-        Promise.resolve().then(() => {
-          try {
-            this.registerSection(data.key, data.geometry)
-          } catch (err) {
-            console.error('[SciFiReveal] registerSection failed', err)
-          }
-        })
+      if (this.enabled && data?.type === 'geometry' && data?.geometry?.positions?.length) {
+        try {
+          this.registerSection(data.key, data.geometry)
+        } catch (err) {
+          console.error('[SciFiReveal] registerSection failed', err)
+        }
       }
     }
 
@@ -163,10 +193,10 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     // Patch scene.add to intercept mesh additions
     this.originalSceneAdd = wr.scene.add.bind(wr.scene)
     wr.scene.add = (...objects: THREE.Object3D[]): THREE.Scene => {
-      // Call original add first
       const result = this.originalSceneAdd!(...objects)
 
-      // Check each added object for meshes that need reveal effect
+      if (this.revealingSections.size === 0 && this.pendingGeometries.size === 0) return result
+
       for (const obj of objects) {
         this.checkAndPatchMesh(obj)
       }
@@ -369,8 +399,13 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   private startSectionReveal(key: string, geometry: MesherGeometryOutput): void {
     if (!geometry.positions?.length) return
 
-    // Don't create if already exists
     if (this.revealingSections.has(key) || this.revealedChunks.has(key)) return
+
+    if (this.revealingSections.size >= MAX_CONCURRENT_REVEALS) {
+      this.pendingRevealQueue.push({ key, geometry })
+      this.perfStats.queueOverflows++
+      return
+    }
 
     // Create wireframe geometry
     const wireframeGeom = this.createWireframeGeometry(geometry)
@@ -428,74 +463,79 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     this.revealingSections.set(key, section)
   }
 
-  /**
-   * Create wireframe geometry from mesh geometry
-   */
   private createWireframeGeometry(geometry: MesherGeometryOutput): THREE.BufferGeometry {
+    const t0 = performance.now()
     const positions = geometry.positions as Float32Array
     const indices = geometry.indices as Uint32Array | Uint16Array
 
-    const linePositions: number[] = []
-    const edgeSet = new Set<string>()
+    const tempGeom = new THREE.BufferGeometry()
+    tempGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    tempGeom.setIndex(new THREE.BufferAttribute(indices, 1))
 
-    // Create edges from triangles
-    for (let i = 0; i < indices.length; i += 3) {
-      const i0 = indices[i]!
-      const i1 = indices[i + 1]!
-      const i2 = indices[i + 2]!
+    const wireframeGeom = new THREE.EdgesGeometry(tempGeom, 0)
 
-      this.addEdge(positions, i0, i1, linePositions, edgeSet)
-      this.addEdge(positions, i1, i2, linePositions, edgeSet)
-      this.addEdge(positions, i2, i0, linePositions, edgeSet)
+    tempGeom.dispose()
+
+    const elapsed = performance.now() - t0
+    this.perfStats.wireframeCalls++
+    this.perfStats.wireframeTotalMs += elapsed
+    if (elapsed > this.perfStats.wireframeMaxMs) this.perfStats.wireframeMaxMs = elapsed
+    if (elapsed > this.perfWarnThresholdWireframeMs) {
+      this.perfStats.wireframeSlowCalls++
+      if (this.perfWarnEnabled) {
+        console.warn(`[SciFiReveal] createWireframeGeometry took ${elapsed.toFixed(2)}ms (positions=${positions.length / 3}, tris=${indices.length / 3})`)
+      }
     }
 
-    const wireframeGeom = new THREE.BufferGeometry()
-    wireframeGeom.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3))
-
     return wireframeGeom
-  }
-
-  /**
-   * Add edge to line positions if not duplicate
-   */
-  private addEdge(
-    positions: Float32Array,
-    i0: number,
-    i1: number,
-    linePositions: number[],
-    edgeSet: Set<string>
-  ): void {
-    const minI = Math.min(i0, i1)
-    const maxI = Math.max(i0, i1)
-    const key = `${minI}-${maxI}`
-
-    if (edgeSet.has(key)) return
-    edgeSet.add(key)
-
-    linePositions.push(
-      positions[i0 * 3]!, positions[i0 * 3 + 1]!, positions[i0 * 3 + 2]!,
-      positions[i1 * 3]!, positions[i1 * 3 + 1]!, positions[i1 * 3 + 2]!
-    )
   }
 
   /**
    * Update the reveal animation - call this every frame
    */
   update(deltaTime: number): void {
-    if (!this.enabled || this.revealingSections.size === 0) return
+    if (!this.enabled) return
+    if (this.revealingSections.size === 0 && this.pendingRevealQueue.length === 0) return
 
     this.pulseTime += deltaTime * 0.001 // Convert to seconds
-    const currentTime = performance.now()
+
+    this.updateFrameCounter++
+    if (this.updateFrameCounter % 2 !== 0) return
+
+    // Pump queue at frame start in case revealingSections drained while queue still has items
+    if (this.revealingSections.size === 0 && this.pendingRevealQueue.length > 0) {
+      this.dequeueNextReveal()
+    }
+
+    if (this.revealingSections.size === 0) return
+
+    const t0 = performance.now()
+    const currentTime = t0
+    const sectionsCount = this.revealingSections.size
+    if (sectionsCount > this.perfStats.maxConcurrentSeen) {
+      this.perfStats.maxConcurrentSeen = sectionsCount
+    }
 
     // Pulse effect parameters
     const basePulse = 0.6 + 0.4 * Math.sin(this.pulseTime * 4)
 
     const toComplete: RevealingSection[] = []
 
+    // Sub-phase timing accumulators (per update() call)
+    let phaseWireframeMs = 0
+    let phaseTransitioningMs = 0
+    let cloneMs = 0
+    let cloneCount = 0
+    let phaseTransitions = 0
+    let completeMs = 0
+    let dequeueWireframeCalls = 0
+    const wireframeBefore = this.perfStats.wireframeCalls
+
     for (const [key, section] of this.revealingSections) {
       const elapsed = currentTime - section.revealStartTime
 
       if (section.phase === 'wireframe') {
+        const wf0 = performance.now()
         // Animate wireframe
         const wireframe = section.wireframeGroup.children[0] as THREE.LineSegments
         const glow = section.wireframeGroup.children[1] as THREE.LineSegments
@@ -521,6 +561,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
         // Transition to fading phase
         if (elapsed > section.wireframeMs) {
           section.phase = 'transitioning'
+          phaseTransitions++
 
           // Get and show the original mesh with fade-in
           section.originalMeshRef = this.getOriginalMesh(key)
@@ -528,15 +569,27 @@ export class SciFiWorldRevealModule implements RendererModuleController {
             section.originalMeshRef.visible = true
             // Store original material and create fade version
             const originalMat = section.originalMeshRef.material as THREE.MeshLambertMaterial
+            const c0 = performance.now()
             const fadeMat = originalMat.clone()
             fadeMat.transparent = true
             fadeMat.opacity = 0
             fadeMat.needsUpdate = true
+            const cElapsed = performance.now() - c0
+            cloneMs += cElapsed
+            cloneCount++
+            this.perfStats.cloneCalls++
+            this.perfStats.cloneTotalMs += cElapsed
+            if (cElapsed > this.perfStats.cloneMaxMs) this.perfStats.cloneMaxMs = cElapsed
+            if (cElapsed > this.perfWarnThresholdCloneMs && this.perfWarnEnabled) {
+              console.warn(`[SciFiReveal] material.clone+needsUpdate took ${cElapsed.toFixed(2)}ms`)
+            }
               ; (section.originalMeshRef as any).originalMaterial = originalMat
             section.originalMeshRef.material = fadeMat
           }
         }
+        phaseWireframeMs += performance.now() - wf0
       } else if (section.phase === 'transitioning') {
+        const tr0 = performance.now()
         const transitionElapsed = elapsed - section.wireframeMs
         const progress = Math.min(1, transitionElapsed / section.revealMs)
 
@@ -568,12 +621,34 @@ export class SciFiWorldRevealModule implements RendererModuleController {
           section.phase = 'complete'
           toComplete.push(section)
         }
+        phaseTransitioningMs += performance.now() - tr0
       }
     }
 
     // Complete all finished sections after iteration
+    const cmp0 = performance.now()
     for (const section of toComplete) {
       this.completeReveal(section)
+    }
+    completeMs = performance.now() - cmp0
+    // Process queue with per-frame budget AFTER completes (decoupled chain)
+    this.dequeueNextReveal()
+    dequeueWireframeCalls = this.perfStats.wireframeCalls - wireframeBefore
+
+    const elapsed = performance.now() - t0
+    this.perfStats.updateCalls++
+    this.perfStats.updateTotalMs += elapsed
+    if (elapsed > this.perfStats.updateMaxMs) this.perfStats.updateMaxMs = elapsed
+    this.perfStats.phaseWireframeTotalMs += phaseWireframeMs
+    this.perfStats.phaseTransitioningTotalMs += phaseTransitioningMs
+    this.perfStats.phaseTransitionEvents += phaseTransitions
+    if (elapsed > this.perfWarnThresholdUpdateMs) {
+      this.perfStats.updateSlowCalls++
+      if (this.perfWarnEnabled) {
+        console.warn(
+          `[SciFiReveal] update took ${elapsed.toFixed(2)}ms for ${sectionsCount} sections | wireframe-phase=${phaseWireframeMs.toFixed(2)}ms transitioning-phase=${phaseTransitioningMs.toFixed(2)}ms clones=${cloneCount}(${cloneMs.toFixed(2)}ms) transitions=${phaseTransitions} completes=${toComplete.length}(${completeMs.toFixed(2)}ms) dequeueWireframes=${dequeueWireframeCalls}`
+        )
+      }
     }
   }
 
@@ -600,6 +675,22 @@ export class SciFiWorldRevealModule implements RendererModuleController {
 
     // Clean up wireframe group
     this.disposeWireframeGroup(section.wireframeGroup)
+  }
+
+  // Budget: max wireframes to build per frame to avoid main-thread chaining
+  private static readonly DEQUEUE_BUDGET_PER_FRAME = 1
+
+  private dequeueNextReveal(): void {
+    let built = 0
+    while (
+      built < SciFiWorldRevealModule.DEQUEUE_BUDGET_PER_FRAME &&
+      this.pendingRevealQueue.length > 0 &&
+      this.revealingSections.size < MAX_CONCURRENT_REVEALS
+    ) {
+      const next = this.pendingRevealQueue.shift()!
+      this.startSectionReveal(next.key, next.geometry)
+      built++
+    }
   }
 
   /**
@@ -646,10 +737,12 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     this.pendingGeometries.clear()
     this.revealingSections.clear()
     this.revealedChunks.clear()
+    this.pendingRevealQueue.length = 0
     this.finishedChunkCount = 0
     this.revealTriggered = false
     this.revealStartTime = 0
     this.pulseTime = 0
+    this.updateFrameCounter = 0
   }
 
   /**
@@ -731,7 +824,8 @@ export class SciFiWorldRevealModule implements RendererModuleController {
         phase: s.phase,
         hasOriginalMesh: !!s.originalMeshRef,
         wireframeInScene: s.wireframeGroup.parent !== null
-      }))
+      })),
+      perf: this.debugPerfStats(),
     }
   }
 
@@ -740,6 +834,78 @@ export class SciFiWorldRevealModule implements RendererModuleController {
    */
   debugLog(): void {
     console.log('[SciFiReveal] Status:', this.debugStatus())
+  }
+
+  /**
+   * Debug: Computed perf stats (averages + raw accumulators)
+   */
+  debugPerfStats() {
+    const p = this.perfStats
+    return {
+      wireframe: {
+        calls: p.wireframeCalls,
+        totalMs: +p.wireframeTotalMs.toFixed(2),
+        avgMs: p.wireframeCalls ? +(p.wireframeTotalMs / p.wireframeCalls).toFixed(3) : 0,
+        maxMs: +p.wireframeMaxMs.toFixed(2),
+        slowCalls: p.wireframeSlowCalls,
+        slowThresholdMs: this.perfWarnThresholdWireframeMs,
+      },
+      update: {
+        calls: p.updateCalls,
+        totalMs: +p.updateTotalMs.toFixed(2),
+        avgMs: p.updateCalls ? +(p.updateTotalMs / p.updateCalls).toFixed(3) : 0,
+        maxMs: +p.updateMaxMs.toFixed(2),
+        slowCalls: p.updateSlowCalls,
+        slowThresholdMs: this.perfWarnThresholdUpdateMs,
+      },
+      phases: {
+        wireframeTotalMs: +p.phaseWireframeTotalMs.toFixed(2),
+        transitioningTotalMs: +p.phaseTransitioningTotalMs.toFixed(2),
+        transitionEvents: p.phaseTransitionEvents,
+      },
+      clone: {
+        calls: p.cloneCalls,
+        totalMs: +p.cloneTotalMs.toFixed(2),
+        avgMs: p.cloneCalls ? +(p.cloneTotalMs / p.cloneCalls).toFixed(3) : 0,
+        maxMs: +p.cloneMaxMs.toFixed(2),
+        slowThresholdMs: this.perfWarnThresholdCloneMs,
+      },
+      maxConcurrentSeen: p.maxConcurrentSeen,
+      queueOverflows: p.queueOverflows,
+      pendingQueueSize: this.pendingRevealQueue.length,
+      warningsEnabled: this.perfWarnEnabled,
+    }
+  }
+
+  debugPerfLog(): void {
+    console.log('[SciFiReveal] Perf:', this.debugPerfStats())
+  }
+
+  debugPerfReset(): void {
+    this.perfStats = {
+      wireframeCalls: 0,
+      wireframeTotalMs: 0,
+      wireframeMaxMs: 0,
+      wireframeSlowCalls: 0,
+      updateCalls: 0,
+      updateTotalMs: 0,
+      updateMaxMs: 0,
+      updateSlowCalls: 0,
+      maxConcurrentSeen: 0,
+      queueOverflows: 0,
+      phaseWireframeTotalMs: 0,
+      phaseTransitioningTotalMs: 0,
+      phaseTransitionEvents: 0,
+      cloneCalls: 0,
+      cloneTotalMs: 0,
+      cloneMaxMs: 0,
+    }
+    console.log('[SciFiReveal] Perf stats reset')
+  }
+
+  debugPerfWarnings(enabled: boolean): void {
+    this.perfWarnEnabled = enabled
+    console.log(`[SciFiReveal] Perf warnings ${enabled ? 'enabled' : 'disabled'}`)
   }
 }
 
