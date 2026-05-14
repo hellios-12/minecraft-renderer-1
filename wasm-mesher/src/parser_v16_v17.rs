@@ -287,7 +287,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     fn fixtures_dir() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../dump-poc/fixtures-1.17")
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../chunk-packet-fixtures/fixtures-1.17")
     }
 
     #[derive(Deserialize)]
@@ -527,7 +527,7 @@ mod tests {
 
     #[test]
     fn parity_all_v16_fixtures() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../dump-poc/fixtures-1.16");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../chunk-packet-fixtures/fixtures-1.16");
         let entries = fs::read_dir(&dir)
             .unwrap_or_else(|_| panic!("no fixtures dir {:?}", dir));
         let mut count = 0;

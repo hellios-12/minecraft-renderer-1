@@ -5,7 +5,7 @@
  * iteration, equivalent to convertChunkToWasm core loop) vs new Rust/WASM
  * parseChunkDump118 path on identical column data.
  *
- * Source columns: dump-poc/fixtures/*.json (we already have synthetic + real ones).
+ * Source columns: chunk-packet-fixtures/fixtures/*.json (we already have synthetic + real ones).
  * For the JS path we materialize a prismarine-chunk Column via column.load(dump)
  * so that getBlockStateId() works exactly like in production worker.
  */

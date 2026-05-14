@@ -4,7 +4,7 @@
 // Diffs parseDump-1.17 output (and dumpLight-style data) against the
 // reference typed-arrays in fixtures-1.17/.
 //
-// Run: node dump-poc/harness-1.17.cjs
+// Run: node chunk-packet-fixtures/harness-1.17.cjs
 
 'use strict'
 

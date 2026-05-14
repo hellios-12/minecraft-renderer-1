@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable */
 // Generates fixtures for the 1.16 chunk parser.
-// Run from minecraft-renderer root:  node dump-poc/generate-fixtures-1.16.cjs
+// Run from minecraft-renderer root:  node chunk-packet-fixtures/generate-fixtures-1.16.cjs
 //
 // 1.16 chunk_data wire format is byte-identical to 1.17, so the existing
 // `parse_chunk_sections_v16_v17` Rust parser is reused as-is. The only

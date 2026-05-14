@@ -7,7 +7,7 @@
 // for use as Rust parser fixtures.
 //
 // Usage:
-//   node dump-poc/dump-map-chunk.cjs --host grim.mcraft.fun --version 1.21 --count 3
+//   node chunk-packet-fixtures/dump-map-chunk.cjs --host grim.mcraft.fun --version 1.21 --count 3
 //
 // Required:
 //   --version <ver>   Minecraft version, e.g. 1.21, 1.20.4, 1.18.2, 1.17.1, 1.16.5
@@ -18,7 +18,7 @@
 //   --username <u>    bot username (default: dump_<rand>)
 //   --auth <kind>     'offline' (default) | 'microsoft'
 //   --count <N>       how many distinct chunks to capture per packet kind (default: 2)
-//   --out <dir>       output dir (default: dump-poc/fixtures/map_chunk/<version>/)
+//   --out <dir>       output dir (default: chunk-packet-fixtures/fixtures/map_chunk/<version>/)
 //   --timeout <sec>   exit after N seconds even if not all chunks captured (default: 60)
 //
 // Output per chunk:

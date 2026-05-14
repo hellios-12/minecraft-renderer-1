@@ -219,7 +219,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     fn fixtures_dir() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../dump-poc/fixtures/map_chunk")
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../chunk-packet-fixtures/fixtures/map_chunk")
     }
 
     /// Per-version smoke test: every fixture parses without error, consumes the

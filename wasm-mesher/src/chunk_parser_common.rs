@@ -12,7 +12,7 @@
 //       * unpack_light_section: 2048-byte nibble buffer -> 4096-element u8 array
 //       * assemble_light_full_column: combine present/empty masks + concatenated
 //         section buffers into a full-column light array (num_sections * 4096)
-//       * parse_light_field / mask_to_bits: legacy helpers used by the dump-poc
+//       * parse_light_field / mask_to_bits: legacy helpers used by chunk fixture tooling
 //         path (kept here so the dump_parser only owns dump-specific code)
 //
 // What deliberately does NOT live here yet:
@@ -413,7 +413,7 @@ pub fn mask_to_bits(long_arr: &[[i32; 2]], capacity: usize) -> Vec<u8> {
     out
 }
 
-/// Full light parse helper used by the dump-poc path. Returns (skylight or blocklight)
+/// Full light parse helper used by fixture scripts. Returns (skylight or blocklight)
 /// of size num_sections * 4096.
 ///
 /// `light_buffers` are the already-unpacked raw buffers from dumpLight().skyLight /

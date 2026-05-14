@@ -3,7 +3,7 @@
 // Conformance harness: gonyaem parseDump-1.18 protiv reference-dannyh iz fixtures.
 // Vyvodit po kazhdomu fixture: bytes consumed, OK / FAIL po blockStates i biomes.
 //
-// Zapuskat: node dump-poc/harness.cjs
+// Zapuskat: node chunk-packet-fixtures/harness.cjs
 
 'use strict'
 

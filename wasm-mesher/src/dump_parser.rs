@@ -168,8 +168,8 @@ mod tests {
     use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 
     fn fixtures_dir() -> PathBuf {
-        // wasm-mesher/Cargo.toml cwd = wasm-mesher/. fixtures in ../dump-poc/fixtures/
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../dump-poc/fixtures")
+        // wasm-mesher/Cargo.toml cwd = wasm-mesher/. fixtures in ../chunk-packet-fixtures/fixtures/
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../chunk-packet-fixtures/fixtures")
     }
 
     fn list_fixture_files() -> Vec<PathBuf> {
