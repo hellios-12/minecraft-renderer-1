@@ -1,6 +1,15 @@
 import * as THREE from 'three'
 import { createCanvas } from '../lib/utils'
 
+/**
+ * Limits label texture resolution on high-DPR devices (sprite still sizes in screen px via Three.js;
+ * main win is fewer canvas pixels / less GPU memory — especially on iOS).
+ */
+const LABEL_CANVAS_MAX_DEVICE_PIXEL_RATIO = 1
+
+/** Distance label repaints when this bucket (meters) changes — fewer canvas uploads while moving. */
+const DISTANCE_LABEL_STEP_M = 10
+
 // Centralized visual configuration (in screen pixels)
 export const WAYPOINT_CONFIG = {
   // Target size in screen pixels (this controls the final sprite size)
@@ -59,9 +68,8 @@ export function createWaypointSprite (options: {
   visualScale?: number,
   opacity?: number,
 }): WaypointSprite {
-  const color = options.color ?? 0xFF_00_00
+  let displayColor = options.color ?? 0xFF_00_00
   const depthTest = options.depthTest ?? false
-  const labelYOffset = options.labelYOffset ?? 1.5
 
   // Get visual scale from options, metadata, server metadata, or default
   // Priority: options.visualScale > metadata.visualScale > window.serverMetadata?.waypointVisualScale > DEFAULT
@@ -77,61 +85,87 @@ export function createWaypointSprite (options: {
     ?? (typeof window === 'undefined' ? undefined : (window as any).serverMetadata?.waypointOpacity)
     ?? WAYPOINT_CONFIG.DEFAULT_OPACITY
 
-  // Build combined sprite
-  const sprite = createCombinedSprite(color, options.label ?? '', '0m', depthTest, visualScale)
+  const labelCanvas = createCanvas(getLabelCanvasSize(), getLabelCanvasSize())
+  drawCombinedOntoCanvas(labelCanvas, displayColor, options.label ?? '', '0m', visualScale)
+
+  const labelTexture = new THREE.CanvasTexture(labelCanvas)
+  labelTexture.anisotropy = 1
+  labelTexture.magFilter = THREE.LinearFilter
+  labelTexture.minFilter = THREE.LinearFilter
+  const material = new THREE.SpriteMaterial({
+    map: labelTexture,
+    transparent: true,
+    opacity: 1,
+    depthTest,
+    depthWrite: false,
+  })
+  const sprite = new THREE.Sprite(material)
+  sprite.position.set(0, 0, 0)
   sprite.renderOrder = 10
   sprite.material.opacity = opacity
   let currentLabel = options.label ?? ''
 
-  // Performance optimization: cache distance text to avoid unnecessary updates
   let lastDistanceText = '0m'
-  let lastDistance = 0
+  let lastDistanceBucket = Number.NaN
 
-  // Offscreen arrow (detached by default)
   let arrowSprite: THREE.Sprite | undefined
+  let arrowCanvas: OffscreenCanvas | undefined
+  let arrowCtx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | undefined
+  let arrowTexture: THREE.CanvasTexture | undefined
   let arrowParent: THREE.Object3D | null = null
   let arrowEnabled = WAYPOINT_CONFIG.ARROW.enabledDefault
 
-  // Group for easy add/remove
   const group = new THREE.Group()
   group.add(sprite)
 
-  // Initial position
   const { x, y, z } = options.position
   group.position.set(x, y, z)
 
+  function refreshLabelTexture () {
+    labelTexture.needsUpdate = true
+  }
+
+  function paintArrowOnCanvas () {
+    if (!arrowCanvas || !arrowCtx) return
+    const size = arrowCanvas.width
+    arrowCtx.clearRect(0, 0, size, size)
+    arrowCtx.beginPath()
+    arrowCtx.moveTo(size * 0.15, size * 0.5)
+    arrowCtx.lineTo(size * 0.85, size * 0.5)
+    arrowCtx.lineTo(size * 0.5, size * 0.15)
+    arrowCtx.closePath()
+    const colorHex = `#${displayColor.toString(16).padStart(6, '0')}`
+    arrowCtx.lineWidth = 6
+    arrowCtx.strokeStyle = 'black'
+    arrowCtx.stroke()
+    arrowCtx.fillStyle = colorHex
+    arrowCtx.fill()
+    if (arrowTexture) arrowTexture.needsUpdate = true
+  }
+
   function setColor (newColor: number) {
-    const canvas = drawCombinedCanvas(newColor, currentLabel, '0m', visualScale)
-    const texture = new THREE.CanvasTexture(canvas)
-    const mat = sprite.material
-    mat.map?.dispose()
-    mat.map = texture
-    mat.needsUpdate = true
+    displayColor = newColor
+    lastDistanceText = '0m'
+    lastDistanceBucket = 0
+    drawCombinedOntoCanvas(labelCanvas, displayColor, currentLabel, '0m', visualScale)
+    refreshLabelTexture()
+    if (arrowSprite) paintArrowOnCanvas()
   }
 
   function setLabel (newLabel?: string) {
     currentLabel = newLabel ?? ''
-    const canvas = drawCombinedCanvas(color, currentLabel, '0m', visualScale)
-    const texture = new THREE.CanvasTexture(canvas)
-    const mat = sprite.material
-    mat.map?.dispose()
-    mat.map = texture
-    mat.needsUpdate = true
+    drawCombinedOntoCanvas(labelCanvas, displayColor, currentLabel, lastDistanceText, visualScale)
+    refreshLabelTexture()
   }
 
   function updateDistanceText (label: string, distanceText: string) {
-    // Performance optimization: only update if distance text actually changed
     if (distanceText === lastDistanceText) {
       return
     }
     lastDistanceText = distanceText
 
-    const canvas = drawCombinedCanvas(color, label, distanceText, visualScale)
-    const texture = new THREE.CanvasTexture(canvas)
-    const mat = sprite.material
-    mat.map?.dispose()
-    mat.map = texture
-    mat.needsUpdate = true
+    drawCombinedOntoCanvas(labelCanvas, displayColor, label, distanceText, visualScale)
+    refreshLabelTexture()
   }
 
   function setVisible (visible: boolean) {
@@ -142,7 +176,6 @@ export function createWaypointSprite (options: {
     group.position.set(nx, ny, nz)
   }
 
-  // Keep constant pixel size on screen using global config
   function updateScaleScreenPixels (
     cameraPosition: THREE.Vector3,
     cameraFov: number,
@@ -151,7 +184,6 @@ export function createWaypointSprite (options: {
   ) {
     const vFovRad = cameraFov * Math.PI / 180
     const worldUnitsPerScreenHeightAtDist = Math.tan(vFovRad / 2) * 2 * distance
-    // Use configured target screen size with visual scale multiplier
     const scale = worldUnitsPerScreenHeightAtDist * (WAYPOINT_CONFIG.TARGET_SCREEN_PX * visualScale / viewportHeightPx)
     sprite.scale.set(scale, scale, 1)
   }
@@ -159,28 +191,15 @@ export function createWaypointSprite (options: {
   function ensureArrow () {
     if (arrowSprite) return
     const size = 128
-    const canvas = createCanvas(size, size)
-    const ctx = canvas.getContext('2d')!
-    ctx.clearRect(0, 0, size, size)
-
-    // Draw arrow shape
-    ctx.beginPath()
-    ctx.moveTo(size * 0.15, size * 0.5)
-    ctx.lineTo(size * 0.85, size * 0.5)
-    ctx.lineTo(size * 0.5, size * 0.15)
-    ctx.closePath()
-
-    // Use waypoint color for arrow
-    const colorHex = `#${color.toString(16).padStart(6, '0')}`
-    ctx.lineWidth = 6
-    ctx.strokeStyle = 'black'
-    ctx.stroke()
-    ctx.fillStyle = colorHex
-    ctx.fill()
-
-    const texture = new THREE.CanvasTexture(canvas)
-    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, opacity })
-    arrowSprite = new THREE.Sprite(material)
+    arrowCanvas = createCanvas(size, size)
+    arrowCtx = arrowCanvas.getContext('2d')!
+    paintArrowOnCanvas()
+    arrowTexture = new THREE.CanvasTexture(arrowCanvas)
+    arrowTexture.anisotropy = 1
+    arrowTexture.magFilter = THREE.LinearFilter
+    arrowTexture.minFilter = THREE.LinearFilter
+    const matTex = new THREE.SpriteMaterial({ map: arrowTexture, transparent: true, depthTest: false, depthWrite: false, opacity })
+    arrowSprite = new THREE.Sprite(matTex)
     arrowSprite.renderOrder = 12
     arrowSprite.visible = false
     if (arrowParent) arrowParent.add(arrowSprite)
@@ -305,9 +324,8 @@ export function createWaypointSprite (options: {
     return false
   }
 
-  function computeDistance (_cameraPosition: THREE.Vector3): number {
-    // group.position is in scene space; camera is at scene origin (0,0,0)
-    return group.position.length()
+  function computeDistance (cameraPosition: THREE.Vector3): number {
+    return cameraPosition.distanceTo(group.position)
   }
 
   function updateForCamera (
@@ -317,17 +335,14 @@ export function createWaypointSprite (options: {
     viewportHeightPx: number
   ): boolean {
     const distance = computeDistance(cameraPosition)
-    // Keep constant pixel size
     updateScaleScreenPixels(cameraPosition, camera.fov, distance, viewportHeightPx)
 
-    // Performance optimization: only update distance text if distance changed significantly
-    const roundedDistance = Math.round(distance)
-    if (Math.abs(roundedDistance - lastDistance) >= 1) {
-      lastDistance = roundedDistance
-      updateDistanceText(currentLabel, `${roundedDistance}m`)
+    const bucket = Math.round(distance / DISTANCE_LABEL_STEP_M) * DISTANCE_LABEL_STEP_M
+    if (bucket !== lastDistanceBucket) {
+      lastDistanceBucket = bucket
+      updateDistanceText(currentLabel, `${Math.max(0, bucket)}m`)
     }
 
-    // Update arrow and visibility
     const onScreen = updateOffscreenArrow(camera, viewportWidthPx, viewportHeightPx)
     setVisible(onScreen)
     return onScreen
@@ -338,7 +353,6 @@ export function createWaypointSprite (options: {
     mat.map?.dispose()
     mat.dispose()
     if (arrowSprite) {
-      // Remove arrow from parent before disposing
       if (arrowSprite.parent) {
         arrowSprite.parent.remove(arrowSprite)
       }
@@ -346,6 +360,10 @@ export function createWaypointSprite (options: {
       am.map?.dispose()
       am.dispose()
     }
+    arrowSprite = undefined
+    arrowCanvas = undefined
+    arrowCtx = undefined
+    arrowTexture = undefined
   }
 
   return {
@@ -364,41 +382,46 @@ export function createWaypointSprite (options: {
 }
 
 // Internal helpers
-function drawCombinedCanvas (color: number, id: string, distance: string, visualScale = 1): OffscreenCanvas {
-  const scale = WAYPOINT_CONFIG.CANVAS_SCALE * (globalThis.devicePixelRatio || 1)
-  const size = WAYPOINT_CONFIG.CANVAS_SIZE * scale
-  const canvas = createCanvas(size, size)
+function computeLabelCanvasLineScale (): number {
+  const dpr = globalThis.devicePixelRatio || 1
+  const effectiveDpr = Math.min(dpr, LABEL_CANVAS_MAX_DEVICE_PIXEL_RATIO)
+  return WAYPOINT_CONFIG.CANVAS_SCALE * effectiveDpr
+}
+
+function getLabelCanvasSize (): number {
+  return Math.round(WAYPOINT_CONFIG.CANVAS_SIZE * computeLabelCanvasLineScale())
+}
+
+function drawCombinedOntoCanvas (
+  canvas: OffscreenCanvas,
+  color: number,
+  id: string,
+  distance: string,
+  visualScale: number
+): void {
+  const size = canvas.width
+  const scale = computeLabelCanvasLineScale()
   const ctx = canvas.getContext('2d')!
 
-  // Clear canvas
   ctx.clearRect(0, 0, size, size)
 
-  // Draw dot with visual scale applied
   const centerX = size / 2
   const dotY = Math.round(size * WAYPOINT_CONFIG.LAYOUT.DOT_Y)
-  const radius = Math.round(size * 0.05 * visualScale) // Dot takes up ~5% of canvas height, scaled
-  const borderWidth = Math.max(2, Math.round(4 * scale * visualScale))
+  const innerRadius = Math.round(size * 0.05 * visualScale)
+  const outlinePad = Math.max(2, Math.round(4 * scale * visualScale))
+  const dotRadius = innerRadius + outlinePad
 
-  // Outer border (black)
   ctx.beginPath()
-  ctx.arc(centerX, dotY, radius + borderWidth, 0, Math.PI * 2)
-  ctx.fillStyle = 'black'
-  ctx.fill()
-
-  // Inner circle (colored)
-  ctx.beginPath()
-  ctx.arc(centerX, dotY, radius, 0, Math.PI * 2)
+  ctx.arc(centerX, dotY, dotRadius, 0, Math.PI * 2)
   ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`
   ctx.fill()
 
-  // Text properties
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
 
-  // Title with visual scale applied
-  const nameFontPx = Math.round(size * 0.08 * visualScale) // ~8% of canvas height, scaled
-  const distanceFontPx = Math.round(size * 0.06 * visualScale) // ~6% of canvas height, scaled
-  ctx.font = `bold ${nameFontPx}px mojangles`
+  const nameFontPx = Math.round(size * 0.08 * visualScale)
+  const distanceFontPx = Math.round(size * 0.06 * visualScale)
+  ctx.font = `800 ${nameFontPx}px mojangles`
   ctx.lineWidth = Math.max(2, Math.round(3 * scale * visualScale))
   const nameY = Math.round(size * WAYPOINT_CONFIG.LAYOUT.NAME_Y)
 
@@ -407,8 +430,7 @@ function drawCombinedCanvas (color: number, id: string, distance: string, visual
   ctx.fillStyle = 'white'
   ctx.fillText(id, centerX, nameY)
 
-  // Distance with visual scale applied
-  ctx.font = `bold ${distanceFontPx}px mojangles`
+  ctx.font = `800 ${distanceFontPx}px mojangles`
   ctx.lineWidth = Math.max(2, Math.round(2 * scale * visualScale))
   const distanceY = Math.round(size * WAYPOINT_CONFIG.LAYOUT.DISTANCE_Y)
 
@@ -416,26 +438,6 @@ function drawCombinedCanvas (color: number, id: string, distance: string, visual
   ctx.strokeText(distance, centerX, distanceY)
   ctx.fillStyle = '#CCCCCC'
   ctx.fillText(distance, centerX, distanceY)
-
-  return canvas
-}
-
-function createCombinedSprite (color: number, id: string, distance: string, depthTest: boolean, visualScale = 1): THREE.Sprite {
-  const canvas = drawCombinedCanvas(color, id, distance, visualScale)
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.anisotropy = 1
-  texture.magFilter = THREE.LinearFilter
-  texture.minFilter = THREE.LinearFilter
-  const material = new THREE.SpriteMaterial({
-    map: texture,
-    transparent: true,
-    opacity: 1,
-    depthTest,
-    depthWrite: false,
-  })
-  const sprite = new THREE.Sprite(material)
-  sprite.position.set(0, 0, 0)
-  return sprite
 }
 
 export const WaypointHelpers = {
