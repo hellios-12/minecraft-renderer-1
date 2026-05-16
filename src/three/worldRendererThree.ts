@@ -8,7 +8,7 @@ import { renderSign } from '../sign-renderer'
 import { DisplayWorldOptions, GraphicsInitOptions } from '../graphicsBackend/types'
 import { chunkPos, sectionPos } from '../lib/simpleUtils'
 import { WorldRendererCommon } from '../lib/worldrendererCommon'
-import { addNewStat } from '../lib/ui/newStats'
+import { addNewStat, MC_RENDERER_DEBUG_OVERLAY_CLASS } from '../lib/ui/newStats'
 import { MesherGeometryOutput } from '../mesher-shared/shared'
 import { ItemSpecificContextProperties } from '../playerState/types'
 import { setBlockPosition } from '../mesher-shared/standaloneRenderer'
@@ -386,7 +386,7 @@ export class WorldRendererThree extends WorldRendererCommon {
         if ((prop === 'x' || prop === 'y' || prop === 'z') && typeof value === 'number' && Math.abs(value) > WORLD_COORD_THRESHOLD) {
           warnOnce()
         }
-        ;(target as any)[prop] = value
+        ; (target as any)[prop] = value
         return true
       },
       get(target, prop, receiver) {
@@ -700,22 +700,19 @@ export class WorldRendererThree extends WorldRendererCommon {
   addDebugOverlay() {
     if (this.debugOverlayAdded) return
     this.debugOverlayAdded = true
-    const pane = addNewStat('debug-overlay')
+    const pane = addNewStat('debug-overlay', 80, 0, undefined, { className: MC_RENDERER_DEBUG_OVERLAY_CLASS })
     setInterval(() => {
       pane.setVisibility(this.displayAdvancedStats)
       if (this.displayAdvancedStats) {
-        const formatBigNumber = (num: number) => {
-          return new Intl.NumberFormat('en-US', {}).format(num)
-        }
+        const formatFull = (num: number) => new Intl.NumberFormat('en-US', {}).format(num)
+        const formatCompact = (num: number) => new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(num)
         let text = ''
-        text += `C: ${formatBigNumber(this.renderer.info.render.calls)} `
-        text += `TR: ${formatBigNumber(this.renderer.info.render.triangles)} `
-        text += `TE: ${formatBigNumber(this.renderer.info.memory.textures)} `
-        text += `F: ${formatBigNumber(this.tilesRendered)} `
-        text += `B: ${formatBigNumber(this.blocksRendered)} `
+        text += `TE: ${formatFull(this.renderer.info.memory.textures)} `
+        text += `F: ${formatCompact(this.tilesRendered)} `
+        text += `B: ${formatCompact(this.blocksRendered)} `
         text += `MEM: ${this.chunkMeshManager.getEstimatedMemoryUsage().total} `
         const poolStats = this.chunkMeshManager.getStats()
-        text += `POOL: ${poolStats.activeCount}/${poolStats.poolSize} HR: ${poolStats.hitRate}`
+        text += `POOL: ${poolStats.activeCount}/${poolStats.poolSize}`
         pane.updateText(text)
         this.backendInfoReport = text
       }

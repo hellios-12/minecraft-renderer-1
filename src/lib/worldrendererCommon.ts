@@ -10,7 +10,7 @@ import { dynamicMcDataFiles } from './buildSharedConfig.mjs'
 import { DisplayWorldOptions, GraphicsInitOptions, RendererReactiveState, SoundSystem } from '../graphicsBackend/types'
 import { HighestBlockInfo, CustomBlockModels, BlockStateModelInfo, getBlockAssetsCacheKey, MesherConfig, MesherMainEvent, SECTION_HEIGHT } from '../mesher-shared/shared'
 import { chunkPos } from './simpleUtils'
-import { addNewStat, removeAllStats, updatePanesVisibility, updateStatText } from './ui/newStats'
+import { addNewStat, MC_RENDERER_DEBUG_OVERLAY_CLASS, removeAllStats, updatePanesVisibility, updateStatText } from './ui/newStats'
 import { getPlayerStateUtils } from '../graphicsBackend/playerState'
 // TODO: Fix PlayerStateRenderer and PlayerStateUtils imports
 type PlayerStateUtils = ReturnType<typeof getPlayerStateUtils>
@@ -193,7 +193,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       updateStatText('loaded-chunks', `${loadedChunks}/${this.chunksLength} chunks (${this.lastChunkDistance}/${this.viewDistance})`)
     })
 
-    addNewStat('downloaded-chunks', 100, 140, 20)
+    addNewStat('downloaded-chunks', 100, 140, 20, { className: MC_RENDERER_DEBUG_OVERLAY_CLASS })
 
     this.connect(this.displayOptions.worldView as any)
 

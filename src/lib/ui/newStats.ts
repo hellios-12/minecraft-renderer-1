@@ -6,7 +6,17 @@ const rightOffset = 0
 const stats = {}
 
 let lastY = 40
-export const addNewStat = (id: string, width = 80, x = rightOffset, y = lastY) => {
+
+/** Class for advanced stats pane; host app should set z-index (see integrating app global CSS). */
+export const MC_RENDERER_DEBUG_OVERLAY_CLASS = 'mc-renderer-debug-overlay'
+
+export const addNewStat = (
+  id: string,
+  width = 80,
+  x = rightOffset,
+  y = lastY,
+  opts?: { className?: string },
+) => {
   if (isWebWorker) return { updateText() { }, setVisibility() { } }
 
   const pane = document.createElement('div')
@@ -19,7 +29,11 @@ export const addNewStat = (id: string, width = 80, x = rightOffset, y = lastY) =
   pane.style.padding = '2px'
   pane.style.fontFamily = 'monospace'
   pane.style.fontSize = '12px'
-  pane.style.zIndex = '100'
+  if (opts?.className) {
+    pane.className = opts.className
+  } else {
+    pane.style.zIndex = '100'
+  }
   pane.style.pointerEvents = 'none'
   document.body.appendChild(pane)
   stats[id] = pane

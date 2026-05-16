@@ -77,3 +77,4 @@ export {
   addCanvasForWorker,
   isWebWorker
 } from './three/documentRenderer'
+export { MC_RENDERER_DEBUG_OVERLAY_CLASS } from './lib/ui/newStats'
