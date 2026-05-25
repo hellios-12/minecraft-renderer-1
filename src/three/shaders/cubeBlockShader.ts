@@ -3,7 +3,7 @@ import * as THREE from 'three'
 // Face order: UP=0, DOWN=1, EAST=2, WEST=3, SOUTH=4, NORTH=5
 // matches WASM mesher face order (mesher.rs FACE_NAMES)
 
-const vertexShader = `
+const vertexShader = /* glsl */ `
 precision highp float;
 precision highp int;
 
@@ -19,10 +19,10 @@ flat out int v_tintIndex;
 flat out int v_faceId;
 
 // Logarithmic depth buffer support: Three.js injects USE_LOGDEPTHBUF when the
-// renderer has \`logarithmicDepthBuffer: true\`. Standard Three.js shader chunks
+// renderer has logarithmicDepthBuffer: true. Standard Three.js shader chunks
 // rewrite gl_FragDepth via these varyings — if we don't, our linear gl_FragCoord.z
 // fails depth test vs sibling meshes that DO write log depth (we'd be invisible).
-// The renderer always uses a perspective camera, so we skip the \`vIsPerspective\`
+// The renderer always uses a perspective camera, so we skip the vIsPerspective
 // varying and always emit log depth — avoids the smooth-interpolation precision
 // issue where vIsPerspective lands on 0.9999… on some pixels and silently falls
 // back to linear gl_FragCoord.z, producing a white-noise z-fight pattern against
@@ -34,8 +34,8 @@ out float vFragDepth;
 // Fog support: Three.js injects USE_FOG when scene.fog is set AND material.fog === true.
 // Standard MeshBasicMaterial enables this by default; ShaderMaterial does NOT, which is
 // why our blocks looked unaffected by distance haze while neighbouring legacy meshes
-// faded into the fog. \`createCubeBlockMaterial\` sets \`fog: true\` and merges
-// \`UniformsLib.fog\` so Three.js can auto-refresh the fog uniforms each frame.
+// faded into the fog. createCubeBlockMaterial sets fog: true and merges
+// UniformsLib.fog so Three.js can auto-refresh the fog uniforms each frame.
 #ifdef USE_FOG
 out float vFogDepth;
 #endif
@@ -153,7 +153,7 @@ void main() {
 }
 `
 
-const fragmentShader = `
+const fragmentShader = /* glsl */ `
 precision highp float;
 precision highp int;
 
