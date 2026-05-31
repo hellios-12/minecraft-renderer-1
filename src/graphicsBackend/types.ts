@@ -21,6 +21,8 @@ export interface SoundSystem {
   destroy: () => void
 }
 
+import type { MenuBackgroundOptions } from '../three/menuBackground/types'
+
 /** Graphics backend configuration */
 export interface GraphicsBackendConfig {
   fpsLimit?: number
@@ -28,6 +30,8 @@ export interface GraphicsBackendConfig {
   statsVisible?: number
   sceneBackground: string
   timeoutRendering?: boolean
+  /** Default options when `startMenuBackground()` is called without arguments */
+  menuBackground?: MenuBackgroundOptions
 }
 
 // ============================================================================
@@ -111,7 +115,7 @@ export interface DisplayWorldOptions {
 export interface GraphicsBackend {
   id: string
   displayName: string
-  startPanorama(): Promise<void>
+  startMenuBackground(options?: MenuBackgroundOptions): Promise<void>
   startWorld(options: DisplayWorldOptions): Promise<void>
   disconnect(): void
   setRendering(rendering: boolean): void

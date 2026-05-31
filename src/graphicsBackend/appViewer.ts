@@ -26,10 +26,12 @@ import { defaultWorldRendererConfig, defaultGraphicsBackendConfig, getDefaultRen
 import { PlayerStateReactive } from '../playerState/playerState'
 import { ResourcesManager, ResourcesManagerTransferred } from '../resourcesManager'
 import { preloadMesherWorkerScript } from './preloadWorkers'
+import type { MenuBackgroundOptions } from '../three/menuBackground/types'
 
 export interface AppViewerOptions {
   config?: Partial<GraphicsBackendConfig>
   rendererConfig?: Partial<WorldRendererConfig>
+  menuBackground?: MenuBackgroundOptions
 }
 
 /**
@@ -48,6 +50,7 @@ export class AppViewer {
 
   // Configuration
   readonly config: GraphicsBackendConfig
+  readonly menuBackgroundOptions: MenuBackgroundOptions
   readonly inWorldRenderingConfig: WorldRendererConfig
 
   // Backend
@@ -82,7 +85,10 @@ export class AppViewer {
       ...defaultGraphicsBackendConfig,
       ...options.config
     }
-
+    this.menuBackgroundOptions = {
+      ...options.config?.menuBackground,
+      ...options.menuBackground
+    }
     this.inWorldRenderingConfig = proxy({
       ...defaultWorldRendererConfig,
       ...options.rendererConfig
@@ -144,8 +150,8 @@ export class AppViewer {
 
     // Execute queued action if exists
     if (this.currentState) {
-      if (this.currentState.method === 'startPanorama') {
-        this.startPanorama()
+      if (this.currentState.method === 'startMenuBackground') {
+        this.startMenuBackground(...this.currentState.args)
       } else {
         const { method, args } = this.currentState
           ; (this.backend as any)[method](...args)
@@ -201,17 +207,23 @@ export class AppViewer {
   }
 
   /**
-   * Start panorama display (menu background).
+   * Start the main-menu background (3D scene behind UI).
    */
-  startPanorama(): void {
+  startMenuBackground(menuBackgroundOptions?: MenuBackgroundOptions): void {
     if (this.currentDisplay === 'menu') return
+
+    const merged: MenuBackgroundOptions = {
+      ...this.menuBackgroundOptions,
+      ...menuBackgroundOptions,
+      resourcesManager: menuBackgroundOptions?.resourcesManager ?? this.resourcesManager
+    }
 
     if (this.backend) {
       this.currentDisplay = 'menu'
-      this.backend.startPanorama()
+      this.backend.startMenuBackground(merged)
     }
 
-    this.currentState = { method: 'startPanorama', args: [] }
+    this.currentState = { method: 'startMenuBackground', args: [merged] }
   }
 
   /**

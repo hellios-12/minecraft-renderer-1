@@ -57,8 +57,7 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
   const backend: GraphicsBackend = {
     id: 'threejs',
     displayName: `three.js ${THREE.REVISION}`,
-    // startPanorama: proxy.startPanorama,
-    async startPanorama() { },
+    async startMenuBackground() { },
     async startWorld(options) {
       const workerThreeSendData = {
         ...dynamicMcDataFiles,
