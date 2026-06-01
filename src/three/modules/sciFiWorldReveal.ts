@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type { WorldRendererThree } from '../worldRendererThree'
 import type { RendererModuleController, RendererModuleManifest } from '../rendererModuleSystem'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
+import type { GlobalBlockBufferShaderData } from '../globalBlockBuffer'
 
 const SCI_FI_CYAN = new THREE.Color(13 / 255, 234 / 255, 238 / 255)
 const CHUNKS_THRESHOLD = 9
@@ -20,7 +21,10 @@ interface RevealingSection {
   wireframeGroup: THREE.Group
   revealStartTime: number
   phase: 'wireframe' | 'transitioning' | 'complete'
-  originalMeshRef: THREE.Mesh | null
+  /** Legacy + shader render meshes hidden during reveal */
+  renderMeshRefs: THREE.Mesh[]
+  /** Shader cubes temporarily removed from globalBlockBuffer during reveal. */
+  globalShaderRestore?: GlobalBlockBufferShaderData
   wireframeMs: number
   revealMs: number
 }
@@ -43,6 +47,8 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   private onWorldSwitchedCb: (() => void) | null = null
   private patched = false
   private initialWaveDone = false
+  /** True after every section from the first reveal wave has finished animating. */
+  private initialRevealWaveSettled = false
 
   // Wireframe materials
   private readonly wireframeMaterial!: THREE.LineBasicMaterial
@@ -60,11 +66,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   private originalSceneAdd: ((...object: THREE.Object3D[]) => THREE.Scene) | null = null
   private originalHandleWorkerMessage: ((data: { geometry: MesherGeometryOutput; key: string; type: string }) => void) | null = null
 
-  private configEnabled = true
-
   constructor(private readonly worldRenderer: WorldRendererThree) {
-    this.configEnabled = this.worldRenderer.worldRendererConfig.futuristicReveal === true
-
     this.wireframeMaterial = new THREE.LineBasicMaterial({
       color: SCI_FI_CYAN,
       transparent: true,
@@ -82,9 +84,27 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     })
   }
 
+  /** Read live config — option may sync after module construction (watchOptions). */
+  isFuturisticRevealConfigured (): boolean {
+    return this.worldRenderer.worldRendererConfig.futuristicReveal === true
+  }
+
+  /** Until the first cinematic wave fully completes, shader sections stay off the global buffer. */
+  isInInitialRevealCampaign (): boolean {
+    return this.enabled && !this.initialRevealWaveSettled
+  }
+
+  autoEnableCheck (): boolean {
+    return this.isFuturisticRevealConfigured()
+  }
+
   enable(): void {
-    if (!this.configEnabled) return
-    if (this.enabled) return
+    if (!this.isFuturisticRevealConfigured()) return
+    if (this.enabled && this.patched) return
+    if (this.enabled && !this.patched) {
+      this.patchWorldRenderer()
+      return
+    }
     this.enabled = true
     this.patchWorldRenderer()
   }
@@ -213,8 +233,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
    * Check if an object or its children is a mesh that needs reveal effect visibility patch
    */
   private checkAndPatchMesh(obj: THREE.Object3D): void {
-    // Check if this is a mesh with name === 'mesh'
-    if (obj instanceof THREE.Mesh && obj.name === 'mesh') {
+    if (obj instanceof THREE.Mesh && (obj.name === 'mesh' || obj.name === 'shaderMesh')) {
       const sectionKey = this.findSectionKeyForMesh(obj)
       if (sectionKey && this.shouldUseRevealEffect(sectionKey)) {
         obj.visible = false
@@ -279,13 +298,62 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     return this.worldRenderer.getCameraPosition()
   }
 
-  /**
-   * Get original mesh for a section key
-   */
-  private getOriginalMesh(key: string): THREE.Mesh | null {
+  private sectionHasRevealContent(geometry: MesherGeometryOutput): boolean {
+    if ((geometry.wireframePositions?.length ?? 0) > 0) return true
+    if ((geometry.positions?.length ?? 0) > 0) return true
+    return (geometry.shaderCubes?.count ?? 0) > 0
+  }
+
+  /** Legacy `mesh` and instanced `shaderMesh` for a section. */
+  private getSectionRenderMeshes(key: string): THREE.Mesh[] {
     const sectionObject = this.worldRenderer.chunkMeshManager.sectionObjects[key]
-    if (!sectionObject) return null
-    return sectionObject.children.find(child => child.name === 'mesh') as THREE.Mesh | null
+    if (!sectionObject) return []
+    const meshes: THREE.Mesh[] = []
+    for (const name of ['mesh', 'shaderMesh'] as const) {
+      const child = sectionObject.children.find(c => c.name === name)
+      if (child instanceof THREE.Mesh) meshes.push(child)
+    }
+    return meshes
+  }
+
+  private hideSectionRenderMeshes(key: string): THREE.Mesh[] {
+    const meshes = this.getSectionRenderMeshes(key)
+    for (const m of meshes) {
+      m.visible = false
+      ;(m as any).hiddenByReveal = true
+    }
+    return meshes
+  }
+
+  private setMeshFadeOpacity(mesh: THREE.Mesh, opacity: number): void {
+    // ShaderMaterial ignores material.opacity; cloning breaks atlas uniforms.
+    if (mesh.name === 'shaderMesh') {
+      mesh.visible = opacity > 0.001
+      return
+    }
+    const mat = mesh.material
+    if (Array.isArray(mat)) return
+    if (!(mat as any).originalMaterial) {
+      ;(mat as any).originalMaterial = mat
+      const fadeMat = mat.clone()
+      fadeMat.transparent = true
+      fadeMat.opacity = opacity
+      fadeMat.needsUpdate = true
+      mesh.material = fadeMat
+    } else {
+      mat.opacity = opacity
+      mat.transparent = true
+      mat.needsUpdate = true
+    }
+  }
+
+  private restoreMeshMaterial(mesh: THREE.Mesh): void {
+    const originalMat = (mesh as any).originalMaterial as THREE.Material | undefined
+    if (!originalMat) return
+    const currentMat = mesh.material as THREE.Material
+    mesh.material = originalMat
+    if (currentMat !== originalMat) currentMat.dispose()
+    delete (mesh as any).originalMaterial
   }
 
   /**
@@ -306,6 +374,12 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     // If already revealed or currently revealing, skip
     if (this.revealedChunks.has(key) || this.revealingSections.has(key)) return
 
+    // After the initial spawn wave, show streaming sections immediately (no wireframe flash).
+    if (this.revealTriggered && this.initialWaveDone) {
+      this.revealedChunks.add(key)
+      return
+    }
+
     // If reveal already triggered, start effect immediately (don't store in pending)
     if (this.revealTriggered) {
       this.startSectionReveal(key, geometry)
@@ -319,7 +393,10 @@ export class SciFiWorldRevealModule implements RendererModuleController {
    * Check if a section should use the reveal effect
    */
   shouldUseRevealEffect(key: string): boolean {
-    return this.enabled && !this.revealedChunks.has(key) && !this.revealingSections.has(key)
+    if (!this.enabled) return false
+    // Match registerSection: no cinematic hide for chunks loaded while moving.
+    if (this.revealTriggered && this.initialWaveDone) return false
+    return !this.revealedChunks.has(key) && !this.revealingSections.has(key)
   }
 
   /**
@@ -367,7 +444,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
    * Start the reveal effect for a single section
    */
   private startSectionReveal(key: string, geometry: MesherGeometryOutput): void {
-    if (!geometry.positions?.length) return
+    if (!this.sectionHasRevealContent(geometry)) return
 
     // Don't create if already exists
     if (this.revealingSections.has(key) || this.revealedChunks.has(key)) return
@@ -375,11 +452,10 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     // Create wireframe geometry
     const wireframeGeom = this.createWireframeGeometry(geometry)
 
-    const original = this.getOriginalMesh(key)
-    if (original) {
-      original.visible = false
-        ; (original as any).hiddenByReveal = true
-    }
+    const global = this.worldRenderer.chunkMeshManager.globalBlockBuffer
+    const globalShaderRestore = global?.hasSection(key) ? global.takeSectionData(key) : undefined
+
+    const renderMeshRefs = this.hideSectionRenderMeshes(key)
     // Main wireframe
     const wireframe = new THREE.LineSegments(wireframeGeom, this.wireframeMaterial.clone())
     this.worldRenderer.sceneOrigin.track(wireframe)
@@ -412,25 +488,45 @@ export class SciFiWorldRevealModule implements RendererModuleController {
       wireframeGroup: group,
       revealStartTime: performance.now(),
       phase: 'wireframe',
-      originalMeshRef: null,
+      renderMeshRefs,
+      globalShaderRestore,
       wireframeMs,
       revealMs,
     }
 
     setTimeout(() => {
-      const m = this.getOriginalMesh(key)
-      if (m && !(m as any).hiddenByReveal) {
-        m.visible = false
-          ; (m as any).hiddenByReveal = true
+      for (const m of this.getSectionRenderMeshes(key)) {
+        if (!(m as any).hiddenByReveal) {
+          this.hideSectionRenderMeshes(key)
+        }
       }
     }, 0)
 
     this.revealingSections.set(key, section)
   }
 
-  /**
-   * Create wireframe geometry from mesh geometry
-   */
+  /** 16³ section bounds wireframe in section-local coords (−8…+8). */
+  private createSectionBoundsWireframe(): THREE.BufferGeometry {
+    const min = -8
+    const max = 8
+    const c = [
+      [min, min, min], [max, min, min], [min, max, min], [max, max, min],
+      [min, min, max], [max, min, max], [min, max, max], [max, max, max],
+    ] as const
+    const edges: [number, number][] = [
+      [0, 1], [1, 3], [3, 2], [2, 0],
+      [4, 5], [5, 7], [7, 6], [6, 4],
+      [0, 4], [1, 5], [2, 6], [3, 7],
+    ]
+    const linePositions: number[] = []
+    for (const [a, b] of edges) {
+      linePositions.push(...c[a]!, ...c[b]!)
+    }
+    const wireframeGeom = new THREE.BufferGeometry()
+    wireframeGeom.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3))
+    return wireframeGeom
+  }
+
   private createWireframeGeometry(geometry: MesherGeometryOutput): THREE.BufferGeometry {
     if (geometry.wireframePositions && geometry.wireframePositions.length > 0) {
       const wireframeGeom = new THREE.BufferGeometry()
@@ -440,6 +536,10 @@ export class SciFiWorldRevealModule implements RendererModuleController {
 
     const positions = geometry.positions as Float32Array
     const indices = geometry.indices as Uint32Array | Uint16Array
+
+    if (!positions?.length || !indices?.length) {
+      return this.createSectionBoundsWireframe()
+    }
 
     const linePositions: number[] = []
     const edgeSet = new Set<string>()
@@ -528,18 +628,10 @@ export class SciFiWorldRevealModule implements RendererModuleController {
         if (elapsed > section.wireframeMs) {
           section.phase = 'transitioning'
 
-          // Get and show the original mesh with fade-in
-          section.originalMeshRef = this.getOriginalMesh(key)
-          if (section.originalMeshRef) {
-            section.originalMeshRef.visible = true
-            // Store original material and create fade version
-            const originalMat = section.originalMeshRef.material as THREE.MeshLambertMaterial
-            const fadeMat = originalMat.clone()
-            fadeMat.transparent = true
-            fadeMat.opacity = 0
-            fadeMat.needsUpdate = true
-              ; (section.originalMeshRef as any).originalMaterial = originalMat
-            section.originalMeshRef.material = fadeMat
+          section.renderMeshRefs = this.getSectionRenderMeshes(key)
+          for (const mesh of section.renderMeshRefs) {
+            mesh.visible = true
+            this.setMeshFadeOpacity(mesh, 0)
           }
         }
       } else if (section.phase === 'transitioning') {
@@ -563,10 +655,8 @@ export class SciFiWorldRevealModule implements RendererModuleController {
           glowMat.opacity = (1 - eased) * 0.55
         }
 
-        // Fade in original mesh
-        if (section.originalMeshRef?.material) {
-          const fadeMat = section.originalMeshRef.material as THREE.MeshLambertMaterial
-          fadeMat.opacity = eased
+        for (const mesh of section.renderMeshRefs) {
+          this.setMeshFadeOpacity(mesh, eased)
         }
 
         // Complete transition
@@ -591,17 +681,24 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     this.revealingSections.delete(section.key)
     this.revealedChunks.add(section.key)
 
-    // Restore original material first
-    if (section.originalMeshRef) {
-      const originalMat = (section.originalMeshRef as any).originalMaterial
-      if (originalMat) {
-        const currentMat = section.originalMeshRef.material as THREE.Material
-        section.originalMeshRef.material = originalMat
-        currentMat.dispose()
-        delete (section.originalMeshRef as any).originalMaterial
-      }
-      section.originalMeshRef.visible = true
-      delete (section.originalMeshRef as any).hiddenByReveal
+    if (this.revealTriggered && this.revealingSections.size === 0) {
+      this.initialRevealWaveSettled = true
+    }
+
+    for (const mesh of section.renderMeshRefs) {
+      this.restoreMeshMaterial(mesh)
+      mesh.visible = true
+      delete (mesh as any).hiddenByReveal
+    }
+
+    this.worldRenderer.chunkMeshManager.migrateDeferredShaderToGlobal(section.key)
+
+    if (section.globalShaderRestore) {
+      this.worldRenderer.chunkMeshManager.globalBlockBuffer?.addSection(
+        section.key,
+        section.globalShaderRestore.words,
+        section.globalShaderRestore.count,
+      )
     }
 
     // Clean up wireframe group
@@ -654,6 +751,8 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     this.revealedChunks.clear()
     this.finishedChunkCount = 0
     this.revealTriggered = false
+    this.initialWaveDone = false
+    this.initialRevealWaveSettled = false
     this.revealStartTime = 0
     this.pulseTime = 0
   }
@@ -664,16 +763,11 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   forceCompleteAll(): void {
     const sections = [...this.revealingSections.values()]
     for (const section of sections) {
-      // Show original mesh immediately
-      if (!section.originalMeshRef) {
-        section.originalMeshRef = this.getOriginalMesh(section.key)
-      }
-      if (section.originalMeshRef) {
-        const originalMat = (section.originalMeshRef as any).originalMaterial
-        if (originalMat) {
-          section.originalMeshRef.material = originalMat
-        }
-        section.originalMeshRef.visible = true
+      section.renderMeshRefs = this.getSectionRenderMeshes(section.key)
+      for (const mesh of section.renderMeshRefs) {
+        this.restoreMeshMaterial(mesh)
+        mesh.visible = true
+        delete (mesh as any).hiddenByReveal
       }
       this.completeReveal(section)
     }
@@ -735,7 +829,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
       sections: [...this.revealingSections.entries()].map(([key, s]) => ({
         key,
         phase: s.phase,
-        hasOriginalMesh: !!s.originalMeshRef,
+        renderMeshCount: s.renderMeshRefs.length,
         wireframeInScene: s.wireframeGroup.parent !== null
       }))
     }

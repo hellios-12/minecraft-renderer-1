@@ -41,6 +41,11 @@ type SectionKey = string
 
 export class WorldRendererThree extends WorldRendererCommon {
   outputFormat = 'threeJs' as const
+
+  protected override isShaderCubeBlocksEnabled(): boolean {
+    return this.worldRendererConfig.shaderCubeBlocks === true
+      && !!this.renderer?.capabilities?.isWebGL2
+  }
   chunkMeshManager: ChunkMeshManager
   get sectionObjects() {
     return this.chunkMeshManager.sectionObjects
@@ -521,6 +526,12 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.onReactiveConfigUpdated('defaultSkybox', (value) => {
       this.skyboxRenderer.updateDefaultSkybox(value)
     })
+    this.onReactiveConfigUpdated('shaderCubeDebugMode', () => {
+      this.chunkMeshManager.syncCubeShaderUniforms()
+    })
+    this.onReactiveConfigUpdated('futuristicReveal', () => {
+      this.updateModulesFromConfig()
+    })
 
     let currentHandRenderer = this.displayOptions.inWorldRenderingConfig.handRenderer
     this.onReactiveConfigUpdated('handRenderer', (value) => {
@@ -617,6 +628,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     texture.needsUpdate = true
     texture.flipY = false
     this.material.map = texture
+    this.chunkMeshManager.syncCubeShaderUniforms()
 
     const itemsTexture = loadThreeJsTextureFromBitmap(resources.itemsAtlasImage!)
     itemsTexture.needsUpdate = true
@@ -733,12 +745,21 @@ export class WorldRendererThree extends WorldRendererCommon {
    * Optionally update data that are depedendent on the viewer position
    */
   updatePosDataChunk(key: string) {
+    const sectionObj = this.sectionObjects[key]
+    if (!sectionObj) return
+
     const [x, y, z] = key.split(',').map(x => Math.floor(+x / 16))
     // sum of distances: x + y + z
     const chunkDistance = Math.abs(x - this.cameraSectionPos.x) + Math.abs(y - this.cameraSectionPos.y) + Math.abs(z - this.cameraSectionPos.z)
-    const sectionObj = this.sectionObjects[key]
-    const section = (sectionObj as any).mesh ?? sectionObj.children.find(child => child.name === 'mesh')!
-    section.renderOrder = 500 - chunkDistance
+    const renderOrder = 500 - chunkDistance
+
+    // Cubes in globalBlockBuffer may leave sectionObj.mesh unset.
+    const drawable = sectionObj.mesh
+      ?? sectionObj.shaderMesh
+      ?? sectionObj.children.find(child => child.name === 'mesh' || child.name === 'shaderMesh')
+    if (drawable) {
+      drawable.renderOrder = renderOrder
+    }
   }
 
   override updateViewerPosition(pos: Vec3): void {
@@ -819,7 +840,7 @@ export class WorldRendererThree extends WorldRendererCommon {
         continue
       }
 
-      if (!update.geometry.positions.length) {
+      if (!this.chunkMeshManager.sectionHasRenderableContent(update.geometry)) {
         this.chunkMeshManager.releaseSection(update.key)
         continue
       }
@@ -858,7 +879,7 @@ export class WorldRendererThree extends WorldRendererCommon {
         return
       }
 
-      if (!data.geometry.positions.length) {
+      if (!this.chunkMeshManager.sectionHasRenderableContent(data.geometry)) {
         this.chunkMeshManager.releaseSection(data.key)
         return
       }
@@ -964,25 +985,22 @@ export class WorldRendererThree extends WorldRendererCommon {
     raycaster.set(scenePos, direction)
     raycaster.far = distance // Limit raycast distance
 
-    // Filter to only nearby chunks for performance
-    const nearbyChunks = Object.values(this.sectionObjects)
-      .filter(obj => obj.name === 'chunk' && obj.visible)
-      .filter(obj => {
-        // Get the mesh child which has the actual geometry
-        const mesh = obj.children.find(child => child.name === 'mesh')
-        if (!mesh) return false
+    const maxCenterDistance = 80
+    const maxCenterDistSq = maxCenterDistance * maxCenterDistance
+    const ox = pos.x
+    const oy = pos.y
+    const oz = pos.z
 
-        // Check distance from player position to chunk
-        const chunkWorldPos = this._tpChunkWorldPos
-        mesh.getWorldPosition(chunkWorldPos)
-        const distance = scenePos.distanceTo(chunkWorldPos)
-        return distance < 80 // Only check chunks within 80 blocks
-      })
-
-    // Get all mesh children for raycasting
+    // Legacy / deferred-shader meshes (scene-relative raycast)
     const meshes: THREE.Object3D[] = []
-    for (const chunk of nearbyChunks) {
-      const mesh = chunk.children.find(child => child.name === 'mesh')
+    for (const obj of Object.values(this.sectionObjects)) {
+      if (obj.name !== 'chunk' || !obj.visible) continue
+      if (obj.worldX === undefined) continue
+      const dcx = obj.worldX - ox
+      const dcy = obj.worldY! - oy
+      const dcz = obj.worldZ! - oz
+      if (dcx * dcx + dcy * dcy + dcz * dcz > maxCenterDistSq) continue
+      const mesh = obj.children.find(child => child.name === 'mesh' || child.name === 'shaderMesh')
       if (mesh) meshes.push(mesh)
     }
 
@@ -990,8 +1008,18 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     let finalDistance = distance
     if (intersects.length > 0) {
-      // Use intersection distance minus a small offset to prevent clipping
       finalDistance = Math.max(0.5, intersects[0].distance - 0.2)
+    }
+
+    // Shader cubes in global buffer: tight per-section AABBs (no mesh raycast).
+    const boxHit = this.chunkMeshManager.raycastShaderSectionAABBs(
+      pos,
+      direction,
+      finalDistance,
+      maxCenterDistance,
+    )
+    if (boxHit !== undefined) {
+      finalDistance = Math.max(0.5, boxHit - 0.2)
     }
 
     const finalPos = new Vec3(
@@ -1251,6 +1279,11 @@ export class WorldRendererThree extends WorldRendererCommon {
     // eslint-disable-next-line @typescript-eslint/non-nullable-type-assertion-style
     const cam = this.cameraGroupVr instanceof THREE.Group ? this.cameraGroupVr.children.find(child => child instanceof THREE.PerspectiveCamera) as THREE.PerspectiveCamera : this.camera
     this.applyPendingSectionUpdates()
+    const globalBuffer = this.chunkMeshManager.globalBlockBuffer
+    if (globalBuffer) {
+      globalBuffer.setCameraOrigin(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
+      globalBuffer.uploadDirtyRange()
+    }
     this.renderer.render(this.scene, cam)
 
     if (

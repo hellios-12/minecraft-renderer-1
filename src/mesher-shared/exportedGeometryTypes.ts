@@ -10,7 +10,11 @@ export interface ExportedSection {
     uvs: number[]
     indices: number[]
   }
-  shaderCubes?: unknown
+  shaderCubes?: {
+    words: Uint32Array
+    count: number
+    formatVersion: 2
+  }
 }
 
 export interface ExportedWorldGeometry {
