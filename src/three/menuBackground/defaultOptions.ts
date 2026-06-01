@@ -5,8 +5,9 @@ import {
   FUTURISTIC_SCENE_LABELS,
   MINECRAFT_BLOCK_GROUP_IDS,
   MINECRAFT_BLOCK_GROUP_LABELS
-} from './futuristic'
+} from './futuristicMeta'
 import { MENU_BACKGROUND_OPTION_DEFAULTS } from './config'
+import type { RendererGpuPreference } from './gpuPreference'
 
 export type RendererOptionMeta = {
   possibleValues?: string[] | Array<[string, string]>
@@ -19,11 +20,7 @@ export type RendererOptionMeta = {
   requiresRestart?: boolean
 }
 
-export type RendererDefaultOptionKey = keyof typeof RENDERER_DEFAULT_OPTIONS
-
 export type RendererMesherPipeline = 'wasm' | 'legacy-js'
-
-export type RendererGpuPreference = 'default' | 'high-performance' | 'low-power'
 
 export type RendererShaderCubeDebugMode =
   | 'off'
@@ -43,15 +40,6 @@ const SHADER_CUBE_DEBUG_MODE_TO_VALUE: Record<RendererShaderCubeDebugMode, numbe
 /** Maps stored option → `inWorldRenderingConfig.shaderCubeDebugMode` (0–4). */
 export function rendererShaderCubeDebugModeToValue(mode: RendererShaderCubeDebugMode): number {
   return SHADER_CUBE_DEBUG_MODE_TO_VALUE[mode]
-}
-
-/** Maps stored `gpuPreference` to WebGL `powerPreference` (undefined = browser default). */
-export function gpuPreferenceToWebGLPowerPreference(
-  preference: RendererGpuPreference
-): 'high-performance' | 'low-power' | undefined {
-  if (preference === 'high-performance') return 'high-performance'
-  if (preference === 'low-power') return 'low-power'
-  return undefined
 }
 
 const MB = MENU_BACKGROUND_OPTION_DEFAULTS
@@ -95,6 +83,8 @@ export const RENDERER_DEFAULT_OPTIONS = {
   gpuPreference: 'default' as RendererGpuPreference,
   fov: 75
 } as const
+
+export type RendererDefaultOptionKey = keyof typeof RENDERER_DEFAULT_OPTIONS
 
 /** App options storage shape for renderer-owned keys. */
 export type RendererStorageOptions = typeof RENDERER_DEFAULT_OPTIONS

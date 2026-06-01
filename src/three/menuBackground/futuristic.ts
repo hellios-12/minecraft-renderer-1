@@ -6,28 +6,24 @@ import type { MenuBackgroundView } from './activeView'
 import { resizeMenuBackgroundCamera } from './activeView'
 import { loadThreeJsTextureFromBitmap } from '../threeJsUtils'
 import { MENU_BACKGROUND_MOTION_DEFAULTS, MENU_BACKGROUND_OPTION_DEFAULTS } from './config'
+import {
+  FUTURISTIC_CAMERA_IDS,
+  FUTURISTIC_SCENE_IDS,
+  MINECRAFT_BLOCK_GROUP_IDS,
+  type FuturisticCameraId,
+  type FuturisticSceneId,
+  type MinecraftBlockGroupId,
+} from './futuristicMeta'
 
-export const FUTURISTIC_SCENE_IDS = ['galaxy', 'nether', 'end', 'cyber', 'light'] as const
-export type FuturisticSceneId = typeof FUTURISTIC_SCENE_IDS[number]
-
-export const FUTURISTIC_CAMERA_IDS = ['cruise', 'barrel', 'dive', 'orbit', 'snake'] as const
-export type FuturisticCameraId = typeof FUTURISTIC_CAMERA_IDS[number]
-
-export const FUTURISTIC_SCENE_LABELS: Record<FuturisticSceneId, string> = {
-  galaxy: 'Galaxy',
-  nether: 'Nether',
-  end: 'The End',
-  cyber: 'Cyber',
-  light: 'Light Space'
-}
-
-export const FUTURISTIC_CAMERA_LABELS: Record<FuturisticCameraId, string> = {
-  cruise: 'Cruise',
-  barrel: 'Barrel',
-  dive: 'Dive',
-  orbit: 'Orbit',
-  snake: 'Snake'
-}
+export {
+  FUTURISTIC_SCENE_IDS,
+  FUTURISTIC_SCENE_LABELS,
+  FUTURISTIC_CAMERA_IDS,
+  FUTURISTIC_CAMERA_LABELS,
+  MINECRAFT_BLOCK_GROUP_IDS,
+  MINECRAFT_BLOCK_GROUP_LABELS,
+} from './futuristicMeta'
+export type { FuturisticSceneId, FuturisticCameraId, MinecraftBlockGroupId } from './futuristicMeta'
 
 /** Mouse parallax scale (HTML prototype uses 1). */
 const MOUSE_INFLUENCE = 0.1
@@ -84,18 +80,6 @@ export const MINECRAFT_BLOCK_GROUPS = {
     'netherrack', 'soul_sand', 'basalt', 'end_stone'
   ]
 } as const
-
-export const MINECRAFT_BLOCK_GROUP_IDS = ['mixed', 'stainedGlass', 'wool', 'construction', 'glow', 'world'] as const
-export type MinecraftBlockGroupId = typeof MINECRAFT_BLOCK_GROUP_IDS[number]
-
-export const MINECRAFT_BLOCK_GROUP_LABELS: Record<MinecraftBlockGroupId, string> = {
-  mixed: 'Mixed',
-  stainedGlass: 'Stained glass',
-  wool: 'Wool',
-  construction: 'Construction',
-  glow: 'Glow',
-  world: 'World (grass & ores)'
-}
 
 interface ScenePalette {
   bg: number

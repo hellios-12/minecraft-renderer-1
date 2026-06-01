@@ -13,7 +13,7 @@ import Stats from 'stats.js'
 import StatsGl from 'stats-gl'
 import * as tween from '@tweenjs/tween.js'
 import type { GraphicsBackendConfig, GraphicsInitOptions } from '../graphicsBackend/types'
-import { gpuPreferenceToWebGLPowerPreference } from '../three/menuBackground/defaultOptions'
+import { gpuPreferenceToWebGLPowerPreference } from '../three/menuBackground/gpuPreference'
 import { WorldRendererConfig } from '../graphicsBackend'
 
 // ============================================================================
