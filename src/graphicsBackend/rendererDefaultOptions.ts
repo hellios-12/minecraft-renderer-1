@@ -252,7 +252,7 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
     min: 30,
     max: 110,
     unit: '°',
-    text: 'Field of view'
+    text: 'FOV (Field of View)'
   },
   gpuPreference: {
     text: 'GPU preference',
