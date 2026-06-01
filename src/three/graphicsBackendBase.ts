@@ -13,7 +13,8 @@ import { ResourcesManager } from '../resourcesManager'
 import { FrameTimingCollector } from '../lib/frameTimingCollector'
 import { WorldRendererThree } from './worldRendererThree'
 import { DocumentRenderer, isWebWorker, ThreeRendererMainData } from './documentRenderer'
-import { PanoramaRenderer } from './panorama'
+import { MenuBackgroundRenderer } from './menuBackground'
+import type { MenuBackgroundOptions } from './menuBackground/types'
 import { WorldViewWorker } from '../worldView'
 import type { FeedChunkPacketPayload } from '../worldView/types'
 
@@ -126,7 +127,7 @@ export const createGraphicsBackendBase = () => {
   // Private state
   let initOptions!: GraphicsInitOptions
   let documentRenderer: DocumentRenderer | null = null
-  let panoramaRenderer: PanoramaRenderer | null = null
+  let menuBackgroundRenderer: MenuBackgroundRenderer | null = null
   let worldRenderer: WorldRendererThree | null = null
   let frameTimingCollector: FrameTimingCollector | null = null
 
@@ -145,19 +146,26 @@ export const createGraphicsBackendBase = () => {
     callModsMethod('default', backend)
   }
 
-  const startPanorama = async () => {
+  const startMenuBackground = async (menuBackgroundStartOptions?: MenuBackgroundOptions) => {
     if (!documentRenderer) throw new Error('Document renderer not initialized')
     if (worldRenderer) return
 
-    if (!panoramaRenderer) {
-      // Create panorama-specific init options with resourcesManager
-      const panoramaInitOptions = { ...initOptions }
-      panoramaRenderer = new PanoramaRenderer(documentRenderer, panoramaInitOptions, !!process.env.SINGLE_FILE_BUILD_MODE)
-        ; (globalThis as any).panoramaRenderer = panoramaRenderer
+    if (!menuBackgroundRenderer) {
+      const mergedOptions: MenuBackgroundOptions = {
+        ...initOptions.config.menuBackground,
+        ...menuBackgroundStartOptions
+      }
+      menuBackgroundRenderer = new MenuBackgroundRenderer(
+        documentRenderer,
+        { ...initOptions },
+        mergedOptions,
+        !!process.env.SINGLE_FILE_BUILD_MODE
+      )
+        ; (globalThis as any).menuBackgroundRenderer = menuBackgroundRenderer
 
-      callModsMethod('panoramaCreated', panoramaRenderer)
-      await panoramaRenderer.start()
-      callModsMethod('panoramaReady', panoramaRenderer)
+      callModsMethod('menuBackgroundCreated', menuBackgroundRenderer)
+      await menuBackgroundRenderer.start(mergedOptions)
+      callModsMethod('menuBackgroundReady', menuBackgroundRenderer)
     }
   }
 
@@ -171,9 +179,9 @@ export const createGraphicsBackendBase = () => {
       // Set resourcesManager globally for world rendering
       ; (globalThis as any).resourcesManager = displayOptions.resourcesManager
 
-    if (panoramaRenderer) {
-      panoramaRenderer.dispose()
-      panoramaRenderer = null
+    if (menuBackgroundRenderer) {
+      menuBackgroundRenderer.dispose()
+      menuBackgroundRenderer = null
     }
 
     worldRenderer = new WorldRendererThree(documentRenderer.renderer, initOptions, displayOptions)
@@ -205,9 +213,9 @@ export const createGraphicsBackendBase = () => {
   }
 
   const disconnect = () => {
-    if (panoramaRenderer) {
-      panoramaRenderer.dispose()
-      panoramaRenderer = null
+    if (menuBackgroundRenderer) {
+      menuBackgroundRenderer.dispose()
+      menuBackgroundRenderer = null
     }
 
     if (documentRenderer) {
@@ -224,7 +232,7 @@ export const createGraphicsBackendBase = () => {
   const backend: GraphicsBackend = {
     id: 'threejs',
     displayName: `three.js ${THREE.REVISION}`,
-    startPanorama,
+    startMenuBackground,
     startWorld,
     disconnect,
     setRendering(rendering) {
@@ -268,7 +276,7 @@ export const createGraphicsBackendBase = () => {
         updateSizeExternal(width: number, height: number, pixelRatio: number) {
           documentRenderer?.updateSizeExternal(width, height, pixelRatio)
         },
-        startPanorama,
+        startMenuBackground,
         startWorld,
         disconnect,
         setRendering: backend.setRendering,

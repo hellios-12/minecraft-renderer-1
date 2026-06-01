@@ -57,7 +57,9 @@ export class RainModule implements RendererModuleController {
   }
 
   render?: (deltaTime: number) => void = (deltaTime) => {
-    if (!this.enabled || !this.instancedMesh) return
+    if (!this.enabled || !this.instancedMesh || !this.material) return
+
+    this.syncMaterialToSceneFog()
 
     const cameraPos = this.worldRenderer.getCameraPosition()
     this.instancedMesh.position.set(0, 0, 0)
@@ -134,16 +136,32 @@ export class RainModule implements RendererModuleController {
     this.particles = []
   }
 
+  /** Match scene fog so rain fades with distance instead of a flat blue sheet. */
+  private syncMaterialToSceneFog(): void {
+    if (!this.material) return
+    const fog = this.worldRenderer.scene.fog
+    if (fog instanceof THREE.Fog || fog instanceof THREE.FogExp2) {
+      this.material.color.copy(fog.color)
+    } else {
+      this.material.color.set(0xcc_dd_ee)
+    }
+    this.material.fog = true
+  }
+
   private createRain(): void {
     this.geometry = new THREE.BoxGeometry(0.03, 0.3, 0.03)
     this.material = new THREE.MeshBasicMaterial({
-      color: 0x44_66_99,
+      color: 0xcc_dd_ee,
       transparent: true,
-      opacity: 0.6,
+      opacity: 0.35,
+      depthWrite: false,
+      fog: true,
     })
 
     this.instancedMesh = new THREE.InstancedMesh(this.geometry, this.material, PARTICLE_COUNT)
     this.instancedMesh.name = 'rain-particles'
+    this.instancedMesh.frustumCulled = false
+    this.syncMaterialToSceneFog()
 
     const dummy = new THREE.Matrix4()
     const position = new THREE.Vector3()
