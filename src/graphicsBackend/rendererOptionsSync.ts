@@ -169,6 +169,7 @@ export function applyRendererOptions(
   cfg.shadingTheme = o.vanillaLook ? 'vanilla' : 'high-contrast'
   cfg.starfield = o.starfieldRendering
   cfg.defaultSkybox = o.defaultSkybox
+  cfg.fov = o.fov
 }
 
 /** World-view + hand/camera options (call when WorldView is ready). */

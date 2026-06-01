@@ -46,6 +46,8 @@ export const getInitialPlayerState = () => proxy({
   heldItemOff: undefined as HandItemBlock | undefined,
   perspective: 'first_person' as CameraPerspective,
   onFire: false,
+  /** Gameplay FOV scale (sprint, bow, zoom, etc.); base FOV comes from renderer options. */
+  fovMultiplier: 1,
 
   cameraSpectatingEntity: undefined as number | undefined,
 

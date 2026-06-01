@@ -64,6 +64,9 @@ export class WorldRendererThree extends WorldRendererCommon {
   cursorBlock: CursorBlock
   onRender: Array<(deltaTime: number) => void> = []
   private lastRenderTime = 0
+  private animatedFov = 0
+  private lastFovAnimTime = 0
+  private static readonly FOV_TRANSITION_MS = 200
   cameraShake: CameraShake
   cameraContainer!: THREE.Object3D
   media: ThreeJsMedia
@@ -1054,8 +1057,40 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   setCinimaticFov(fov: number): void {
+    this.animatedFov = fov
     this.camera.fov = fov
     this.camera.updateProjectionMatrix()
+  }
+
+  private updateSmoothFov(): void {
+    if (this.cinimaticScript.running) return
+
+    const baseFov = this.displayOptions.inWorldRenderingConfig.fov
+    const mult = this.playerStateReactive.fovMultiplier
+    const targetFov = baseFov * (Number.isFinite(mult) ? mult : 1)
+
+    const now = performance.now()
+    if (this.animatedFov === 0) {
+      this.animatedFov = targetFov
+    }
+
+    if (Math.abs(this.animatedFov - targetFov) >= 0.01) {
+      const elapsed = now - this.lastFovAnimTime
+      const progress = Math.min(elapsed / WorldRendererThree.FOV_TRANSITION_MS, 1)
+      const easeOutCubic = (t: number) => 1 - (1 - t) ** 3
+      this.animatedFov += (targetFov - this.animatedFov) * easeOutCubic(progress)
+      if (Math.abs(this.animatedFov - targetFov) < 0.01) {
+        this.animatedFov = targetFov
+      }
+    } else {
+      this.animatedFov = targetFov
+    }
+    this.lastFovAnimTime = now
+
+    if (this.camera.fov !== this.animatedFov) {
+      this.camera.fov = this.animatedFov
+      this.camera.updateProjectionMatrix()
+    }
   }
 
   updateCamera(pos: Vec3 | null, yaw: number, pitch: number): void {
@@ -1199,11 +1234,10 @@ export class WorldRendererThree extends WorldRendererCommon {
     const cameraPos = this.getCameraPosition()
     this.skyboxRenderer.update(cameraPos, this.viewDistance)
 
-    const sizeOrFovChanged = sizeChanged || this.displayOptions.inWorldRenderingConfig.fov !== this.camera.fov
-    if (sizeOrFovChanged) {
+    this.updateSmoothFov()
+    if (sizeChanged) {
       const size = this.renderer.getSize(new THREE.Vector2())
       this.camera.aspect = size.width / size.height
-      this.camera.fov = this.displayOptions.inWorldRenderingConfig.fov
       this.camera.updateProjectionMatrix()
     }
 

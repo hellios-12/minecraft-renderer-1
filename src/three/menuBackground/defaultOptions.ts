@@ -71,7 +71,8 @@ export const RENDERER_DEFAULT_OPTIONS = {
   viewBobbing: true,
   dayCycleAndLighting: true,
   keepChunksDistance: 1,
-  gpuPreference: 'default' as RendererGpuPreference
+  gpuPreference: 'default' as RendererGpuPreference,
+  fov: 75
 } as const
 
 /** App options storage shape for renderer-owned keys. */
@@ -225,6 +226,12 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
     max: 5,
     unit: ''
   },
+  fov: {
+    min: 30,
+    max: 110,
+    unit: '°',
+    text: 'Field of view'
+  },
   gpuPreference: {
     text: 'GPU preference',
     tooltip: 'WebGL power preference. Requires reload / backend restart to apply.',
@@ -259,6 +266,7 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
         'renderEars',
         'showHand',
         'viewBobbing',
+        'fov',
         'keepChunksDistance',
         'highlightBlockColor',
         'clipWorldBelowY'
