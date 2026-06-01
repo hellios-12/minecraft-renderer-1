@@ -88,7 +88,6 @@ export type WorldRendererConfig = typeof defaultWorldRendererConfig
  */
 export const defaultGraphicsBackendConfig: GraphicsBackendConfig = {
   fpsLimit: undefined,
-  powerPreference: undefined,
   sceneBackground: 'lightblue',
   timeoutRendering: false
 }

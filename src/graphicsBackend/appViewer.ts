@@ -27,6 +27,7 @@ import { PlayerStateReactive } from '../playerState/playerState'
 import { ResourcesManager, ResourcesManagerTransferred } from '../resourcesManager'
 import { preloadMesherWorkerScript } from './preloadWorkers'
 import type { MenuBackgroundOptions } from '../three/menuBackground/types'
+import type { RendererStorageOptions } from '../three/menuBackground/defaultOptions'
 
 export interface AppViewerOptions {
   config?: Partial<GraphicsBackendConfig>
@@ -80,6 +81,9 @@ export class AppViewer {
   // Timing
   lastCamUpdate = 0
 
+  /** Bound by `subscribeRendererOptions` / `bindRendererOptions` — source of truth for renderer-owned settings. */
+  private getRendererOptions?: () => RendererStorageOptions
+
   constructor(options: AppViewerOptions = {}, public resourcesManager: ResourcesManager = new ResourcesManager()) {
     this.config = {
       ...defaultGraphicsBackendConfig,
@@ -116,6 +120,11 @@ export class AppViewer {
     return preloadMesherWorkerScript({ script })
   }
 
+  /** Wire app options storage (valtio proxy) for backend init (WebGL gpuPreference, etc.). */
+  bindRendererOptions(getOptions: () => RendererStorageOptions): void {
+    this.getRendererOptions = getOptions
+  }
+
   /**
    * Load a graphics backend.
    */
@@ -131,6 +140,7 @@ export class AppViewer {
 
     const loaderOptions: GraphicsInitOptions = {
       config: this.config,
+      getRendererOptions: this.getRendererOptions,
       callbacks: {
         displayCriticalError: (error) => {
           console.error('[AppViewer] Critical error:', error)

@@ -30,6 +30,14 @@ export {
 export {
   RENDERER_DEFAULT_OPTIONS,
   RENDERER_OPTIONS_META,
-  RENDERER_RENDER_GUI_SECTIONS
+  RENDERER_RENDER_GUI_SECTIONS,
+  migrateRendererOptions
 } from './defaultOptions'
-export type { RendererDefaultOptionKey, RendererOptionMeta } from './defaultOptions'
+export type {
+  RendererDefaultOptionKey,
+  RendererGpuPreference,
+  RendererMesherPipeline,
+  RendererOptionMeta,
+  RendererStorageOptions
+} from './defaultOptions'
+export { gpuPreferenceToWebGLPowerPreference } from './defaultOptions'

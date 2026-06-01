@@ -21,6 +21,19 @@ export type RendererOptionMeta = {
 
 export type RendererDefaultOptionKey = keyof typeof RENDERER_DEFAULT_OPTIONS
 
+export type RendererMesherPipeline = 'wasm' | 'legacy-js'
+
+export type RendererGpuPreference = 'default' | 'high-performance' | 'low-power'
+
+/** Maps stored `gpuPreference` to WebGL `powerPreference` (undefined = browser default). */
+export function gpuPreferenceToWebGLPowerPreference(
+  preference: RendererGpuPreference
+): 'high-performance' | 'low-power' | undefined {
+  if (preference === 'high-performance') return 'high-performance'
+  if (preference === 'low-power') return 'low-power'
+  return undefined
+}
+
 const MB = MENU_BACKGROUND_OPTION_DEFAULTS
 
 /** Default values for options owned by minecraft-renderer (spread into app `defaultOptions`). */
@@ -38,8 +51,51 @@ export const RENDERER_DEFAULT_OPTIONS = {
   menuBackgroundFuturisticBlockSpeed: MB.futuristicBlockSpeedPercent,
   rendererFuturisticReveal: false,
   rendererPerfDebugOverlay: false,
-  disableBlockEntityTextures: false
+  disableBlockEntityTextures: false,
+  rendererMesher: 'wasm' as RendererMesherPipeline,
+  showChunkBorders: false,
+  renderEntities: true,
+  renderDebug: 'basic' as 'none' | 'basic' | 'advanced',
+  frameLimit: false as number | false,
+  backgroundRendering: '20fps' as 'full' | '20fps' | '5fps',
+  vanillaLook: false,
+  smoothLighting: true,
+  newVersionsLighting: false,
+  vrSupport: true,
+  vrPageGameRendering: false,
+  clipWorldBelowY: undefined as number | undefined,
+  highlightBlockColor: 'auto' as 'auto' | 'blue' | 'classic',
+  loadPlayerSkins: true,
+  renderEars: true,
+  showHand: true,
+  viewBobbing: true,
+  dayCycleAndLighting: true,
+  keepChunksDistance: 1,
+  gpuPreference: 'default' as RendererGpuPreference
 } as const
+
+/** App options storage shape for renderer-owned keys. */
+export type RendererStorageOptions = typeof RENDERER_DEFAULT_OPTIONS
+
+/**
+ * Migrate persisted / legacy option keys into current {@link RENDERER_DEFAULT_OPTIONS} shape.
+ * Call when loading saved settings (safe to run on every load).
+ */
+export function migrateRendererOptions(saved: Record<string, unknown>): void {
+  if (saved.highPerformanceGpu) {
+    saved.gpuPreference = 'high-performance'
+    delete saved.highPerformanceGpu
+  }
+  if (saved.rendererMesher !== 'wasm' && saved.rendererMesher !== 'legacy-js') {
+    if (typeof saved.rendererWasmMesher === 'boolean') {
+      saved.rendererMesher = saved.rendererWasmMesher ? 'wasm' : 'legacy-js'
+    } else if (typeof saved.wasmExperimentalMesher === 'boolean') {
+      saved.rendererMesher = saved.wasmExperimentalMesher ? 'wasm' : 'legacy-js'
+    }
+  }
+  delete saved.wasmExperimentalMesher
+  delete saved.rendererWasmMesher
+}
 
 /** Settings UI metadata for {@link RENDERER_DEFAULT_OPTIONS} keys. */
 export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, RendererOptionMeta>> = {
@@ -101,6 +157,83 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   disableBlockEntityTextures: {
     text: 'Disable block entity textures',
     tooltip: 'Skips signs, banners, heads, maps, etc.'
+  },
+  rendererMesher: {
+    possibleValues: [['wasm', 'WASM'], ['legacy-js', 'Legacy JS']],
+    text: 'Mesher pipeline',
+    tooltip: 'WASM is faster. Use JS if WASM is not working. Requires reload.',
+    requiresRestart: true
+  },
+  showChunkBorders: {
+    text: 'Chunk borders'
+  },
+  renderEntities: {
+    text: 'Render entities'
+  },
+  renderDebug: {
+    possibleValues: ['advanced', 'basic', 'none']
+  },
+  frameLimit: {
+    text: 'Frame limit',
+    tooltip: 'false = VSync / unlimited when focused'
+  },
+  backgroundRendering: {
+    text: 'Background FPS limit',
+    possibleValues: [
+      ['full', 'NO'],
+      ['5fps', '5 FPS'],
+      ['20fps', '20 FPS']
+    ]
+  },
+  vanillaLook: {
+    text: 'Vanilla shading',
+    tooltip: 'On: Minecraft-style face shading. Off: higher-contrast client shading.'
+  },
+  smoothLighting: {},
+  newVersionsLighting: {
+    text: 'Lighting in newer versions'
+  },
+  vrSupport: {
+    text: 'VR support',
+    tooltip: 'Shows VR entry; does not force VR on.'
+  },
+  vrPageGameRendering: {
+    text: 'VR page game rendering'
+  },
+  clipWorldBelowY: {
+    text: 'Clip world below Y'
+  },
+  highlightBlockColor: {
+    possibleValues: [
+      ['auto', 'Auto'],
+      ['blue', 'Blue'],
+      ['classic', 'Classic']
+    ]
+  },
+  loadPlayerSkins: {},
+  renderEars: {
+    tooltip: 'Deadmau5 ears when the skin texture includes them'
+  },
+  showHand: {},
+  viewBobbing: {},
+  dayCycleAndLighting: {
+    text: 'Day cycle'
+  },
+  keepChunksDistance: {
+    text: 'Keep chunks distance',
+    tooltip: 'Extra distance before unloading chunks',
+    max: 5,
+    unit: ''
+  },
+  gpuPreference: {
+    text: 'GPU preference',
+    tooltip: 'WebGL power preference. Requires reload / backend restart to apply.',
+    requiresRestart: true,
+    possibleValues: [
+      ['default', 'Auto'],
+      ['high-performance', 'Dedicated'],
+      ['low-power', 'Low power']
+    ]
   }
 }
 
@@ -109,32 +242,57 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
   title: string
   keys: readonly RendererDefaultOptionKey[]
 }> = [
-  {
-    title: 'Menu background',
-    keys: [
-      'menuBackgroundMode',
-      'menuBackgroundMinecraftTextures',
-      'menuBackgroundFuturisticScene',
-      'menuBackgroundFuturisticCamera',
-      'menuBackgroundFuturisticBlockGroup',
-      'menuBackgroundFuturisticCameraSpeed',
-      'menuBackgroundFuturisticBlockSpeed'
-    ]
-  },
-  {
-    title: 'World rendering',
-    keys: [
-      'rendererWorldPerformance',
-      'starfieldRendering',
-      'defaultSkybox',
-      'disableBlockEntityTextures'
-    ]
-  },
-  {
-    title: 'Renderer debug',
-    keys: [
-      'rendererFuturisticReveal',
-      'rendererPerfDebugOverlay'
-    ]
-  }
-]
+    {
+      title: 'World rendering',
+      keys: [
+        'rendererWorldPerformance',
+        'starfieldRendering',
+        'defaultSkybox',
+        'disableBlockEntityTextures',
+        'showChunkBorders',
+        'renderEntities',
+        'smoothLighting',
+        'vanillaLook',
+        'newVersionsLighting',
+        'dayCycleAndLighting',
+        'loadPlayerSkins',
+        'renderEars',
+        'showHand',
+        'viewBobbing',
+        'keepChunksDistance',
+        'highlightBlockColor',
+        'clipWorldBelowY'
+      ]
+    },
+    {
+      title: 'Frame pacing',
+      keys: ['frameLimit', 'backgroundRendering', 'renderDebug', 'gpuPreference']
+    },
+    {
+      title: 'VR',
+      keys: ['vrSupport', 'vrPageGameRendering']
+    },
+    {
+      title: 'Menu background',
+      keys: [
+        'menuBackgroundMode',
+        'menuBackgroundMinecraftTextures',
+        'menuBackgroundFuturisticScene',
+        'menuBackgroundFuturisticCamera',
+        'menuBackgroundFuturisticBlockGroup',
+        'menuBackgroundFuturisticCameraSpeed',
+        'menuBackgroundFuturisticBlockSpeed'
+      ]
+    },
+    {
+      title: 'Mesher',
+      keys: ['rendererMesher']
+    },
+    {
+      title: 'Renderer debug',
+      keys: [
+        'rendererFuturisticReveal',
+        'rendererPerfDebugOverlay'
+      ]
+    }
+  ]

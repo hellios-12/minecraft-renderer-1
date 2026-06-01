@@ -9,11 +9,12 @@ import MinecraftData from 'minecraft-data'
 import PrismarineBlockLoader from 'prismarine-block'
 import { Vec3 } from 'vec3'
 import { elemFaces, buildRotationMatrix, matmul3, matmulmat3, vecadd3, vecsub3 } from '../../mesher-shared/modelsGeometryCommon'
-import type { ExportedWorldGeometry, ExportedSection } from '../../three/worldGeometryExport'
+import type { ExportedWorldGeometry, ExportedSection } from '../../mesher-shared/exportedGeometryTypes'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
 import type { World } from '../../mesher-shared/world'
-import { resolveBlockPropertiesForMeshing } from '../../mesher-shared/models'
+import { resolveBlockPropertiesForMeshing } from '../../mesher-shared/blockPropertiesForMeshing'
 import { getSideShading, vertexLightFromAo } from '../../mesher-shared/vertexShading'
+import tintsJson from 'minecraft-data/minecraft-data/data/pc/1.16.2/tints.json'
 
 // Handle both default and named export
 const worldBlockProvider = (worldBlockProviderModule as any).default || worldBlockProviderModule
@@ -24,14 +25,8 @@ let tintsInitialized = false
 
 function initializeTints() {
   if (tintsInitialized) return
-  let tintsData
-  try {
-    tintsData = require('esbuild-data').tints
-  } catch (err) {
-    tintsData = require('minecraft-data/minecraft-data/data/pc/1.16.2/tints.json')
-  }
-  for (const key of Object.keys(tintsData)) {
-    tints[key] = prepareTints(tintsData[key])
+  for (const key of Object.keys(tintsJson as Record<string, unknown>)) {
+    tints[key] = prepareTints((tintsJson as Record<string, unknown>)[key])
   }
   tintsInitialized = true
 }

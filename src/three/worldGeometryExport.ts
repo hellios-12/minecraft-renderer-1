@@ -1,31 +1,10 @@
 import * as THREE from 'three'
 import type { WorldRendererThree } from './worldRendererThree'
+import type { ExportedSection, ExportedWorldGeometry } from '../mesher-shared/exportedGeometryTypes'
+
+export type { ExportedSection, ExportedWorldGeometry } from '../mesher-shared/exportedGeometryTypes'
 
 const GEOMETRY_EXPORT_GROUP_NAME = 'geometry-export-root'
-
-// Format for exported world geometry
-export interface ExportedWorldGeometry {
-  version: string
-  exportedAt: string
-  camera: {
-    position: { x: number, y: number, z: number }
-    rotation: { pitch: number, yaw: number }
-  }
-  sections: ExportedSection[]
-  textureAtlasDataUrl?: string
-}
-
-export interface ExportedSection {
-  key: string
-  position: { x: number, y: number, z: number }
-  geometry: {
-    positions: number[]
-    normals: number[]
-    colors: number[]
-    uvs: number[]
-    indices: number[]
-  }
-}
 
 /**
  * Export world geometry to a downloadable file

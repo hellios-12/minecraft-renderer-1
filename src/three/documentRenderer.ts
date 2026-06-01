@@ -12,20 +12,15 @@ import * as THREE from 'three'
 import Stats from 'stats.js'
 import StatsGl from 'stats-gl'
 import * as tween from '@tweenjs/tween.js'
-import type { GraphicsInitOptions } from '../graphicsBackend/types'
+import type { GraphicsBackendConfig, GraphicsInitOptions } from '../graphicsBackend/types'
+import { gpuPreferenceToWebGLPowerPreference } from '../three/menuBackground/defaultOptions'
 import { WorldRendererConfig } from '../graphicsBackend'
 
 // ============================================================================
 // Types (co-located with implementation)
 // ============================================================================
 
-export interface GraphicsBackendConfig {
-  fpsLimit?: number
-  powerPreference?: 'high-performance' | 'low-power'
-  statsVisible?: number
-  sceneBackground: string
-  timeoutRendering?: boolean
-}
+export type { GraphicsBackendConfig }
 
 export interface FrameTimingEvent {
   type: 'frameStart' | 'frameEnd' | 'cameraUpdate' | 'frameDisplay'
@@ -206,11 +201,12 @@ export class DocumentRenderer {
     }
 
     try {
+      const gpuPreference = initOptions.getRendererOptions?.()?.gpuPreference ?? 'default'
       this.renderer = new THREE.WebGLRenderer({
         canvas: this.canvas as HTMLCanvasElement,
         preserveDrawingBuffer: true,
         logarithmicDepthBuffer: true,
-        powerPreference: this.config.powerPreference
+        powerPreference: gpuPreferenceToWebGLPowerPreference(gpuPreference)
       })
     } catch (err: any) {
       initOptions.callbacks.displayCriticalError(

@@ -161,8 +161,6 @@ export const createGraphicsBackendBase = () => {
         mergedOptions,
         !!process.env.SINGLE_FILE_BUILD_MODE
       )
-        ; (globalThis as any).menuBackgroundRenderer = menuBackgroundRenderer
-
       callModsMethod('menuBackgroundCreated', menuBackgroundRenderer)
       await menuBackgroundRenderer.start(mergedOptions)
       callModsMethod('menuBackgroundReady', menuBackgroundRenderer)
@@ -239,6 +237,7 @@ export const createGraphicsBackendBase = () => {
       documentRenderer!.setPaused(!rendering)
       if (worldRenderer) worldRenderer.renderingActive = rendering
     },
+    getMenuBackground: () => menuBackgroundRenderer ?? undefined,
     getDebugOverlay: () => ({
       get entitiesString() {
         return worldRenderer?.entities.getDebugString()

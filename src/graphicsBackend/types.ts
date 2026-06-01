@@ -22,12 +22,13 @@ export interface SoundSystem {
 }
 
 import type { MenuBackgroundOptions } from '../three/menuBackground/types'
+import type { RendererStorageOptions } from '../three/menuBackground/defaultOptions'
+import type { MenuBackgroundRenderer } from '../three/menuBackground/renderer'
 import type { PerformanceInstabilityFactors } from '../performanceMonitor'
 
 /** Graphics backend configuration */
 export interface GraphicsBackendConfig {
   fpsLimit?: number
-  powerPreference?: 'high-performance' | 'low-power'
   statsVisible?: number
   sceneBackground: string
   timeoutRendering?: boolean
@@ -95,6 +96,8 @@ export interface RendererReactiveState {
 /** Graphics initialization options */
 export interface GraphicsInitOptions<S = any> {
   config: GraphicsBackendConfig
+  /** Live app options (e.g. valtio proxy); used for WebGL `gpuPreference` at context creation. */
+  getRendererOptions?: () => RendererStorageOptions
   rendererSpecificSettings: S
   callbacks: {
     displayCriticalError: (error: Error) => void
@@ -126,6 +129,8 @@ export interface GraphicsBackend {
   soundSystem?: any
   backendMethods?: any
   getDebugOverlay?(): { entitiesString?: string, left?: Record<string, string>, right?: Record<string, string> }
+  /** Active main-menu background, when `currentDisplay === 'menu'`. */
+  getMenuBackground?(): MenuBackgroundRenderer | undefined
 }
 
 /** Graphics backend loader function type */

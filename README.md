@@ -83,6 +83,28 @@ await viewer.startWorld(worldProvider, renderDistance)
 viewer.updateCamera(position, yaw, pitch)
 ```
 
+### Settings flow (app integration)
+
+Renderer-owned options live in `RENDERER_DEFAULT_OPTIONS` and `RENDERER_OPTIONS_META` (`src/three/menuBackground/defaultOptions.ts`).
+
+1. **Defaults** — spread `RENDERER_DEFAULT_OPTIONS` into your app options store (e.g. valtio `options`).
+2. **Migration** — call `migrateRendererOptions(saved)` when loading persisted settings (legacy mesher/GPU keys → current renderer option names).
+3. **Settings UI** — merge `RENDERER_OPTIONS_META` into your options meta; layout can stay app-owned.
+4. **Menu startup** — `startMenuBackground(menuBackgroundOptionsFromStorage(options))`.
+5. **Runtime sync** — after `AppViewer` + backend init, call once:
+   `subscribeRendererOptions(appViewer, options, { isSafari, isCypress, onRegisterFocusHandlers })`.
+   This updates `inWorldRenderingConfig`, `appViewer.config` (FPS/stats), and live menu-background controls when `currentDisplay === 'menu'`.
+6. **App-only** — keep `volume` and bot/world hooks in the client (`applyRendererEnableLighting`, `applyRendererWorldViewOptions`, weather).
+
+| Change | Live update | Reload required |
+|--------|-------------|-----------------|
+| Menu futuristic scene / camera / speeds | Yes (`backend.getMenuBackground`) | Mode switch needs restart |
+| `rendererMesher` (`wasm` / `legacy-js`) | Proxy flag syncs | Yes — mesher worker script swap |
+| `rendererWorldPerformance` | Config syncs | Yes — worker count |
+| Volume | App `watchValue` only | No |
+
+Sync runs on the **main thread** only; `inWorldRenderingConfig` uses existing valtio `__syncToWorker` for off-thread backends. Do not call `subscribeRendererOptions` from mesher workers.
+
 ## How Block Rendering Works
 
 ### 1. Chunk Data Flow
