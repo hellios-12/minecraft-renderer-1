@@ -104,6 +104,10 @@ const sendWorkerSync = (syncId: string, obj: any, worker: Worker, debugKey: stri
 // Add stats tracking variables
 const currentWorkerSyncStats = { toWorker: 0, fromWorker: 0 }
 
+export const recordFromWorkerSync = () => {
+  currentWorkerSyncStats.fromWorker++
+}
+
 if (typeof window !== 'undefined') {
   setInterval(() => {
     globalThis.debugWorkerSyncStats = { ...currentWorkerSyncStats }
@@ -130,7 +134,7 @@ const setupObjectSync = (obj: any, originalObj: any, worker: Worker, isValtio: b
     const syncToWorker = () => {
       sendWorkerSync(syncId, originalObj, worker, `toWorker:${debugKey}`)
     }
-    if (isValtio) {
+    if (isValtio && originalObj['__syncToWorkerSubscribe'] !== false) {
       subscribe(originalObj, syncToWorker)
     }
 
@@ -150,39 +154,7 @@ const setupObjectSync = (obj: any, originalObj: any, worker: Worker, isValtio: b
   }
 }
 
-const serializeMapForTransfer = (map: Map<unknown, unknown>) => ({
-  __restorer: 'Map',
-  __mapEntries: Array.from(map.entries()),
-})
-
-const serializeSetForTransfer = (set: Set<unknown>) => ({
-  __restorer: 'Set',
-  __setValues: [...set],
-})
-
-const isSetLike = (value: unknown): value is Set<unknown> => {
-  return value instanceof Set || Object.prototype.toString.call(value) === '[object Set]'
-}
-
-const isMapLike = (value: unknown): value is Map<unknown, unknown> => {
-  return value instanceof Map || Object.prototype.toString.call(value) === '[object Map]'
-}
-
-const iterableFromPlainObject = (obj: Record<string, unknown>) => {
-  return Object.keys(obj)
-    .filter(k => !k.startsWith('__'))
-    .sort((a, b) => Number(a) - Number(b))
-    .map(k => obj[k])
-}
-
 const cloneValtioObject = (obj: any) => {
-  if (isMapLike(obj)) {
-    return serializeMapForTransfer(obj)
-  }
-  if (isSetLike(obj)) {
-    return serializeSetForTransfer(obj)
-  }
-
   if (getVersion(obj) === undefined) {
     return obj
   }
@@ -214,21 +186,11 @@ export const deepPrepareForTransfer = (obj: any, worker: Worker, autoRemoveMetho
         continue
       }
 
-      // print a warning for Date, RegExp, WeakMap, WeakSet
-      if (obj[key] instanceof Date || obj[key] instanceof RegExp || obj[key] instanceof WeakMap || obj[key] instanceof WeakSet) {
+      // print a warning for Date, RegExp, Map, Set, WeakMap, WeakSet
+      if (obj[key] instanceof Date || obj[key] instanceof RegExp || obj[key] instanceof Map || obj[key] instanceof Set || obj[key] instanceof WeakMap || obj[key] instanceof WeakSet) {
         console.warn(`Warning: ${key} is a ${typeof obj[key]}, which is not supported for transfer.`)
       }
 
-      // default restorers main -> worker
-      if (isMapLike(obj[key])) {
-        newObj[key] = serializeMapForTransfer(obj[key])
-        continue
-      }
-      // Set (only primitive values)
-      if (isSetLike(obj[key])) {
-        newObj[key] = serializeSetForTransfer(obj[key])
-        continue
-      }
       if (obj[key] instanceof Vec3) {
         newObj[key] = { x: obj[key].x, y: obj[key].y, z: obj[key].z }
         newObj[key]['__restorer'] = 'Vec3'
@@ -313,38 +275,6 @@ const receiveSyncedObject = (obj: any, worker: Worker, debugKey: string) => {
 }
 
 const defaultRestorers = [
-  {
-    restorerName: 'Map',
-    restoreTransferred(obj, _worker: Worker) {
-      if (Array.isArray(obj)) {
-        return new Map(obj)
-      }
-      const raw = obj.__mapEntries ?? obj.entries
-      if (Array.isArray(raw)) {
-        return new Map(raw)
-      }
-      if (raw != null && typeof raw === 'object' && typeof raw !== 'function') {
-        return new Map(Object.entries(raw as Record<string, unknown>))
-      }
-      return new Map()
-    }
-  },
-  {
-    restorerName: 'Set',
-    restoreTransferred(obj, _worker: Worker) {
-      if (Array.isArray(obj)) {
-        return new Set(obj)
-      }
-      const raw = obj.__setValues ?? obj.values
-      if (Array.isArray(raw)) {
-        return new Set(raw)
-      }
-      if (raw != null && typeof raw === 'object' && typeof raw !== 'function') {
-        return new Set(iterableFromPlainObject(raw as Record<string, unknown>))
-      }
-      return new Set()
-    }
-  },
   {
     restorerName: 'Vec3',
     restoreTransferred(obj, worker: Worker) {

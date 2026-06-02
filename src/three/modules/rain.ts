@@ -92,7 +92,7 @@ export class RainModule implements RendererModuleController {
       const chunkX = Math.floor(worldX / 16)
       const chunkZ = Math.floor(worldZ / 16)
       if (chunkX !== prevChunkX || chunkZ !== prevChunkZ) {
-        cachedHeightmap = heightmaps.get(`${chunkX},${chunkZ}`)
+        cachedHeightmap = heightmaps[`${chunkX},${chunkZ}`]
         prevChunkX = chunkX
         prevChunkZ = chunkZ
       }

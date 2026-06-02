@@ -22,6 +22,7 @@ import { generateSpiralMatrix } from './spiral'
 import { PlayerStateReactive } from '../playerState/playerState'
 import { IndexedData } from 'minecraft-data'
 import { WorldRendererConfig } from '../graphicsBackend/config'
+import { markChunkLoaded, removeRendererHeightmap, setRendererField, setRendererHeightmap } from './rendererStateBridge'
 
 function mod(x, n) {
   return ((x % n) + n) % n
@@ -431,7 +432,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
           // CHUNK FINISHED
           this.finishedChunks[chunkKey] = true
           const CHUNK_SIZE = 16
-          this.reactiveState.world.chunksLoaded.add(`${Math.floor(chunkCoords[0] / CHUNK_SIZE)},${Math.floor(chunkCoords[2] / CHUNK_SIZE)}`)
+          const gridKey = `${Math.floor(chunkCoords[0] / CHUNK_SIZE)},${Math.floor(chunkCoords[2] / CHUNK_SIZE)}`
+          markChunkLoaded(this.reactiveState, gridKey)
           this.renderUpdateEmitter.emit(`chunkFinished`, `${chunkCoords[0]},${chunkCoords[2]}`)
           this.checkAllFinished()
           // merge highest blocks by sections into highest blocks by chunks
@@ -512,7 +514,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }
 
     if (data.type === 'heightmap') {
-      this.reactiveState.world.heightmaps.set(data.key, new Int16Array(data.heightmap))
+      const heightmap = new Int16Array(data.heightmap)
+      setRendererHeightmap(this.reactiveState, data.key, heightmap)
     }
   }
 
@@ -525,7 +528,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   checkAllFinished() {
     if (this.sectionsWaiting.size === 0) {
-      this.reactiveState.world.mesherWork = false
+      setRendererField(this.reactiveState, 'world.mesherWork', false)
     }
     // todo check exact surrounding chunks
     const allFinished = Object.keys(this.finishedChunks).length >= this.chunksLength
@@ -683,9 +686,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   updateChunksStats() {
     const loadedChunks = Object.keys(this.finishedChunks)
-    this.displayOptions.nonReactiveState.world.chunksLoaded = new Set(loadedChunks)
+    this.displayOptions.nonReactiveState.world.chunksLoadedCount = loadedChunks.length
     this.displayOptions.nonReactiveState.world.chunksTotalNumber = this.chunksLength
-    this.reactiveState.world.allChunksLoaded = this.allChunksFinished
+    setRendererField(this.reactiveState, 'world.allChunksLoaded', this.allChunksFinished)
 
     const text = `Q: ${this.messageQueue.length} ${Object.keys(this.loadedChunks).length}/${Object.keys(this.finishedChunks).length}/${this.chunksLength} chunks (${this.workers.length}:${this.workersProcessAverageTime.toFixed(0)}ms/${this.geometryReceiveCountPerSec}ss/${this.allLoadedIn?.toFixed(1) ?? '-'}s)`
     this.chunksFullInfo = text
@@ -785,7 +788,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       delete this.finishedSections[`${x},${y},${z}`]
     }
     this.highestBlocksByChunks.delete(`${x},${z}`)
-    this.reactiveState.world.heightmaps.delete(`${Math.floor(x / 16)},${Math.floor(z / 16)}`)
+    const heightmapKey = `${Math.floor(x / 16)},${Math.floor(z / 16)}`
+    removeRendererHeightmap(this.reactiveState, heightmapKey)
 
     this.updateChunksStats()
 
@@ -1125,7 +1129,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   /** Dispatch dirty message to worker without throttle (original logic) */
   private _dispatchDirtyImmediate(pos: Vec3, value: boolean, useChangeWorker: boolean) {
-    this.reactiveState.world.mesherWork = true
+    setRendererField(this.reactiveState, 'world.mesherWork', true)
     const CHUNK_SIZE = 16
     const sectionHeight = this.getSectionHeight()
     const key = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.y / sectionHeight) * sectionHeight},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`

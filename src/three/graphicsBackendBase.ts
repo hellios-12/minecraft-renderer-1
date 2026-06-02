@@ -196,7 +196,9 @@ export const createGraphicsBackendBase = () => {
 
     await worldRenderer.worldReadyPromise
 
-    frameTimingCollector = new FrameTimingCollector(displayOptions.nonReactiveState)
+    frameTimingCollector = displayOptions.inWorldRenderingConfig.enableDebugOverlay
+      ? new FrameTimingCollector(displayOptions.nonReactiveState)
+      : null
       ; (globalThis as any).frameTimingCollector = frameTimingCollector
 
     const originalRender = documentRenderer.render
