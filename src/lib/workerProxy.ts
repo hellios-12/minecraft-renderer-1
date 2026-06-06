@@ -85,104 +85,232 @@ export const useWorkerProxy = <T extends { __workerProxy: Record<string, (...arg
 
 const DEBUG_SYNC = false
 
-const sendWorkerSync = (syncId: string, obj: any, worker: Worker, debugKey: string) => {
-  try {
-    worker.postMessage({
-      type: 'sync',
-      syncId,
-      value: cloneValtioObject(obj)
-    })
-    currentWorkerSyncStats.toWorker++
-    globalThis.debugSyncMessagesOutgoing ??= 0
-    globalThis.debugSyncMessagesOutgoing++
-  } catch (err) {
-    console.error('Failed to send worker sync', err)
-    findProblemTransfer(obj)
-  }
-}
+// rendererState: worker→main only; playerState: main→worker only. Applying ops on the
+// receiver re-fires local subscribers; no echo loop while directions stay split.
 
-// Add stats tracking variables
+type SyncDirection = 'toWorker' | 'fromWorker'
+
+export type WireSyncOp =
+  | { kind: 'set', path: (string | number | symbol)[], value: unknown }
+  | { kind: 'delete', path: (string | number | symbol)[] }
+
+type ValtioOp = readonly unknown[]
+
 const currentWorkerSyncStats = { toWorker: 0, fromWorker: 0 }
 
-if (typeof window !== 'undefined') {
-  setInterval(() => {
+let debugSyncStatsInterval: ReturnType<typeof setInterval> | null = null
+
+const ensureDebugSyncStatsInterval = () => {
+  if (debugSyncStatsInterval != null) return
+  if (typeof window === 'undefined') return
+  debugSyncStatsInterval = setInterval(() => {
     globalThis.debugWorkerSyncStats = { ...currentWorkerSyncStats }
     currentWorkerSyncStats.toWorker = 0
     currentWorkerSyncStats.fromWorker = 0
   }, 1000)
 }
 
+const bumpSyncStat = (direction: SyncDirection) => {
+  ensureDebugSyncStatsInterval()
+  if (direction === 'toWorker') {
+    currentWorkerSyncStats.toWorker++
+  } else {
+    currentWorkerSyncStats.fromWorker++
+  }
+}
+
+/** @internal vitest only */
+export const resetWorkerSyncStatsForTest = () => {
+  currentWorkerSyncStats.toWorker = 0
+  currentWorkerSyncStats.fromWorker = 0
+  if (debugSyncStatsInterval != null) {
+    clearInterval(debugSyncStatsInterval)
+    debugSyncStatsInterval = null
+  }
+}
+
+/** @internal vitest only */
+export const getWorkerSyncStatsForTest = () => ({ ...currentWorkerSyncStats })
+
 const getSyncId = () => {
   return Math.random().toString(36).slice(2, 15) + Math.random().toString(36).slice(2, 15)
 }
 
-const applySyncPatch = (target: any, patch: any, worker: Worker) => {
-  Object.assign(target, restoreTransferred(patch, [], worker, false))
+export const setByPath = (target: any, path: (string | number | symbol)[], value: unknown) => {
+  if (path.length === 0) return
+  let cur = target
+  for (let i = 0; i < path.length - 1; i++) {
+    const key = path[i]!
+    if (cur[key] == null || typeof cur[key] !== 'object') {
+      cur[key] = {}
+    }
+    cur = cur[key]
+  }
+  cur[path[path.length - 1]!] = value
+}
+
+export const deleteByPath = (target: any, path: (string | number | symbol)[]) => {
+  if (path.length === 0) return
+  let cur = target
+  for (let i = 0; i < path.length - 1; i++) {
+    cur = cur[path[i]!]
+    if (cur == null) return
+  }
+  delete cur[path[path.length - 1]!]
+}
+
+export const prepareOpValueForTransfer = (value: any, worker: Worker): any => {
+  if (value == null || typeof value !== 'object') {
+    return value
+  }
+
+  if (value instanceof Vec3) {
+    return { x: value.x, y: value.y, z: value.z, __restorer: 'Vec3' }
+  }
+
+  if (typeof value['prepareForTransfer'] === 'function') {
+    return value['prepareForTransfer'](worker)
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    return value
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(item => prepareOpValueForTransfer(item, worker))
+  }
+
+  if (getVersion(value) !== undefined) {
+    return cloneValtioObject(value)
+  }
+
+  const result = {} as any
+  for (const key in value) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) {
+      result[key] = prepareOpValueForTransfer(value[key], worker)
+    }
+  }
+  return result
+}
+
+const wireOpsFromValtioOps = (ops: ValtioOp[], worker: Worker): WireSyncOp[] => {
+  const wire: WireSyncOp[] = []
+  for (const op of ops) {
+    const kind = op[0]
+    if (kind === 'delete') {
+      wire.push({ kind: 'delete', path: op[1] as (string | number | symbol)[] })
+    } else if (kind === 'set') {
+      wire.push({
+        kind: 'set',
+        path: op[1] as (string | number | symbol)[],
+        value: prepareOpValueForTransfer(op[2], worker)
+      })
+    }
+  }
+  return wire
+}
+
+export const sendWorkerSyncOps = (
+  syncId: string,
+  ops: ValtioOp[],
+  worker: Worker,
+  direction: SyncDirection,
+  debugKey: string
+) => {
+  if (ops.length === 0) return
+  const wire = wireOpsFromValtioOps(ops, worker)
+  if (wire.length === 0) return
+  try {
+    worker.postMessage({ type: 'sync', syncId, ops: wire })
+    if (direction === 'toWorker') {
+      bumpSyncStat('toWorker')
+    }
+    if (DEBUG_SYNC) console.log(`sync ${debugKey}`, wire.length, 'ops')
+  } catch (err) {
+    console.error('Failed to send worker sync ops', err, debugKey)
+    for (const op of wire) {
+      if (op.kind === 'set') findProblemTransfer(op.value)
+    }
+  }
+}
+
+export const applySyncOps = (
+  target: any,
+  wireOps: WireSyncOp[],
+  worker: Worker,
+  countReceive: 'fromWorker' | false = false
+) => {
+  for (const op of wireOps) {
+    if (op.kind === 'delete') {
+      deleteByPath(target, op.path)
+    } else {
+      setByPath(target, op.path, restoreTransferred(op.value, [], worker, false, false))
+    }
+  }
+  if (countReceive === 'fromWorker') {
+    bumpSyncStat('fromWorker')
+  }
+}
+
+/** Full snapshot for plain (non-Valtio) objects on interval sync only, e.g. nonReactiveState. */
+const sendWorkerSyncSnapshot = (syncId: string, obj: any, worker: Worker, direction: SyncDirection, debugKey: string) => {
+  try {
+    const value = cloneValtioObject(obj)
+    worker.postMessage({ type: 'sync', syncId, value })
+    if (direction === 'toWorker') {
+      bumpSyncStat('toWorker')
+    }
+    if (DEBUG_SYNC) console.log(`sync snapshot ${debugKey}`)
+  } catch (err) {
+    console.error('Failed to send worker sync snapshot', err, debugKey)
+    findProblemTransfer(obj)
+  }
+}
+
+const applySyncSnapshot = (target: any, patch: any, worker: Worker, countReceive: 'fromWorker' | false = false) => {
+  Object.assign(target, restoreTransferred(patch, [], worker, false, false))
+  if (countReceive === 'fromWorker') {
+    bumpSyncStat('fromWorker')
+  }
 }
 
 const setupObjectSync = (obj: any, originalObj: any, worker: Worker, isValtio: boolean, debugKey: string) => {
-  if (!obj['__syncToWorker'] && !obj['__syncFromWorker'] && !isValtio) return
+  const syncFromWorker = obj['__syncFromWorker'] || originalObj['__syncFromWorker']
+  const syncToWorker = obj['__syncToWorker'] || originalObj['__syncToWorker']
+  if (!syncToWorker && !syncFromWorker && !isValtio) return
 
   const syncId = getSyncId()
   obj['__syncId'] = syncId
 
-  if (obj['__syncToWorker'] || isValtio) {
-    const syncToWorker = () => {
-      sendWorkerSync(syncId, originalObj, worker, `toWorker:${debugKey}`)
-    }
-    if (isValtio) {
-      subscribe(originalObj, syncToWorker)
+  if (syncToWorker || isValtio) {
+    if (isValtio && syncToWorker !== false) {
+      subscribe(originalObj, (ops) => {
+        sendWorkerSyncOps(syncId, ops as ValtioOp[], worker, 'toWorker', `toWorker:${debugKey}`)
+      })
     }
 
-    const interval = obj['__syncToWorkerInterval'] ?? 0
-    if (interval > 0) {
-      setInterval(syncToWorker, interval)
+    const interval = obj['__syncToWorkerInterval'] ?? originalObj['__syncToWorkerInterval'] ?? 0
+    if (interval > 0 && !isValtio) {
+      setInterval(() => {
+        sendWorkerSyncSnapshot(syncId, originalObj, worker, 'toWorker', `toWorker:interval:${debugKey}`)
+      }, interval)
     }
   }
 
   if (originalObj['__syncFromWorker']) {
     worker.addEventListener('message', (event: any) => {
       if (event.data.type === 'sync' && event.data.syncId === syncId) {
-        currentWorkerSyncStats.fromWorker++
-        applySyncPatch(originalObj, event.data.value, worker)
+        if (event.data.ops) {
+          applySyncOps(originalObj, event.data.ops, worker, 'fromWorker')
+        } else if (event.data.value) {
+          applySyncSnapshot(originalObj, event.data.value, worker, 'fromWorker')
+        }
       }
     })
   }
 }
 
-const serializeMapForTransfer = (map: Map<unknown, unknown>) => ({
-  __restorer: 'Map',
-  __mapEntries: Array.from(map.entries()),
-})
-
-const serializeSetForTransfer = (set: Set<unknown>) => ({
-  __restorer: 'Set',
-  __setValues: [...set],
-})
-
-const isSetLike = (value: unknown): value is Set<unknown> => {
-  return value instanceof Set || Object.prototype.toString.call(value) === '[object Set]'
-}
-
-const isMapLike = (value: unknown): value is Map<unknown, unknown> => {
-  return value instanceof Map || Object.prototype.toString.call(value) === '[object Map]'
-}
-
-const iterableFromPlainObject = (obj: Record<string, unknown>) => {
-  return Object.keys(obj)
-    .filter(k => !k.startsWith('__'))
-    .sort((a, b) => Number(a) - Number(b))
-    .map(k => obj[k])
-}
-
 const cloneValtioObject = (obj: any) => {
-  if (isMapLike(obj)) {
-    return serializeMapForTransfer(obj)
-  }
-  if (isSetLike(obj)) {
-    return serializeSetForTransfer(obj)
-  }
-
   if (getVersion(obj) === undefined) {
     return obj
   }
@@ -214,21 +342,11 @@ export const deepPrepareForTransfer = (obj: any, worker: Worker, autoRemoveMetho
         continue
       }
 
-      // print a warning for Date, RegExp, WeakMap, WeakSet
-      if (obj[key] instanceof Date || obj[key] instanceof RegExp || obj[key] instanceof WeakMap || obj[key] instanceof WeakSet) {
+      // print a warning for Date, RegExp, Map, Set, WeakMap, WeakSet
+      if (obj[key] instanceof Date || obj[key] instanceof RegExp || obj[key] instanceof Map || obj[key] instanceof Set || obj[key] instanceof WeakMap || obj[key] instanceof WeakSet) {
         console.warn(`Warning: ${key} is a ${typeof obj[key]}, which is not supported for transfer.`)
       }
 
-      // default restorers main -> worker
-      if (isMapLike(obj[key])) {
-        newObj[key] = serializeMapForTransfer(obj[key])
-        continue
-      }
-      // Set (only primitive values)
-      if (isSetLike(obj[key])) {
-        newObj[key] = serializeSetForTransfer(obj[key])
-        continue
-      }
       if (obj[key] instanceof Vec3) {
         newObj[key] = { x: obj[key].x, y: obj[key].y, z: obj[key].z }
         newObj[key]['__restorer'] = 'Vec3'
@@ -246,6 +364,19 @@ export const deepPrepareForTransfer = (obj: any, worker: Worker, autoRemoveMetho
         const isValtio = getVersion(obj[key]) !== undefined
         newObj[key] = isValtio ? cloneValtioObject(obj[key]) : obj[key]
 
+        if (obj[key]['__syncFromWorker']) {
+          newObj[key]['__syncFromWorker'] = true
+        }
+        if (obj[key]['__syncToWorker']) {
+          newObj[key]['__syncToWorker'] = true
+        }
+        if (obj[key]['__syncFromWorkerInterval']) {
+          newObj[key]['__syncFromWorkerInterval'] = obj[key]['__syncFromWorkerInterval']
+        }
+        if (obj[key]['__syncToWorkerInterval']) {
+          newObj[key]['__syncToWorkerInterval'] = obj[key]['__syncToWorkerInterval']
+        }
+
         // Try to enable sync main -> worker
         const tryEnableDefaultSync = obj[key]['__syncToWorker'] !== false && !_isInsideValtio && isValtio && !obj[key]['__syncFromWorker']
         newObj[key]['__syncToWorker'] ??= tryEnableDefaultSync
@@ -255,6 +386,10 @@ export const deepPrepareForTransfer = (obj: any, worker: Worker, autoRemoveMetho
 
         if (newObj[key]['__syncToWorker'] && isValtio) {
           setupObjectSync(newObj[key], originalObj[key], worker, true, key)
+          continue
+        }
+        if (newObj[key]['__syncFromWorker'] || newObj[key]['__syncToWorker']) {
+          setupObjectSync(newObj[key], originalObj[key], worker, isValtio, key)
           continue
         }
         setupObjectSync(newObj[key], originalObj[key], worker, false, key)
@@ -284,67 +419,52 @@ export const findProblemTransfer = (obj: any, path: string[] = []) => {
   }
 }
 
+// Tracks which syncIds already have listeners/timers wired, per worker, so a
+// given synced object is never armed twice (prevents runaway interval/listener
+// accumulation if a payload carrying __sync* flags is ever restored again).
+const armedSyncIds = new WeakMap<Worker, Set<string>>()
+
 const receiveSyncedObject = (obj: any, worker: Worker, debugKey: string) => {
   if (!obj['__syncId']) return
   const syncId = obj['__syncId']
 
+  let armed = armedSyncIds.get(worker)
+  if (!armed) {
+    armed = new Set()
+    armedSyncIds.set(worker, armed)
+  }
+  if (armed.has(syncId)) return
+  armed.add(syncId)
+
   if (obj['__syncToWorker']) {
     worker.addEventListener('message', (event: any) => {
       if (event.data.type === 'sync' && event.data.syncId === syncId) {
-        applySyncPatch(obj, event.data.value, worker)
+        if (event.data.ops) {
+          applySyncOps(obj, event.data.ops, worker)
+        } else if (event.data.value) {
+          applySyncSnapshot(obj, event.data.value, worker)
+        }
       }
     })
   }
 
   if (obj['__syncFromWorker']) {
-    const syncFromWorker = () => {
-      sendWorkerSync(syncId, obj, worker, `fromWorker:${debugKey}`)
-    }
-
     if (obj['__valtio']) {
-      subscribe(obj, syncFromWorker)
+      subscribe(obj, (ops) => {
+        sendWorkerSyncOps(syncId, ops as ValtioOp[], worker, 'fromWorker', `fromWorker:${debugKey}`)
+      })
     }
 
     const interval = obj['__syncFromWorkerInterval'] ?? 0
-    if (interval > 0) {
-      setInterval(syncFromWorker, interval)
+    if (interval > 0 && !obj['__valtio']) {
+      setInterval(() => {
+        sendWorkerSyncSnapshot(syncId, obj, worker, 'fromWorker', `fromWorker:interval:${debugKey}`)
+      }, interval)
     }
   }
 }
 
 const defaultRestorers = [
-  {
-    restorerName: 'Map',
-    restoreTransferred(obj, _worker: Worker) {
-      if (Array.isArray(obj)) {
-        return new Map(obj)
-      }
-      const raw = obj.__mapEntries ?? obj.entries
-      if (Array.isArray(raw)) {
-        return new Map(raw)
-      }
-      if (raw != null && typeof raw === 'object' && typeof raw !== 'function') {
-        return new Map(Object.entries(raw as Record<string, unknown>))
-      }
-      return new Map()
-    }
-  },
-  {
-    restorerName: 'Set',
-    restoreTransferred(obj, _worker: Worker) {
-      if (Array.isArray(obj)) {
-        return new Set(obj)
-      }
-      const raw = obj.__setValues ?? obj.values
-      if (Array.isArray(raw)) {
-        return new Set(raw)
-      }
-      if (raw != null && typeof raw === 'object' && typeof raw !== 'function') {
-        return new Set(iterableFromPlainObject(raw as Record<string, unknown>))
-      }
-      return new Set()
-    }
-  },
   {
     restorerName: 'Vec3',
     restoreTransferred(obj, worker: Worker) {
@@ -357,7 +477,7 @@ export const addDefaultRestorer = (restorer: { restorerName: string, restoreTran
   defaultRestorers.unshift(restorer)
 }
 
-export const restoreTransferred = (obj: any, restorersArg: any[], worker: Worker, errorHandler: ((error: Error) => void) | boolean = true) => {
+export const restoreTransferred = (obj: any, restorersArg: any[], worker: Worker, errorHandler: ((error: Error) => void) | boolean = true, armSync = true) => {
   const restorers = [...defaultRestorers, ...restorersArg]
 
   const restoreValue = (value: any, debugKey: string): any => {
@@ -399,7 +519,7 @@ export const restoreTransferred = (obj: any, restorersArg: any[], worker: Worker
       value = proxy(value)
     }
 
-    receiveSyncedObject(value, worker, debugKey)
+    if (armSync) receiveSyncedObject(value, worker, debugKey)
     return value
   }
 

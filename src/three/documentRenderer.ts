@@ -33,7 +33,7 @@ export interface NonReactiveState {
   worstRenderTime: number
   avgRenderTime: number
   world: {
-    chunksLoaded: Set<string>
+    chunksLoadedCount: number
     chunksTotalNumber: number
   }
   renderer: {

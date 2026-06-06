@@ -116,8 +116,8 @@ export const getDefaultRendererState = (): {
   return {
     reactive: proxy({
       world: {
-        chunksLoaded: new Set<string>(),
-        heightmaps: new Map<string, Int16Array>(),
+        chunksLoaded: {},
+        heightmaps: {},
         allChunksLoaded: false,
         mesherWork: false,
         instabilityFactors: defaultPerformanceInstabilityFactors(),
@@ -131,7 +131,7 @@ export const getDefaultRendererState = (): {
       worstRenderTime: 0,
       avgRenderTime: 0,
       world: {
-        chunksLoaded: new Set(),
+        chunksLoadedCount: 0,
         chunksTotalNumber: 0,
         chunksFullInfo: '-'
       },

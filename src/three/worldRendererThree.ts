@@ -166,7 +166,8 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.performanceMonitor = new PerformanceMonitor(this.reactiveState.world.instabilityFactors)
 
     this.renderer = renderer
-    displayOptions.rendererState.renderer = WorldRendererThree.getRendererInfo(renderer) ?? '...'
+    const rendererInfo = WorldRendererThree.getRendererInfo(renderer) ?? '...'
+    displayOptions.rendererState.renderer = rendererInfo
 
     // Initialize chunk mesh manager
     this.chunkMeshManager = new ChunkMeshManager(this, this.scene, this.material, this.worldSizeParams.worldHeight, this.viewDistance)

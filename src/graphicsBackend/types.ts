@@ -57,7 +57,7 @@ export interface NonReactiveState {
   worstRenderTime: number
   avgRenderTime: number
   world: {
-    chunksLoaded: Set<string>
+    chunksLoadedCount: number
     chunksTotalNumber: number
     chunksFullInfo: string
     allChunksLoaded?: boolean
@@ -74,8 +74,8 @@ export interface NonReactiveState {
 /** Renderer reactive state */
 export interface RendererReactiveState {
   world: {
-    chunksLoaded: Set<string>
-    heightmaps: Map<string, Int16Array>
+    chunksLoaded: Record<string, true>
+    heightmaps: Record<string, Int16Array>
     allChunksLoaded: boolean
     mesherWork: boolean
     /** Low-FPS / render instability factors (see `performanceMonitor`). */
