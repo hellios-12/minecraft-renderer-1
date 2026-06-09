@@ -2,7 +2,10 @@ import * as THREE from 'three'
 import { VERTICES_PER_FACE } from './shaders/cubeBlockShader'
 import { packWord2Empty } from '../wasm-mesher/bridge/shaderCubeBridge'
 
-const INITIAL_CAPACITY_FACES = 2_000_000
+// Linear growth (NOT doubling) to keep iOS allocation spikes bounded to one increment.
+// Reference: prismarine-web-client PR #90 (webgl) and #120 (webgpu) both grow by +1M faces.
+const INITIAL_CAPACITY_FACES = 512_000      // ~8 MB up front (4 words × 4 B), well under 1M
+const GROWTH_INCREMENT_FACES = 1_000_000    // +16 MB per growth step instead of doubling
 const EMPTY_W2 = packWord2Empty()
 
 export type GlobalBlockBufferShaderData = {
@@ -257,8 +260,10 @@ export class GlobalBlockBuffer {
   }
 
   private growCapacity (minFaces: number): void {
+    console.warn('[globalBlockBuffer] growing faces', this.capacityFaces, '->', '(need', minFaces, ')')
     let newCap = this.capacityFaces
-    while (newCap < minFaces) newCap *= 2
+    while (newCap < minFaces) newCap += GROWTH_INCREMENT_FACES
+    console.warn('[globalBlockBuffer] growing faces', this.capacityFaces, '->', newCap)
 
     const nw0 = new Uint32Array(newCap)
     const nw1 = new Uint32Array(newCap)
