@@ -358,6 +358,38 @@ test('GlobalBlockBuffer: free-list reuses slot with EMPTY sentinel', () => {
   mat.dispose()
 })
 
+test('GlobalBlockBuffer: uploadDirtyRange budgets large dirty span across frames', () => {
+  const scene = new THREE.Scene()
+  const mat = createCubeBlockMaterial()
+  const buffer = new GlobalBlockBuffer(mat, scene)
+
+  const faceCount = 20_000
+  const words = new Uint32Array(faceCount * 4)
+  for (let i = 0; i < faceCount; i++) {
+    const src = i * 4
+    words[src] = i + 1
+    words[src + 1] = 0
+    words[src + 2] = 0
+    words[src + 3] = packWord3(0, 0)
+  }
+  buffer.addSection('big', words, faceCount)
+
+  const w0Attr = buffer.mesh.geometry.getAttribute('a_w0') as THREE.InstancedBufferAttribute
+  buffer.uploadDirtyRange()
+  expect(w0Attr.updateRange.offset).toBe(0)
+  expect(w0Attr.updateRange.count).toBe(15_000)
+
+  buffer.uploadDirtyRange()
+  expect(w0Attr.updateRange.offset).toBe(15_000)
+  expect(w0Attr.updateRange.count).toBe(5_000)
+
+  buffer.uploadDirtyRange()
+  expect((buffer as unknown as { pendingRanges: unknown[] }).pendingRanges).toHaveLength(0)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
 test('getShaderCubeResources: returns null without loadedData.tints (no throw)', () => {
   const prev = (globalThis as any).loadedData
   ;(globalThis as any).loadedData = {}

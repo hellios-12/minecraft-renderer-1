@@ -6,6 +6,7 @@ import { packWord2Empty } from '../wasm-mesher/bridge/shaderCubeBridge'
 // Reference: prismarine-web-client PR #90 (webgl) and #120 (webgpu) both grow by +1M faces.
 const INITIAL_CAPACITY_FACES = 512_000      // ~8 MB up front (4 words × 4 B), well under 1M
 const GROWTH_INCREMENT_FACES = 1_000_000    // +16 MB per growth step instead of doubling
+const MAX_UPLOAD_FACES_PER_FRAME = 15_000   // face-indexed budget (chunksStorage uses 10k blocks)
 const EMPTY_W2 = packWord2Empty()
 
 export type GlobalBlockBufferShaderData = {
@@ -28,8 +29,7 @@ export class GlobalBlockBuffer {
   private readonly sectionSlots = new Map<string, { start: number, count: number }>()
   private freeList: Array<{ start: number, count: number }> = []
   private highWatermark = 0
-  private dirtyMin = Infinity
-  private dirtyMax = -1
+  private pendingRanges: Array<{ start: number, end: number }> = []
 
   constructor (
     material: THREE.ShaderMaterial,
@@ -40,6 +40,7 @@ export class GlobalBlockBuffer {
     this.w1 = new Uint32Array(this.capacityFaces)
     this.w2 = new Uint32Array(this.capacityFaces)
     this.w3 = new Uint32Array(this.capacityFaces)
+    this.w2.fill(EMPTY_W2)
 
     const geometry = new THREE.InstancedBufferGeometry()
     const positions = new Float32Array(VERTICES_PER_FACE * 3)
@@ -155,10 +156,11 @@ export class GlobalBlockBuffer {
   }
 
   uploadDirtyRange (): void {
-    if (this.dirtyMin > this.dirtyMax) return
+    const r = this.pendingRanges[0]
+    if (!r) return
 
-    const offset = this.dirtyMin
-    const count = this.dirtyMax - this.dirtyMin + 1
+    const offset = r.start
+    const count = Math.min(r.end - r.start + 1, MAX_UPLOAD_FACES_PER_FRAME)
     const geometry = this.mesh.geometry
 
     for (const name of ['a_w0', 'a_w1', 'a_w2', 'a_w3'] as const) {
@@ -168,8 +170,8 @@ export class GlobalBlockBuffer {
       attr.needsUpdate = true
     }
 
-    this.dirtyMin = Infinity
-    this.dirtyMax = -1
+    if (offset + count > r.end) this.pendingRanges.shift()
+    else r.start = offset + count
   }
 
   setCameraOrigin (x: number, y: number, z: number): void {
@@ -191,8 +193,7 @@ export class GlobalBlockBuffer {
     this.sectionSlots.clear()
     this.freeList.length = 0
     this.highWatermark = 0
-    this.dirtyMin = Infinity
-    this.dirtyMax = -1
+    this.pendingRanges.length = 0
     this.w0.fill(0)
     this.w1.fill(0)
     this.w2.fill(EMPTY_W2)
@@ -207,8 +208,26 @@ export class GlobalBlockBuffer {
   }
 
   private markDirty (start: number, end: number): void {
-    if (start < this.dirtyMin) this.dirtyMin = start
-    if (end > this.dirtyMax) this.dirtyMax = end
+    this.pendingRanges.push({ start, end })
+    this.pendingRanges.sort((a, b) => a.start - b.start)
+    this.mergePendingRanges()
+  }
+
+  private mergePendingRanges (): void {
+    if (this.pendingRanges.length < 2) return
+    const merged: Array<{ start: number, end: number }> = []
+    let cur = this.pendingRanges[0]!
+    for (let i = 1; i < this.pendingRanges.length; i++) {
+      const next = this.pendingRanges[i]!
+      if (next.start <= cur.end + 1) {
+        cur = { start: cur.start, end: Math.max(cur.end, next.end) }
+      } else {
+        merged.push(cur)
+        cur = next
+      }
+    }
+    merged.push(cur)
+    this.pendingRanges = merged
   }
 
   private takeFreeSlot (count: number): { start: number, count: number } | undefined {
@@ -299,7 +318,6 @@ export class GlobalBlockBuffer {
     mkAttr(this.w2, 'a_w2')
     mkAttr(this.w3, 'a_w3')
 
-    this.dirtyMin = 0
-    this.dirtyMax = this.highWatermark - 1
+    this.pendingRanges.length = 0
   }
 }
