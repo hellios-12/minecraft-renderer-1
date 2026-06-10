@@ -1427,6 +1427,10 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
   }
 
+  protected override afterMesherWorkersReconfigured() {
+    this.rerenderAllChunks()
+  }
+
   updateShowChunksBorder(value: boolean) {
     // Lazily create helpers on the first toggle (they are not created upfront
     // for sections streamed in while the option was off).
