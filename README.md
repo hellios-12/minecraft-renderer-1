@@ -2,7 +2,7 @@
 
 ![Minecraft Renderer](./logo.webp)
 
-A modular Minecraft world renderer with Three.js WebGL backend. Designed for performance testing, experimentation, and integration into Minecraft clients.
+A modular Minecraft world renderer with Three.js WebGL 2 backend. Designed for performance testing, experimentation, and integration into Minecraft clients.
 
 ## Architecture Overview
 
