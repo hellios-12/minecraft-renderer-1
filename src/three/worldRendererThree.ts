@@ -529,6 +529,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     })
     this.onReactiveConfigUpdated('shaderCubeDebugMode', () => {
       this.chunkMeshManager.syncCubeShaderUniforms()
+      this.chunkMeshManager.syncLegacyShaderUniforms()
     })
     this.onReactiveConfigUpdated('futuristicReveal', () => {
       this.updateModulesFromConfig()
@@ -630,6 +631,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     texture.flipY = false
     this.material.map = texture
     this.chunkMeshManager.syncCubeShaderUniforms()
+    this.chunkMeshManager.syncLegacyShaderUniforms()
 
     const itemsTexture = loadThreeJsTextureFromBitmap(resources.itemsAtlasImage!)
     itemsTexture.needsUpdate = true
@@ -974,17 +976,9 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.debugRaycast(pos, direction, distance)
     }
 
-    // Convert world position to scene-relative coordinates for raycasting
-    const scenePos = this._tpScenePos.set(
-      this.sceneOrigin.toSceneX(pos.x),
-      this.sceneOrigin.toSceneY(pos.y),
-      this.sceneOrigin.toSceneZ(pos.z)
-    )
-
-    // Perform raycast to avoid camera going through blocks
     const raycaster = this._tpRaycaster
-    raycaster.set(scenePos, direction)
-    raycaster.far = distance // Limit raycast distance
+    raycaster.set(pos, direction)
+    raycaster.far = distance
 
     const maxCenterDistance = 80
     const maxCenterDistSq = maxCenterDistance * maxCenterDistance
@@ -992,8 +986,8 @@ export class WorldRendererThree extends WorldRendererCommon {
     const oy = pos.y
     const oz = pos.z
 
-    // Legacy / deferred-shader meshes (scene-relative raycast)
-    const meshes: THREE.Object3D[] = []
+    // Legacy section meshes: world-space raycast (static mesh.matrix translation).
+    const legacyMeshes: THREE.Object3D[] = []
     for (const obj of Object.values(this.sectionObjects)) {
       if (obj.name !== 'chunk' || !obj.visible) continue
       if (obj.worldX === undefined) continue
@@ -1001,11 +995,11 @@ export class WorldRendererThree extends WorldRendererCommon {
       const dcy = obj.worldY! - oy
       const dcz = obj.worldZ! - oz
       if (dcx * dcx + dcy * dcy + dcz * dcz > maxCenterDistSq) continue
-      const mesh = obj.children.find(child => child.name === 'mesh' || child.name === 'shaderMesh')
-      if (mesh) meshes.push(mesh)
+      const mesh = obj.children.find(child => child.name === 'mesh')
+      if (mesh) legacyMeshes.push(mesh)
     }
 
-    const intersects = raycaster.intersectObjects(meshes, false)
+    const intersects = raycaster.intersectObjects(legacyMeshes, false)
 
     let finalDistance = distance
     if (intersects.length > 0) {
@@ -1286,6 +1280,13 @@ export class WorldRendererThree extends WorldRendererCommon {
       globalBuffer.compactStep()
       globalBuffer.uploadDirtyRange()
     }
+    this.chunkMeshManager.setLegacyCameraOrigin(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
+    this.chunkMeshManager.updateLegacySectionCullAndSort(
+      cam,
+      this.cameraWorldPos.x,
+      this.cameraWorldPos.y,
+      this.cameraWorldPos.z,
+    )
     this.renderer.render(this.scene, cam)
 
     if (

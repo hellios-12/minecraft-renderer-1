@@ -5,6 +5,8 @@ import { Vec3 } from 'vec3'
 import { MesherGeometryOutput } from '../mesher-shared/shared'
 import { getShaderCubeResources, SHADER_CUBES_WORDS_PER_FACE } from '../wasm-mesher/bridge/shaderCubeBridge'
 import { createCubeBlockMaterial } from './shaders/cubeBlockShader'
+import { createLegacyBlockMaterial, setLegacyCameraOrigin } from './shaders/legacyBlockShader'
+import { setupLegacySectionMatrix, updateLegacySectionCullState } from './legacySectionCull'
 import { createShaderCubeMesh, disposeShaderCubeMesh } from './shaderCubeMesh'
 import { GlobalBlockBuffer } from './globalBlockBuffer'
 import {
@@ -98,6 +100,13 @@ export class ChunkMeshManager {
   private readonly chunkBoxMaterial = new THREE.MeshBasicMaterial({ color: 0x00_00_00, transparent: true, opacity: 0 })
   /** Shared across all sections — atlas/tint uniforms updated via {@link syncCubeShaderUniforms}. */
   private cubeShaderMaterial: THREE.ShaderMaterial | null = null
+  /** Shared legacy chunk geometry — atlas + camera origin updated each frame. */
+  private legacyShaderMaterial: THREE.ShaderMaterial | null = null
+  private readonly _legacyCullFrustum = new THREE.Frustum()
+  private readonly _legacyCullProjScreen = new THREE.Matrix4()
+  private readonly _legacyCullBox = new THREE.Box3()
+  private readonly _legacyCullBoxMin = new THREE.Vector3()
+  private readonly _legacyCullBoxMax = new THREE.Vector3()
   /** One instanced mesh for all shader-cube faces (single draw call). */
   globalBlockBuffer: GlobalBlockBuffer | null = null
   /** Tight world AABBs for third-person raycast; block word0 read from GlobalBlockBuffer or deferred. */
@@ -145,7 +154,7 @@ export class ChunkMeshManager {
     // Create initial pool
     for (let i = 0; i < this.poolSize; i++) {
       const geometry = new THREE.BufferGeometry()
-      const mesh = new THREE.Mesh(geometry, this.material)
+      const mesh = new THREE.Mesh(geometry, this.getLegacyShaderMaterial())
       mesh.visible = false
       mesh.matrixAutoUpdate = false
       mesh.name = 'pooled-section-mesh'
@@ -187,6 +196,55 @@ export class ChunkMeshManager {
     mat.uniforms.u_tintPalette.value = tintPalette.getTexture()
     mat.uniforms.u_debugMode.value = this.worldRenderer.worldRendererConfig.shaderCubeDebugMode ?? 0
     mat.needsUpdate = true
+  }
+
+  syncLegacyShaderUniforms (): void {
+    const mat = this.legacyShaderMaterial ?? this.getLegacyShaderMaterial()
+    const atlas = (this.material as THREE.MeshBasicMaterial).map ?? null
+    mat.uniforms.u_atlas.value = atlas
+    mat.needsUpdate = true
+  }
+
+  private getLegacyShaderMaterial (): THREE.ShaderMaterial {
+    if (!this.legacyShaderMaterial) {
+      this.legacyShaderMaterial = createLegacyBlockMaterial()
+      this.syncLegacyShaderUniforms()
+    }
+    return this.legacyShaderMaterial
+  }
+
+  /**
+   * Frustum cull + per-section transparent sort for legacy meshes.
+   * Replaces Three.js auto-culling/sorting once SceneOrigin matrix rebasing stops.
+   */
+  updateLegacySectionCullAndSort (camera: THREE.Camera, cameraWorldX: number, cameraWorldY: number, cameraWorldZ: number): void {
+    this._legacyCullProjScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    this._legacyCullFrustum.setFromProjectionMatrix(this._legacyCullProjScreen)
+
+    for (const poolEntry of this.activeSections.values()) {
+      const sectionKey = poolEntry.sectionKey
+      if (!sectionKey) continue
+      const sectionObject = this.sectionObjects[sectionKey]
+      if (!sectionObject) continue
+
+      updateLegacySectionCullState(
+        poolEntry.mesh,
+        sectionObject.worldX ?? 0,
+        sectionObject.worldY ?? 0,
+        sectionObject.worldZ ?? 0,
+        cameraWorldX,
+        cameraWorldY,
+        cameraWorldZ,
+        this._legacyCullFrustum,
+        this._legacyCullBox,
+        this._legacyCullBoxMin,
+        this._legacyCullBoxMax,
+      )
+    }
+  }
+
+  setLegacyCameraOrigin (x: number, y: number, z: number): void {
+    setLegacyCameraOrigin(this.getLegacyShaderMaterial(), x, y, z)
   }
 
   private getCubeShaderMaterial (): THREE.ShaderMaterial | null {
@@ -414,10 +472,8 @@ export class ChunkMeshManager {
         Math.sqrt(3 * 8 ** 2)
       )
 
-      this.worldRenderer.sceneOrigin.track(mesh, { updateMatrix: true })
-      mesh.position.set(geometryData.sx, geometryData.sy, geometryData.sz)
-      mesh.updateMatrix()
-      mesh.visible = true
+      setupLegacySectionMatrix(mesh, geometryData.sx, geometryData.sy, geometryData.sz)
+      mesh.visible = false
       mesh.name = 'mesh'
 
       poolEntry.lastUsedTime = performance.now()
@@ -1095,6 +1151,8 @@ export class ChunkMeshManager {
     this.globalBlockBuffer = null
     this.cubeShaderMaterial?.dispose()
     this.cubeShaderMaterial = null
+    this.legacyShaderMaterial?.dispose()
+    this.legacyShaderMaterial = null
     // Drop any pending near-first reveal state and cancel safety timers.
     this.pendingNearReveal.clear()
     for (const timer of this.nearRevealTimers.values()) clearTimeout(timer)
@@ -1108,7 +1166,7 @@ export class ChunkMeshManager {
   private acquireMesh (): ChunkMeshPool | undefined {
     if (this.bypassPooling) {
       const entry: ChunkMeshPool = {
-        mesh: new THREE.Mesh(new THREE.BufferGeometry(), this.material),
+        mesh: new THREE.Mesh(new THREE.BufferGeometry(), this.getLegacyShaderMaterial()),
         inUse: true,
         lastUsedTime: performance.now()
       }
@@ -1159,7 +1217,7 @@ export class ChunkMeshManager {
     // Add new meshes to pool
     for (let i = currentLength; i < newSize; i++) {
       const geometry = new THREE.BufferGeometry()
-      const mesh = new THREE.Mesh(geometry, this.material)
+      const mesh = new THREE.Mesh(geometry, this.getLegacyShaderMaterial())
       mesh.visible = false
       mesh.matrixAutoUpdate = false
       mesh.name = 'pooled-section-mesh'

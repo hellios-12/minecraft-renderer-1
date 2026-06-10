@@ -1,0 +1,52 @@
+import * as THREE from 'three'
+
+/** Half-extent of a section mesh AABB in section-local space. */
+export const LEGACY_SECTION_HALF_EXTENT = 8
+
+/** Small pad on camera-relative section AABBs for frustum tests. */
+const CULL_BOX_EPSILON = 0.01
+
+/**
+ * Set a legacy section mesh world translation once at build time.
+ * Position proxy is not used — camera-relative math lives in the shader.
+ */
+export function setupLegacySectionMatrix (
+  mesh: THREE.Mesh,
+  sx: number,
+  sy: number,
+  sz: number,
+): void {
+  mesh.matrix.makeTranslation(sx, sy, sz)
+  mesh.matrixWorldNeedsUpdate = true
+  mesh.frustumCulled = false
+}
+
+/**
+ * Per-frame frustum cull + back-to-front renderOrder for one legacy section.
+ * Precursor to Stage 2c span culling — same section loop shape.
+ */
+export function updateLegacySectionCullState (
+  mesh: THREE.Mesh,
+  sectionWorldX: number,
+  sectionWorldY: number,
+  sectionWorldZ: number,
+  cameraWorldX: number,
+  cameraWorldY: number,
+  cameraWorldZ: number,
+  frustum: THREE.Frustum,
+  box: THREE.Box3,
+  boxMin: THREE.Vector3,
+  boxMax: THREE.Vector3,
+): void {
+  const dx = sectionWorldX - cameraWorldX
+  const dy = sectionWorldY - cameraWorldY
+  const dz = sectionWorldZ - cameraWorldZ
+
+  const half = LEGACY_SECTION_HALF_EXTENT + CULL_BOX_EPSILON
+  boxMin.set(dx - half, dy - half, dz - half)
+  boxMax.set(dx + half, dy + half, dz + half)
+  box.set(boxMin, boxMax)
+
+  mesh.visible = frustum.intersectsBox(box)
+  mesh.renderOrder = -(dx * dx + dy * dy + dz * dz)
+}
