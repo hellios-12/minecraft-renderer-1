@@ -376,7 +376,6 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         console.error('[Mesher] Failed to reconfigure workers:', err)
       })
   }
-
   private clearMesherPendingState() {
     this.sectionsWaiting.clear()
     this.toWorkerMessagesQueue = {}
@@ -414,11 +413,30 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.terminateAllMesherWorkers()
     this.initWorkers()
     await this.bootstrapMesherWorkers()
-    this.afterMesherWorkersReconfigured()
+    if (!this.active) return
+
+    await this.requestLoadedChunksReload()
   }
 
-  protected afterMesherWorkersReconfigured() {
-    // WorldRendererThree overrides this to remesh visible sections.
+  private async requestLoadedChunksReload() {
+    try {
+      const worldView = this.displayOptions.worldView as {
+        reloadLoadedChunks?: () => void | Promise<void>
+      }
+
+      if (typeof worldView.reloadLoadedChunks === 'function') {
+        await worldView.reloadLoadedChunks()
+        return
+      }
+
+      const workerScope = globalThis as typeof globalThis & { WorkerGlobalScope?: typeof WorkerGlobalScope }
+      if (typeof workerScope.WorkerGlobalScope !== 'undefined' && globalThis instanceof workerScope.WorkerGlobalScope) {
+        // eslint-disable-next-line no-restricted-globals
+        self.postMessage({ type: 'reloadLoadedChunks' })
+      }
+    } catch (err) {
+      console.error('[Mesher] Failed to reload chunks after worker reconfigure:', err)
+    }
   }
 
   onReactivePlayerStateUpdated<T extends keyof PlayerStateReactive>(key: T, callback: (value: PlayerStateReactive[T]) => void, initial = true) {
@@ -428,13 +446,18 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     return subscribeKey(this.playerStateReactive, key, callback)
   }
 
-  onReactiveConfigUpdated<T extends keyof typeof this.worldRendererConfig>(key: T, callback: (value: typeof this.worldRendererConfig[T]) => void) {
-    callback(this.worldRendererConfig[key])
-    if ((key as any) === '*') {
-      subscribe(this.worldRendererConfig, callback as any)
-    } else {
-      subscribeKey(this.worldRendererConfig, key, callback)
+  onReactiveConfigUpdated<T extends keyof typeof this.worldRendererConfig>(
+    key: T,
+    callback: (value: typeof this.worldRendererConfig[T]) => void,
+    initial = true
+  ) {
+    if (initial) {
+      callback(this.worldRendererConfig[key])
     }
+    if ((key as any) === '*') {
+      return subscribe(this.worldRendererConfig, callback as any)
+    }
+    return subscribeKey(this.worldRendererConfig, key, callback)
   }
 
   onReactiveDebugUpdated<T extends keyof typeof this.reactiveDebugParams>(key: T, callback: (value: typeof this.reactiveDebugParams[T]) => void) {

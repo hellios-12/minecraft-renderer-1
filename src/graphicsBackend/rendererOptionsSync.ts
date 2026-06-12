@@ -12,7 +12,6 @@ import type { MenuBackgroundRenderer } from '../three/menuBackground/renderer'
 import { menuBackgroundSpeedToMultiplier } from '../three/menuBackground/config'
 import type { V2CameraId, V2SceneId, MinecraftBlockGroupId } from '../three/menuBackground/v2'
 import { setSkinsConfig } from '../lib/utils/skins'
-import type { WorldView } from '../worldView'
 
 export type { RendererStorageOptions } from './rendererDefaultOptions'
 
@@ -205,10 +204,6 @@ export function subscribeRendererOptions<T extends RendererStorageOptions>(
   appViewer.bindRendererOptions(() => optionsProxy as RendererStorageOptions)
 
   let windowFocused = hooks.getWindowFocused?.() ?? true
-  let prevChunkReloadSettings = {
-    rendererWorldPerformance: optionsProxy.rendererWorldPerformance,
-    rendererMesher: optionsProxy.rendererMesher,
-  }
 
   const run = () => {
     const snapshot = optionsProxy as RendererStorageOptions
@@ -217,24 +212,6 @@ export function subscribeRendererOptions<T extends RendererStorageOptions>(
       isCypress: hooks.isCypress,
       windowFocused,
     })
-
-    const chunkReloadSettingsChanged =
-      snapshot.rendererWorldPerformance !== prevChunkReloadSettings.rendererWorldPerformance ||
-      snapshot.rendererMesher !== prevChunkReloadSettings.rendererMesher
-    prevChunkReloadSettings = {
-      rendererWorldPerformance: snapshot.rendererWorldPerformance,
-      rendererMesher: snapshot.rendererMesher,
-    }
-
-    if (
-      chunkReloadSettingsChanged &&
-      appViewer.currentDisplay === 'world' &&
-      appViewer.worldView
-    ) {
-      queueMicrotask(() => {
-        void (appViewer.worldView as WorldView).reloadLoadedChunks()
-      })
-    }
 
     if (appViewer.currentDisplay === 'menu') {
       const menu = appViewer.backend?.getMenuBackground?.()

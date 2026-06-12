@@ -38,7 +38,6 @@ function ensurePromiseWithResolvers() {
 
 class TestWorldRenderer extends WorldRendererCommon {
   outputFormat = 'threeJs' as const
-  rerenderCalls = 0
 
   changeBackgroundColor() {}
   changeCardinalLight() {}
@@ -46,13 +45,10 @@ class TestWorldRenderer extends WorldRendererCommon {
   updateCamera() {}
   render() {}
   updateShowChunksBorder() {}
-
-  protected override afterMesherWorkersReconfigured() {
-    this.rerenderCalls++
-  }
 }
 
-function createRenderer(workerCount = 2) {
+function createRenderer(workerCount = 2, worldView?: DisplayWorldOptions['worldView']) {
+  const reloadLoadedChunks = vi.fn(async () => {})
   const rendererState = proxy({
     world: {
       chunksLoaded: {} as Record<string, true>,
@@ -68,8 +64,8 @@ function createRenderer(workerCount = 2) {
 
   const displayOptions: DisplayWorldOptions = {
     version: '1.21.1',
-    worldView: new EventEmitter() as DisplayWorldOptions['worldView'],
-    inWorldRenderingConfig: { ...defaultWorldRendererConfig, mesherWorkers: workerCount },
+    worldView: (worldView ?? Object.assign(new EventEmitter(), { reloadLoadedChunks })) as DisplayWorldOptions['worldView'],
+    inWorldRenderingConfig: proxy({ ...defaultWorldRendererConfig, mesherWorkers: workerCount }),
     playerStateReactive: getInitialPlayerState(),
     rendererState,
     nonReactiveState: {
@@ -114,7 +110,7 @@ function createRenderer(workerCount = 2) {
   renderer.viewDistance = 8
   renderer.viewerChunkPosition = new Vec3(0, 64, 0)
   renderer.worldSizeParams = { minY: 0, worldHeight: 256 }
-  return renderer
+  return { renderer, reloadLoadedChunks }
 }
 
 describe('WorldRendererCommon.reconfigureMesherWorkers', () => {
@@ -135,8 +131,8 @@ describe('WorldRendererCommon.reconfigureMesherWorkers', () => {
     vi.unstubAllGlobals()
   })
 
-  test('recreates workers with new count and triggers remesh', async () => {
-    const renderer = createRenderer(3)
+  test('recreates workers with new count and reloads chunks', async () => {
+    const { renderer, reloadLoadedChunks } = createRenderer(3)
     const terminated = renderer.workers.map((worker) => worker.terminate)
     renderer.worldRendererConfig.mesherWorkers = 1
 
@@ -146,11 +142,11 @@ describe('WorldRendererCommon.reconfigureMesherWorkers', () => {
       expect(terminate).toHaveBeenCalled()
     }
     expect(renderer.workers).toHaveLength(1)
-    expect(renderer.rerenderCalls).toBe(1)
+    expect(reloadLoadedChunks).toHaveBeenCalledTimes(1)
   })
 
   test('recreates workers when mesher pipeline changes', async () => {
-    const renderer = createRenderer(2)
+    const { renderer, reloadLoadedChunks } = createRenderer(2)
     const terminated = renderer.workers.map((worker) => worker.terminate)
     renderer.worldRendererConfig.wasmMesher = false
 
@@ -160,6 +156,46 @@ describe('WorldRendererCommon.reconfigureMesherWorkers', () => {
       expect(terminate).toHaveBeenCalled()
     }
     expect(renderer.workers).toHaveLength(2)
-    expect(renderer.rerenderCalls).toBe(1)
+    expect(reloadLoadedChunks).toHaveBeenCalledTimes(1)
+  })
+
+  test('watchMesherPoolConfig registers valtio unsubscribe functions', () => {
+    const { renderer } = createRenderer(2)
+
+    renderer['watchMesherPoolConfig']()
+    expect(renderer['valtioUnsubs']).toHaveLength(3)
+    for (const unsub of renderer['valtioUnsubs']) {
+      expect(typeof unsub).toBe('function')
+    }
+
+    expect(() => {
+      for (const unsub of renderer['valtioUnsubs']) unsub()
+      renderer.destroy()
+    }).not.toThrow()
+  })
+
+  test('config watcher enqueues reconfigure when mesherWorkers changes', async () => {
+    const enqueueSpy = vi.spyOn(TestWorldRenderer.prototype as any, 'enqueueMesherWorkersReconfigure')
+    const { renderer } = createRenderer(2)
+
+    renderer['watchMesherPoolConfig']()
+    renderer.worldRendererConfig.mesherWorkers = 4
+
+    await vi.waitFor(() => {
+      expect(enqueueSpy).toHaveBeenCalled()
+    })
+
+    enqueueSpy.mockRestore()
+  })
+
+  test('skips tail work when destroyed during bootstrap', async () => {
+    const { renderer, reloadLoadedChunks } = createRenderer(2)
+    vi.spyOn(renderer, 'updateAssetsData').mockImplementation(async () => {
+      renderer.active = false
+    })
+
+    await renderer.reconfigureMesherWorkers()
+
+    expect(reloadLoadedChunks).not.toHaveBeenCalled()
   })
 })
