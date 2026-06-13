@@ -69,6 +69,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   cursorBlock: CursorBlock
   onRender: Array<(deltaTime: number) => void> = []
   private lastRenderTime = 0
+  private lastSciFiTickMs = 0
   private animatedFov = 0
   private lastFovAnimTime = 0
   private static readonly FOV_TRANSITION_MS = 200
@@ -430,6 +431,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   worldSwitchActions() {
     this.onWorldSwitched.push(() => {
+      this.getModule<{ onWorldSwitched?: () => void }>('futuristicReveal')?.onWorldSwitched?.()
       // clear custom blocks
       this.protocolCustomBlocks.clear()
       // Reset section animations
@@ -788,6 +790,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     // "Batch Chunks Display" (`_renderByChunks`) option. No-op when the
     // option is off — `waitingChunksToDisplay` is empty in that case.
     this.chunkMeshManager.finishChunkDisplay(chunkKey)
+    this.getModule<{ onChunkFinished?: () => void }>('futuristicReveal')?.onChunkFinished?.()
   }
 
   private applyPendingSectionUpdates() {
@@ -848,8 +851,12 @@ export class WorldRendererThree extends WorldRendererCommon {
         continue
       }
 
-      this.chunkMeshManager.updateSection(update.key, update.geometry)
+      const sectionObject = this.chunkMeshManager.updateSection(update.key, update.geometry)
       this.updatePosDataChunk(update.key)
+      if (sectionObject) {
+        this.getModule<{ onSectionMeshed?: (key: string, geometry: MesherGeometryOutput, section: typeof sectionObject) => void }>('futuristicReveal')
+          ?.onSectionMeshed?.(update.key, update.geometry, sectionObject)
+      }
     }
   }
 
@@ -886,8 +893,12 @@ export class WorldRendererThree extends WorldRendererCommon {
         this.chunkMeshManager.releaseSection(data.key)
         return
       }
-      this.chunkMeshManager.updateSection(data.key, data.geometry)
+      const sectionObject = this.chunkMeshManager.updateSection(data.key, data.geometry)
       this.updatePosDataChunk(data.key)
+      if (sectionObject) {
+        this.getModule<{ onSectionMeshed?: (key: string, geometry: MesherGeometryOutput, section: typeof sectionObject) => void }>('futuristicReveal')
+          ?.onSectionMeshed?.(data.key, data.geometry, sectionObject)
+      }
     }
   }
 
@@ -1282,7 +1293,12 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     // eslint-disable-next-line @typescript-eslint/non-nullable-type-assertion-style
     const cam = this.cameraGroupVr instanceof THREE.Group ? this.cameraGroupVr.children.find(child => child instanceof THREE.PerspectiveCamera) as THREE.PerspectiveCamera : this.camera
+    // Flush buffered section geometry before reveal tick (calls onSectionMeshed synchronously in handleWorkerMessage).
     this.applyPendingSectionUpdates()
+    const sciFiNow = performance.now()
+    const sciFiDeltaMs = sciFiNow - this.lastSciFiTickMs
+    this.lastSciFiTickMs = sciFiNow
+    this.getModule<{ tick?: (deltaMs: number, now?: number) => void }>('futuristicReveal')?.tick?.(sciFiDeltaMs, sciFiNow)
     const globalBuffer = this.chunkMeshManager.globalBlockBuffer
     if (globalBuffer) {
       globalBuffer.setCameraOrigin(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)

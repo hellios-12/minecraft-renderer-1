@@ -367,15 +367,12 @@ export class ChunkMeshManager {
     return this.shouldDeferShaderToPerSection(sectionKey)
   }
 
-  /** Sci-fi reveal needs per-section shader meshes (or no global add) until the first wave completes. */
+  /** Sci-fi reveal keeps geometry off global buffers until the section finishes reveal. */
   private shouldDeferShaderToPerSection (sectionKey: string): boolean {
     const sciFi = this.worldRenderer.getModule<{
-      shouldUseRevealEffect?: (key: string) => boolean
-      isInInitialRevealCampaign?: () => boolean
+      shouldDeferSectionGeometry?: (key: string) => boolean
     }>('futuristicReveal')
-    if (!sciFi) return false
-    if (sciFi.isInInitialRevealCampaign?.()) return true
-    return sciFi.shouldUseRevealEffect?.(sectionKey) === true
+    return sciFi?.shouldDeferSectionGeometry?.(sectionKey) === true
   }
 
   /**
@@ -677,7 +674,7 @@ export class ChunkMeshManager {
     // Remove existing section object from scene if it exists
     let sectionObject = this.sectionObjects[sectionKey]
     if (sectionObject) {
-      this.cleanupSection(sectionKey)
+      this.cleanupSection(sectionKey, { forRemesh: true })
     }
 
     if (!hasBlend) {
@@ -1112,7 +1109,7 @@ export class ChunkMeshManager {
     }
   }
 
-  cleanupSection (sectionKey: string) {
+  cleanupSection (sectionKey: string, opts?: { forRemesh?: boolean }) {
     // Remove section object from scene
     const sectionObject = this.sectionObjects[sectionKey]
     if (sectionObject) {
@@ -1173,6 +1170,10 @@ export class ChunkMeshManager {
         sectionObject.boxHelper = undefined
       }
       delete this.sectionObjects[sectionKey]
+      if (!opts?.forRemesh) {
+        this.worldRenderer.getModule<{ onSectionRemoved?: (key: string) => void }>('futuristicReveal')
+          ?.onSectionRemoved?.(sectionKey)
+      }
     }
   }
 

@@ -119,8 +119,7 @@ function createManager (opts: ManagerOptions = {}): ChunkMeshManager {
   const material = new THREE.MeshBasicMaterial()
   const revealModule = opts.revealDefer
     ? {
-      shouldUseRevealEffect: () => true,
-      isInInitialRevealCampaign: () => false,
+      shouldDeferSectionGeometry: () => true,
     }
     : undefined
   const worldRenderer = {
