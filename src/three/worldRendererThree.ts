@@ -1543,8 +1543,6 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   setSectionDirty(...args: Parameters<WorldRendererCommon['setSectionDirty']>) {
-    const [pos] = args
-    this.cleanChunkTextures(pos.x, pos.z) // todo don't do this!
     super.setSectionDirty(...args)
   }
 

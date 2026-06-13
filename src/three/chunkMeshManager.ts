@@ -1150,7 +1150,7 @@ export class ChunkMeshManager {
       delete sectionObject.deferredShaderCubes
       // Dispose signs and heads containers
       if (sectionObject.signsContainer) {
-        this.disposeContainer(sectionObject.signsContainer)
+        this.disposeContainer(sectionObject.signsContainer, false)
       }
       if (sectionObject.headsContainer) {
         this.disposeContainer(sectionObject.headsContainer)
@@ -1612,8 +1612,8 @@ export class ChunkMeshManager {
     }
   }
 
-  private disposeContainer (container: THREE.Group) {
-    disposeObject(container, true)
+  private disposeContainer (container: THREE.Group, cleanTextures = true) {
+    disposeObject(container, cleanTextures)
   }
 
   /**
@@ -1719,8 +1719,10 @@ export class ChunkMeshManager {
 }
 
 
+type SignTextureCacheEntry = { tex: THREE.Texture, signature: string }
+
 class SignHeadsRenderer {
-  chunkTextures = new Map<string, { [pos: string]: THREE.Texture }>()
+  chunkTextures = new Map<string, { [pos: string]: SignTextureCacheEntry }>()
 
   constructor (public worldRendererThree: WorldRendererThree) {
   }
@@ -1728,7 +1730,7 @@ class SignHeadsRenderer {
   dispose () {
     for (const [, textures] of this.chunkTextures) {
       for (const key of Object.keys(textures)) {
-        textures[key].dispose()
+        textures[key]!.tex.dispose()
       }
     }
     this.chunkTextures.clear()
@@ -1825,8 +1827,11 @@ class SignHeadsRenderer {
       this.chunkTextures.set(`${chunk[0]},${chunk[1]}`, textures)
     }
     const texturekey = `${position.x},${position.y},${position.z}`
-    // todo investigate bug and remove this so don't need to clean in section dirty
-    if (textures[texturekey]) return textures[texturekey]
+    const signature = JSON.stringify(blockEntity) + '|' + isHanging + '|' + backSide
+    const cached = textures[texturekey]
+    if (cached && cached.signature === signature) return cached.tex
+
+    if (cached?.tex) cached.tex.dispose()
 
     const PrismarineChat = PrismarineChatLoader(this.worldRendererThree.version)
     const canvas = renderSign(blockEntity, isHanging, PrismarineChat)
@@ -1835,7 +1840,7 @@ class SignHeadsRenderer {
     tex.magFilter = THREE.NearestFilter
     tex.minFilter = THREE.NearestFilter
     tex.needsUpdate = true
-    textures[texturekey] = tex
+    textures[texturekey] = { tex, signature }
     return tex
   }
 
@@ -1850,8 +1855,9 @@ class SignHeadsRenderer {
     const key = `${Math.floor(x / 16)},${Math.floor(z / 16)}`
     const textures = this.chunkTextures.get(key)
     if (!textures) return
-    for (const k of Object.keys(textures)) {
-      textures[k].dispose()
+    const disposedKeys = Object.keys(textures)
+    for (const k of disposedKeys) {
+      textures[k]!.tex.dispose()
       delete textures[k]
     }
   }
