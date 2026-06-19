@@ -62,7 +62,6 @@ export const RENDERER_DEFAULT_OPTIONS = {
   rendererPerfDebugOverlay: false as boolean,
   disableBlockEntityTextures: false as boolean,
   rendererMesher: 'wasm' as RendererMesherPipeline,
-  rendererShaderCubeBlocks: false as boolean,
   rendererShaderCubeDebugMode: 'off' as RendererShaderCubeDebugMode,
   showChunkBorders: false as boolean,
   renderEntities: true as boolean,
@@ -109,6 +108,7 @@ export function migrateRendererOptions(saved: Record<string, unknown>): void {
   }
   delete saved.wasmExperimentalMesher
   delete saved.rendererWasmMesher
+  delete saved.rendererShaderCubeBlocks
 
   if (saved.menuBackgroundMode === 'futuristic') {
     saved.menuBackgroundMode = 'v2'
@@ -194,11 +194,6 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
     text: 'Mesher pipeline',
     tooltip: 'WASM is faster. Use JS if WASM is not working. Requires reload.',
     requiresRestart: true
-  },
-  rendererShaderCubeBlocks: {
-    text: '(UNSTABLE) Instanced shader cubes',
-    tooltip: 'Render full blocks through the global GPU instanced path. Requires WASM mesher and WebGL2.',
-    requiresChunksReload: true,
   },
   rendererShaderCubeDebugMode: {
     text: 'Shader cube debug',
@@ -340,7 +335,7 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
     },
     {
       title: 'Mesher',
-      keys: ['rendererMesher', 'rendererShaderCubeBlocks']
+      keys: ['rendererMesher']
     },
     {
       title: 'Renderer debug',
