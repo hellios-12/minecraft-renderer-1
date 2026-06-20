@@ -1,12 +1,10 @@
 import * as THREE from 'three'
 import { Vec3 } from 'vec3'
 import nbt from 'prismarine-nbt'
-import PrismarineChatLoader from 'prismarine-chat'
 import * as tweenJs from '@tweenjs/tween.js'
 import { Biome } from 'minecraft-data'
-import { renderSign } from '../sign-renderer'
 import { DisplayWorldOptions, GraphicsInitOptions } from '../graphicsBackend/types'
-import { chunkPos, sectionPos } from '../lib/simpleUtils'
+import { sectionPos } from '../lib/simpleUtils'
 import { WorldRendererCommon } from '../lib/worldrendererCommon'
 import { calculateSkyLightSimple } from '../lib/skyLight'
 import { addNewStat, MC_RENDERER_DEBUG_OVERLAY_CLASS } from '../lib/ui/newStats'
@@ -54,8 +52,6 @@ export class WorldRendererThree extends WorldRendererCommon {
   get sectionObjects() {
     return this.chunkMeshManager.sectionObjects
   }
-  chunkTextures = new Map<string, { [pos: string]: THREE.Texture }>()
-  signsCache = new Map<string, any>()
   cameraSectionPos: Vec3 = new Vec3(0, 0, 0)
   holdingBlock: IHoldingBlock
   holdingBlockLeft: IHoldingBlock
@@ -352,6 +348,11 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
 
     return targetState
+  }
+
+  setRain(enabled: boolean): void {
+    this.worldRendererConfig.isRaining = enabled
+    this.toggleModule('rain', enabled)
   }
 
   /**
@@ -695,7 +696,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.syncSkyLevelFromTime(newTime)
   }
 
-  private syncSkyLevelFromTime (timeOfDay: number): void {
+  private syncSkyLevelFromTime(timeOfDay: number): void {
     const skyLevel = calculateSkyLightSimple(timeOfDay) / 15
     this.chunkMeshManager.setSkyLevel(skyLevel)
   }
@@ -756,11 +757,20 @@ export class WorldRendererThree extends WorldRendererCommon {
         const formatCompact = (num: number) => new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(num)
         let text = ''
         text += `TE: ${formatFull(this.renderer.info.memory.textures)} `
-        text += `F: ${formatCompact(this.tilesRendered)} `
-        text += `B: ${formatCompact(this.blocksRendered)} `
+        const gb = this.chunkMeshManager.getGlobalBufferStats()
+        if (gb.shaderFaces) {
+          const s = gb.shaderFaces
+          text += `CUBE: ${formatCompact(s.used)}/${formatCompact(s.capacity)}f `
+        }
+        if (gb.legacyOpaque) {
+          const s = gb.legacyOpaque
+          text += `LEG-O: ${formatCompact(s.used)}/${formatCompact(s.capacity)}q `
+        }
+        if (gb.legacyBlend) {
+          const s = gb.legacyBlend
+          text += `LEG-B: ${formatCompact(s.used)}/${formatCompact(s.capacity)}q `
+        }
         text += `MEM: ${this.chunkMeshManager.getEstimatedMemoryUsage().total} `
-        const poolStats = this.chunkMeshManager.getStats()
-        text += `POOL: ${poolStats.activeCount}/${poolStats.poolSize} `
         const pf = formatPerformanceFactorsDebug(this.reactiveState.world.instabilityFactors)
         if (pf) text += `PF: ${pf} `
         // entities can be seen in F3
@@ -789,10 +799,6 @@ export class WorldRendererThree extends WorldRendererCommon {
     if (drawable) {
       drawable.renderOrder = renderOrder
     }
-  }
-
-  override updateViewerPosition(pos: Vec3): void {
-    this.viewerChunkPosition = pos
   }
 
   cameraSectionPositionUpdate() {
@@ -926,28 +932,6 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
   }
 
-
-  getSignTexture(position: Vec3, blockEntity, isHanging, backSide = false) {
-    const chunk = chunkPos(position)
-    let textures = this.chunkTextures.get(`${chunk[0]},${chunk[1]}`)
-    if (!textures) {
-      textures = {}
-      this.chunkTextures.set(`${chunk[0]},${chunk[1]}`, textures)
-    }
-    const texturekey = `${position.x},${position.y},${position.z}`
-    // todo investigate bug and remove this so don't need to clean in section dirty
-    if (textures[texturekey]) return textures[texturekey]
-
-    const PrismarineChat = PrismarineChatLoader(this.version)
-    const canvas = renderSign(blockEntity, isHanging, PrismarineChat)
-    if (!canvas) return
-    const tex = new THREE.Texture(canvas)
-    tex.magFilter = THREE.NearestFilter
-    tex.minFilter = THREE.NearestFilter
-    tex.needsUpdate = true
-    textures[texturekey] = tex
-    return tex
-  }
 
   getCameraPosition(target?: THREE.Vector3): THREE.Vector3 {
     return (target ?? this._tmpCameraPos).set(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
@@ -1441,49 +1425,6 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
   }
 
-  renderSign(position: Vec3, rotation: number, isWall: boolean, isHanging: boolean, blockEntity) {
-    const tex = this.getSignTexture(position, blockEntity, isHanging)
-
-    if (!tex) return
-
-    // todo implement
-    // const key = JSON.stringify({ position, rotation, isWall })
-    // if (this.signsCache.has(key)) {
-    //   console.log('cached', key)
-    // } else {
-    //   this.signsCache.set(key, tex)
-    // }
-
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: tex, transparent: true }))
-    mesh.renderOrder = 999
-
-    const lineHeight = 7 / 16
-    const scaleFactor = isHanging ? 1.3 : 1
-    mesh.scale.set(1 * scaleFactor, lineHeight * scaleFactor, 1 * scaleFactor)
-
-    const thickness = (isHanging ? 2 : 1.5) / 16
-    const wallSpacing = 0.25 / 16
-    if (isWall && !isHanging) {
-      mesh.position.set(0, 0, -0.5 + thickness + wallSpacing + 0.0001)
-    } else {
-      mesh.position.set(0, 0, thickness / 2 + 0.0001)
-    }
-
-    const group = new THREE.Group()
-    group.rotation.set(
-      0,
-      -THREE.MathUtils.degToRad(rotation * (isWall ? 90 : 45 / 2)),
-      0
-    )
-    group.add(mesh)
-    const height = (isHanging ? 10 : 8) / 16
-    const heightOffset = (isHanging ? 0 : isWall ? 4.333 : 9.333) / 16
-    const textPosition = height / 2 + heightOffset
-    this.sceneOrigin.track(group)
-    group.position.set(position.x + 0.5, position.y + textPosition, position.z + 0.5)
-    return group
-  }
-
   lightUpdate(chunkX: number, chunkZ: number) {
     // set all sections in the chunk dirty
     for (let y = this.worldSizeParams.minY; y < this.worldSizeParams.worldHeight; y += 16) {
@@ -1533,19 +1474,6 @@ export class WorldRendererThree extends WorldRendererCommon {
     }))
   }
 
-  cleanChunkTextures(x, z) {
-    const textures = this.chunkTextures.get(`${Math.floor(x / 16)},${Math.floor(z / 16)}`) ?? {}
-    for (const key of Object.keys(textures)) {
-      textures[key].dispose()
-      delete textures[key]
-    }
-    // Sign / head textures moved to ChunkMeshManager.signHeadsRenderer in PR
-    // #16; without invalidating that cache here, sign edits (and any other
-    // block-entity NBT change picked up via setSectionDirty) would re-render
-    // with the stale cached canvas until a full world reset.
-    this.chunkMeshManager.cleanSignChunkTextures(x, z)
-  }
-
   readdChunks() {
     for (const key of Object.keys(this.sectionObjects)) {
       this.scene.remove(this.sectionObjects[key])
@@ -1567,7 +1495,6 @@ export class WorldRendererThree extends WorldRendererCommon {
   removeColumn(x, z) {
     super.removeColumn(x, z)
 
-    this.cleanChunkTextures(x, z)
     this.clearPendingSectionUpdatesForChunk(x, z)
     const sectionHeight = this.getSectionHeight()
     const worldMinY = this.worldMinYRender
@@ -1582,7 +1509,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.chunkMeshManager.onChunkRemovedFromGate(`${x},${z}`)
   }
 
-  updateViewerPosition(pos: Vec3) {
+  override updateViewerPosition(pos: Vec3) {
     super.updateViewerPosition(pos)
     if (this.chunkMeshManager.pendingNearReveal.size > 0) {
       this.chunkMeshManager.tryRevealPending()

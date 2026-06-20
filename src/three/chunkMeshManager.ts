@@ -1,4 +1,3 @@
-import PrismarineChatLoader from 'prismarine-chat'
 import * as THREE from 'three'
 import * as nbt from 'prismarine-nbt'
 import { Vec3 } from 'vec3'
@@ -19,13 +18,12 @@ import {
   sectionAabbIntersectsRay,
   type ShaderSectionRaycastEntry,
 } from './sectionRaycastAabb'
-import { chunkPos } from '../lib/simpleUtils'
-import { renderSign } from '../sign-renderer'
 import { getMesh } from './entity/EntityMesh'
 import type { WorldRendererThree } from './worldRendererThree'
 import { armorModel } from './entity/armorModels'
 import { disposeObject } from './threeJsUtils'
 import { getBannerTexture, createBannerMesh, releaseBannerTexture } from './bannerRenderer'
+import { getSignTexture, releaseSignTexture, disposeAllSignTextures } from './signTextureCache'
 import { BlockEntityLightRegistry } from '../lib/blockEntityLightRegistry'
 
 export interface ChunkMeshPool {
@@ -71,6 +69,21 @@ export interface SectionObject extends THREE.Group {
    * before being shown together with the rest of the chunk.
    */
   _waitingForChunkDisplay?: boolean
+}
+
+/** Live vs allocated stats for one global GPU buffer (faces or legacy quads). */
+export type GlobalBufferSlotStats = {
+  used: number
+  capacity: number
+  sections: number
+  usedBytes: number
+  capacityBytes: number
+}
+
+export type GlobalBufferStats = {
+  shaderFaces: GlobalBufferSlotStats | null
+  legacyOpaque: GlobalBufferSlotStats | null
+  legacyBlend: GlobalBufferSlotStats | null
 }
 
 export class ChunkMeshManager {
@@ -1347,8 +1360,12 @@ export class ChunkMeshManager {
         sectionObject.shaderMesh = undefined
       }
       delete sectionObject.deferredShaderCubes
-      // Dispose signs and heads containers
+      // Release shared sign textures (refcount) before disposing meshes
       if (sectionObject.signsContainer) {
+        for (const child of sectionObject.signsContainer.children) {
+          const sign = child as THREE.Group & { signTexture?: THREE.Texture }
+          if (sign.signTexture) releaseSignTexture(sign.signTexture)
+        }
         this.disposeContainer(sectionObject.signsContainer, false)
       }
       if (sectionObject.headsContainer) {
@@ -1473,16 +1490,6 @@ export class ChunkMeshManager {
   }
 
   /**
-   * Forward to {@link SignHeadsRenderer.cleanChunkTextures} so callers in
-   * `WorldRendererThree` (which historically owned the sign-texture cache)
-   * can invalidate cached sign textures when a section is marked dirty,
-   * without reaching into the manager's private members.
-   */
-  cleanSignChunkTextures (x: number, z: number) {
-    this.signHeadsRenderer.cleanChunkTextures(x, z)
-  }
-
-  /**
    * Get mesh for section if it exists
    */
   getSectionMesh (sectionKey: string): THREE.Mesh | undefined {
@@ -1520,6 +1527,34 @@ export class ChunkMeshManager {
   /**
    * Get pool statistics
    */
+  getGlobalBufferStats (): GlobalBufferStats {
+    const snapshotLegacy = (buffer: GlobalLegacyBuffer | null): GlobalBufferSlotStats | null => {
+      if (!buffer) return null
+      return {
+        used: buffer.getHighWatermark(),
+        capacity: buffer.getCapacityQuads(),
+        sections: buffer.getSectionCount(),
+        usedBytes: buffer.getUsedMemoryBytes(),
+        capacityBytes: buffer.getMemoryBytes(),
+      }
+    }
+
+    const cubes = this.globalBlockBuffer
+    return {
+      shaderFaces: cubes
+        ? {
+            used: cubes.getHighWatermark(),
+            capacity: cubes.getCapacityFaces(),
+            sections: cubes.getSectionCount(),
+            usedBytes: cubes.getUsedMemoryBytes(),
+            capacityBytes: cubes.getMemoryBytes(),
+          }
+        : null,
+      legacyOpaque: snapshotLegacy(this.globalLegacyBuffer),
+      legacyBlend: snapshotLegacy(this.globalLegacyBlendBuffer),
+    }
+  }
+
   getStats () {
     const freeCount = this.meshPool.filter(entry => !entry.inUse).length
     const hitRate = this.hits + this.misses > 0 ? (this.hits / (this.hits + this.misses) * 100).toFixed(1) : '0'
@@ -1922,21 +1957,12 @@ export class ChunkMeshManager {
 }
 
 
-type SignTextureCacheEntry = { tex: THREE.Texture, signature: string }
-
 class SignHeadsRenderer {
-  chunkTextures = new Map<string, { [pos: string]: SignTextureCacheEntry }>()
-
   constructor (public worldRendererThree: WorldRendererThree) {
   }
 
   dispose () {
-    for (const [, textures] of this.chunkTextures) {
-      for (const key of Object.keys(textures)) {
-        textures[key]!.tex.dispose()
-      }
-    }
-    this.chunkTextures.clear()
+    disposeAllSignTextures()
   }
 
   renderHead (position: Vec3, rotation: number, isWall: boolean, blockEntity) {
@@ -1980,17 +2006,9 @@ class SignHeadsRenderer {
   }
 
   renderSign (position: Vec3, rotation: number, isWall: boolean, isHanging: boolean, blockEntity) {
-    const tex = this.getSignTexture(position, blockEntity, isHanging)
+    const tex = getSignTexture(this.worldRendererThree, blockEntity, isHanging)
 
     if (!tex) return
-
-    // todo implement
-    // const key = JSON.stringify({ position, rotation, isWall })
-    // if (this.signsCache.has(key)) {
-    //   console.log('cached', key)
-    // } else {
-    //   this.signsCache.set(key, tex)
-    // }
 
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: tex, transparent: true }))
     mesh.renderOrder = 999
@@ -2007,61 +2025,19 @@ class SignHeadsRenderer {
       mesh.position.set(0, 0, thickness / 2 + 0.0001)
     }
 
-    const group = new THREE.Group()
+    const group = new THREE.Group() as THREE.Group & { signTexture?: THREE.Texture }
     group.rotation.set(
       0,
       -THREE.MathUtils.degToRad(rotation * (isWall ? 90 : 45 / 2)),
       0
     )
     group.add(mesh)
+    group.signTexture = tex
     const height = (isHanging ? 10 : 8) / 16
     const heightOffset = (isHanging ? 0 : isWall ? 4.333 : 9.333) / 16
     const textPosition = height / 2 + heightOffset
     this.worldRendererThree.sceneOrigin.track(group)
     group.position.set(position.x + 0.5, position.y + textPosition, position.z + 0.5)
     return group
-  }
-
-  getSignTexture (position: Vec3, blockEntity, isHanging, backSide = false) {
-    const chunk = chunkPos(position)
-    let textures = this.chunkTextures.get(`${chunk[0]},${chunk[1]}`)
-    if (!textures) {
-      textures = {}
-      this.chunkTextures.set(`${chunk[0]},${chunk[1]}`, textures)
-    }
-    const texturekey = `${position.x},${position.y},${position.z}`
-    const signature = JSON.stringify(blockEntity) + '|' + isHanging + '|' + backSide
-    const cached = textures[texturekey]
-    if (cached && cached.signature === signature) return cached.tex
-
-    if (cached?.tex) cached.tex.dispose()
-
-    const PrismarineChat = PrismarineChatLoader(this.worldRendererThree.version)
-    const canvas = renderSign(blockEntity, isHanging, PrismarineChat)
-    if (!canvas) return
-    const tex = new THREE.Texture(canvas)
-    tex.magFilter = THREE.NearestFilter
-    tex.minFilter = THREE.NearestFilter
-    tex.needsUpdate = true
-    textures[texturekey] = { tex, signature }
-    return tex
-  }
-
-  /**
-   * Dispose all cached sign textures for the chunk containing world coords
-   * (x, z). Called from `WorldRendererThree.cleanChunkTextures` so that
-   * re-meshes triggered by `setSectionDirty` (e.g. a player edits a sign)
-   * pick up fresh block-entity NBT instead of returning the stale cached
-   * texture from {@link SignHeadsRenderer.getSignTexture}.
-   */
-  cleanChunkTextures (x: number, z: number) {
-    const key = `${Math.floor(x / 16)},${Math.floor(z / 16)}`
-    const textures = this.chunkTextures.get(key)
-    if (!textures) return
-    const disposedKeys = Object.keys(textures)
-    for (const k of disposedKeys) {
-      textures[k]!.tex.dispose()
-      delete textures[k]
-    }
   }
 }

@@ -11,6 +11,11 @@ const DEFAULT_INITIAL_CAPACITY_QUADS = 128_000
 const DEFAULT_GROWTH_INCREMENT_QUADS = 128_000
 const MAX_UPLOAD_QUADS_PER_FRAME = 5_000
 
+/** CPU bytes per allocated quad slot (all legacy vertex/index attrs). */
+export const LEGACY_BYTES_PER_QUAD =
+  VERTS_PER_QUAD * (FLOATS_PER_VERT * 3 + FLOATS_PER_LIGHT_VERT * 2 + FLOATS_PER_UV_VERT) * 4
+  + INDICES_PER_QUAD * 4
+
 export const FULL_DRAW_VISIBLE_FRACTION = 0.75
 export const SPAN_GAP_TOLERANCE_QUADS = 256
 export const MAX_OPAQUE_SPANS = 64
@@ -474,10 +479,24 @@ export class GlobalLegacyBuffer {
     return out
   }
 
+  getHighWatermark (): number {
+    return this.highWatermark
+  }
+
+  getCapacityQuads (): number {
+    return this.capacityQuads
+  }
+
+  getSectionCount (): number {
+    return this.sectionSlots.size
+  }
+
   getMemoryBytes (): number {
-    const verts = this.capacityQuads * VERTS_PER_QUAD
-    return verts * (FLOATS_PER_VERT * 3 + FLOATS_PER_LIGHT_VERT * 2 + FLOATS_PER_UV_VERT) * 4
-      + this.capacityQuads * INDICES_PER_QUAD * 4
+    return this.capacityQuads * LEGACY_BYTES_PER_QUAD
+  }
+
+  getUsedMemoryBytes (): number {
+    return this.highWatermark * LEGACY_BYTES_PER_QUAD
   }
 
   reset (): void {

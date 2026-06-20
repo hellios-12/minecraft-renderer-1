@@ -551,7 +551,8 @@ export class Entities {
   currentSkinUrls = {} as Record<string, string>
 
   private isCanvasBlank(canvas: HTMLCanvasElement | OffscreenCanvas): boolean {
-    return !canvas.getContext('2d')
+    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null
+    return !ctx
       ?.getImageData(0, 0, canvas.width, canvas.height).data
       .some(channel => channel !== 0)
   }
@@ -631,6 +632,17 @@ export class Entities {
       }
       playerObject.cape.map = null
     }
+  }
+
+  /** Local preview override: hand + player model until server skin refresh or reconnect. */
+  async applyTemporaryPlayerSkinOverride (
+    skinUrl: string,
+    entityId: string | number,
+    username?: string,
+    uuid?: string
+  ) {
+    this.worldRenderer.playerStateReactive.playerSkin = skinUrl
+    await this.updatePlayerSkin(entityId, username, uuid, skinUrl, undefined)
   }
 
   private async loadAndApplySkin(entityId: string | number, skinUrl: string, renderEars: boolean) {
