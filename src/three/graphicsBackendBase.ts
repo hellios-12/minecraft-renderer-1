@@ -68,7 +68,7 @@ export const getBackendMethods = (worldRenderer: WorldRendererThree): any => {
     // New method for updating skybox
     setSkyboxImage: worldRenderer.skyboxRenderer.setSkyboxImage.bind(worldRenderer.skyboxRenderer),
     // Rain methods
-    setRain: (newState: boolean) => worldRenderer.toggleModule('rain', newState),
+    setRain: worldRenderer.setRain.bind(worldRenderer),
     spawnBlockBreakParticles(x: number, y: number, z: number, blockName: string, floorMap: number[], biomeName?: string) {
       const module = worldRenderer.getModule<import('./modules/blockBreakParticles').BlockBreakParticlesModule>('blockBreakParticles')
       module?.spawnBlockBreakParticles(x, y, z, blockName, floorMap, biomeName)
@@ -165,8 +165,8 @@ export const createGraphicsBackendBase = () => {
       worldRenderer.destroy()
       worldRenderer = null
       frameTimingCollector = null
-      ;(globalThis as any).world = undefined
-      ;(globalThis as any).frameTimingCollector = undefined
+        ; (globalThis as any).world = undefined
+        ; (globalThis as any).frameTimingCollector = undefined
     }
 
     if (menuBackgroundRenderer) {
@@ -201,8 +201,8 @@ export const createGraphicsBackendBase = () => {
       worldRenderer.destroy()
       worldRenderer = null
       frameTimingCollector = null
-      ;(globalThis as any).world = undefined
-      ;(globalThis as any).frameTimingCollector = undefined
+        ; (globalThis as any).world = undefined
+        ; (globalThis as any).frameTimingCollector = undefined
     }
 
     const displayOptionsRestorers = [ResourcesManager, WorldViewWorker]

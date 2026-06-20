@@ -354,6 +354,11 @@ export class WorldRendererThree extends WorldRendererCommon {
     return targetState
   }
 
+  setRain(enabled: boolean): void {
+    this.worldRendererConfig.isRaining = enabled
+    this.toggleModule('rain', enabled)
+  }
+
   /**
    * Dispose all modules
    */
@@ -695,7 +700,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.syncSkyLevelFromTime(newTime)
   }
 
-  private syncSkyLevelFromTime (timeOfDay: number): void {
+  private syncSkyLevelFromTime(timeOfDay: number): void {
     const skyLevel = calculateSkyLightSimple(timeOfDay) / 15
     this.chunkMeshManager.setSkyLevel(skyLevel)
   }
