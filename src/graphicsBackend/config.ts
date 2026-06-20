@@ -80,10 +80,10 @@ export const defaultWorldRendererConfig = {
   isPlayground: false,
   instantCameraUpdate: false,
   isRaining: false,
-  /** CSS-style hex color for rain particles (e.g. `#a8d8ff`). */
-  rainColor: '#a8d8ff',
+  // rainColor: 'rgb(64, 87, 148)', // original minecraft blue
+  rainColor: 'rgb(118, 148, 226)',
   /** Rain particle opacity 0–1. */
-  rainOpacity: 0.8,
+  rainOpacity: 0.5,
 
   // Module states: 'enabled' = force on, 'disabled' = force off, 'auto' = use autoEnableCheck
   moduleStates: {} as Record<string, 'enabled' | 'disabled' | 'auto'>
