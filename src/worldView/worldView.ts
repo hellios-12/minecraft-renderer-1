@@ -264,6 +264,8 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
       this.chunkProgress()
     })
 
+    if (spiralNumber !== this.spiralNumber) return
+
     if (this.panicTimeout) clearTimeout(this.panicTimeout)
     this.inLoading = false
     this.gotPanicLastTime = false
@@ -314,6 +316,17 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
       } else if (this.isPlayground) {
         this.emit('markAsLoaded', { x: pos.x, z: pos.z })
       }
+    }
+  }
+
+  /**
+   * Re-fetch and re-emit every loaded chunk (e.g. after mesher workers are recreated).
+   */
+  async reloadLoadedChunks(): Promise<void> {
+    const coords = Object.keys(this.loadedChunks)
+    for (const key of coords) {
+      const [x, z] = key.split(',').map(Number)
+      await this.loadChunk({ x, z }, false, 'mesher-reconfigure')
     }
   }
 

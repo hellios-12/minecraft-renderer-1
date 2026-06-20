@@ -32,6 +32,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   worldReadyResolvers = Promise.withResolvers<void>()
   worldReadyPromise = this.worldReadyResolvers.promise
   timeOfTheDay = 0
+  lastMesherSkyLight = 15
   worldSizeParams = { minY: 0, worldHeight: 256 }
   reactiveDebugParams = proxy({
     stopRendering: false,
@@ -126,6 +127,12 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   debugStopGeometryUpdate = false
 
   protocolCustomBlocks = new Map<string, CustomBlockModels>()
+  private mesherPoolSnapshot = {
+    mesherWorkers: -1,
+    wasmMesher: false,
+    dedicatedChangeWorker: false,
+  }
+  private mesherReconfigureQueue: Promise<void> = Promise.resolve()
   private heightmapDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   // Geometry throttle: first dirty per section is instant, subsequent within window are grouped
@@ -271,6 +278,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
     this.watchReactivePlayerState()
     this.watchReactiveConfig()
+    this.watchMesherPoolConfig()
     this.worldReadyResolvers.resolve()
   }
 
@@ -308,18 +316,127 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }
   }
 
+  private getMesherWorkerScript(): 'wasm' | 'legacy' {
+    return this.worldRendererConfig.wasmMesher ? 'wasm' : 'legacy'
+  }
+
+  private createMesherWorker() {
+    const script = this.getMesherWorkerScript()
+    return initMesherWorker((data) => {
+      if (Array.isArray(data)) {
+        this.messageQueue.push(...data)
+      } else {
+        this.messageQueue.push(data)
+      }
+      void this.processMessageQueue('worker')
+    }, script === 'wasm' ? 'mesherWasm.js' : 'mesher.js')
+  }
+
   initWorkers(numWorkers = this.worldRendererConfig.mesherWorkers) {
-    // init workers
-    for (let i = 0; i < numWorkers + 0; i++) {
-      const worker = initMesherWorker((data) => {
-        if (Array.isArray(data)) {
-          this.messageQueue.push(...data)
-        } else {
-          this.messageQueue.push(data)
-        }
-        void this.processMessageQueue('worker')
-      }, this.worldRendererConfig.wasmMesher ? 'mesherWasm.js' : 'mesher.js')
-      this.workers.push(worker)
+    for (let i = 0; i < numWorkers; i++) {
+      this.workers.push(this.createMesherWorker())
+    }
+  }
+
+  private syncMesherPoolSnapshot() {
+    this.mesherPoolSnapshot = {
+      mesherWorkers: this.worldRendererConfig.mesherWorkers,
+      wasmMesher: this.worldRendererConfig.wasmMesher,
+      dedicatedChangeWorker: this.worldRendererConfig.dedicatedChangeWorker,
+    }
+  }
+
+  private watchMesherPoolConfig() {
+    this.syncMesherPoolSnapshot()
+
+    const tryReconfigure = () => {
+      const cfg = this.worldRendererConfig
+      const snap = this.mesherPoolSnapshot
+      if (
+        cfg.mesherWorkers === snap.mesherWorkers &&
+        cfg.wasmMesher === snap.wasmMesher &&
+        cfg.dedicatedChangeWorker === snap.dedicatedChangeWorker
+      ) {
+        return
+      }
+      this.syncMesherPoolSnapshot()
+      this.enqueueMesherWorkersReconfigure()
+    }
+
+    for (const key of ['mesherWorkers', 'wasmMesher', 'dedicatedChangeWorker'] as const) {
+      this.valtioUnsubs.push(
+        this.onReactiveConfigUpdated(key, tryReconfigure, false)
+      )
+    }
+  }
+
+  private enqueueMesherWorkersReconfigure() {
+    this.mesherReconfigureQueue = this.mesherReconfigureQueue
+      .then(() => this.reconfigureMesherWorkers())
+      .catch((err) => {
+        console.error('[Mesher] Failed to reconfigure workers:', err)
+      })
+  }
+  private clearMesherPendingState() {
+    this.sectionsWaiting.clear()
+    this.toWorkerMessagesQueue = {}
+    this.queueAwaited = false
+    this.messageQueue = []
+    this.isProcessingQueue = false
+    for (const timer of this.sectionDirtyTimers.values()) {
+      clearTimeout(timer)
+    }
+    this.sectionDirtyTimers.clear()
+    this.sectionDirtyCount.clear()
+    this.sectionDirtyPendingArgs.clear()
+    this.reactiveState.world.mesherWork = false
+  }
+
+  private terminateAllMesherWorkers() {
+    for (const worker of this.workers) {
+      worker.terminate()
+    }
+    this.workers = []
+  }
+
+  private async bootstrapMesherWorkers() {
+    if (this.workers.length === 0) return
+
+    this.sendMesherMcData()
+    await this.updateAssetsData()
+    this.logWorkerWork('# mesher workers bootstrapped')
+  }
+
+  async reconfigureMesherWorkers() {
+    if (!this.active) return
+
+    this.clearMesherPendingState()
+    this.terminateAllMesherWorkers()
+    this.initWorkers()
+    await this.bootstrapMesherWorkers()
+    if (!this.active) return
+
+    await this.requestLoadedChunksReload()
+  }
+
+  private async requestLoadedChunksReload() {
+    try {
+      const worldView = this.displayOptions.worldView as {
+        reloadLoadedChunks?: () => void | Promise<void>
+      }
+
+      if (typeof worldView.reloadLoadedChunks === 'function') {
+        await worldView.reloadLoadedChunks()
+        return
+      }
+
+      const workerScope = globalThis as typeof globalThis & { WorkerGlobalScope?: typeof WorkerGlobalScope }
+      if (typeof workerScope.WorkerGlobalScope !== 'undefined' && globalThis instanceof workerScope.WorkerGlobalScope) {
+        // eslint-disable-next-line no-restricted-globals
+        self.postMessage({ type: 'reloadLoadedChunks' })
+      }
+    } catch (err) {
+      console.error('[Mesher] Failed to reload chunks after worker reconfigure:', err)
     }
   }
 
@@ -330,13 +447,18 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     return subscribeKey(this.playerStateReactive, key, callback)
   }
 
-  onReactiveConfigUpdated<T extends keyof typeof this.worldRendererConfig>(key: T, callback: (value: typeof this.worldRendererConfig[T]) => void) {
-    callback(this.worldRendererConfig[key])
-    if ((key as any) === '*') {
-      subscribe(this.worldRendererConfig, callback as any)
-    } else {
-      subscribeKey(this.worldRendererConfig, key, callback)
+  onReactiveConfigUpdated<T extends keyof typeof this.worldRendererConfig>(
+    key: T,
+    callback: (value: typeof this.worldRendererConfig[T]) => void,
+    initial = true
+  ) {
+    if (initial) {
+      callback(this.worldRendererConfig[key])
     }
+    if ((key as any) === '*') {
+      return subscribe(this.worldRendererConfig, callback as any)
+    }
+    return subscribeKey(this.worldRendererConfig, key, callback)
   }
 
   onReactiveDebugUpdated<T extends keyof typeof this.reactiveDebugParams>(key: T, callback: (value: typeof this.reactiveDebugParams[T]) => void) {
@@ -423,7 +545,10 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }
     if (data.type === 'sectionFinished') { // on after load & unload section
       this.logWorkerWork(`<- ${data.workerIndex} sectionFinished ${data.key} ${JSON.stringify({ processTime: data.processTime })}`)
-      if (!this.sectionsWaiting.has(data.key)) throw new Error(`sectionFinished event for non-outstanding section ${data.key}`)
+      if (!this.sectionsWaiting.has(data.key)) {
+        console.debug(`sectionFinished for non-outstanding section ${data.key} (viewDistance=${this.viewDistance})`)
+        return
+      }
       this.sectionsWaiting.set(data.key, this.sectionsWaiting.get(data.key)! - 1)
       if (this.sectionsWaiting.get(data.key) === 0) {
         this.sectionsWaiting.delete(data.key)
@@ -570,6 +695,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   timeUpdated?(newTime: number): void
 
+  /** Called when day-cycle sky-light bucket changes; Three.js overrides to remesh. */
+  protected onDayCycleSkyLightChanged?(_skyLight: number): void
+
   biomeUpdated?(biome: any): void
 
   biomeReset?(): void
@@ -633,6 +761,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
     this.initWorkers()
     this.active = true
+    this.syncMesherPoolSnapshot()
 
     this.sendMesherMcData()
   }
@@ -786,9 +915,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.sectionDirtyPendingArgs.delete(key)
       }
     }
-    for (const worker of this.workers) {
-      worker.postMessage({ type: 'unloadChunk', x, z })
+    for (let i = 0; i < this.workers.length; i++) {
+      this.toWorkerMessagesQueue[i] ??= []
+      this.toWorkerMessagesQueue[i].push({ type: 'unloadChunk', x, z })
     }
+    this.dispatchMessages()
     this.logWorkerWork(`-> unloadChunk ${JSON.stringify({ x, z })}`)
     delete this.finishedChunks[`${x},${z}`]
     this.allChunksFinished = Object.keys(this.finishedChunks).length === this.chunksLength
@@ -797,9 +928,14 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.initialChunkLoadWasStartedIn = undefined
     }
     const sectionHeight = this.getSectionHeight()
-    for (let y = this.worldSizeParams.minY; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
-      this.setSectionDirty(new Vec3(x, y, z), false)
-      delete this.finishedSections[`${x},${y},${z}`]
+    for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
+      const sectionKey = `${x},${y},${z}`
+      const waitingCount = this.sectionsWaiting.get(sectionKey)
+      if (waitingCount !== undefined && waitingCount > 0) {
+        console.debug(`[removeColumn] clearing non-zero sectionsWaiting for ${sectionKey}: ${waitingCount} (chunk ${x},${z}, viewDistance=${this.viewDistance})`)
+      }
+      this.sectionsWaiting.delete(sectionKey)
+      delete this.finishedSections[sectionKey]
     }
     this.highestBlocksByChunks.delete(`${x},${z}`)
     const heightmapKey = `${Math.floor(x / 16)},${Math.floor(z / 16)}`
@@ -931,16 +1067,20 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }, signal)
 
     bindAbortableListener(worldEmitter, 'time', (timeOfDay) => {
-      if (!this.worldRendererConfig.dayCycle) return
+      if (!this.worldRendererConfig.dayCycle) {
+        return
+      }
       this.timeUpdated?.(timeOfDay)
 
       this.timeOfTheDay = timeOfDay
 
-      // if (this.worldRendererConfig.skyLight === skyLight) return
-      // this.worldRendererConfig.skyLight = skyLight
-      // if (this instanceof WorldRendererThree) {
-      //   (this).rerenderAllChunks?.()
-      // }
+      const skyLight = (timeOfDay < 0 || timeOfDay > 24_000) ? 15 : calculateSkyLightSimple(timeOfDay)
+      if (this.lastMesherSkyLight === skyLight) return
+      this.lastMesherSkyLight = skyLight
+      if (this.workers.length > 0) {
+        this.sendWorkers({ config: { skyLight } } as WorkerSend)
+      }
+      this.onDayCycleSkyLightChanged?.(skyLight)
     }, signal)
 
     bindAbortableListener(worldEmitter, 'biomeUpdate', ({ biome }) => {

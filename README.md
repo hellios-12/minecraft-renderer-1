@@ -2,7 +2,7 @@
 
 ![Minecraft Renderer](./logo.webp)
 
-A modular Minecraft world renderer with Three.js WebGL backend. Designed for performance testing, experimentation, and integration into Minecraft clients.
+A modular Minecraft world renderer with Three.js WebGL 2 backend. Designed for performance testing, experimentation, and integration into Minecraft clients.
 
 ## Architecture Overview
 
@@ -98,9 +98,9 @@ Renderer-owned options live in `RENDERER_DEFAULT_OPTIONS` and `RENDERER_OPTIONS_
 
 | Change | Live update | Reload required |
 |--------|-------------|-----------------|
-| Menu futuristic scene / camera / speeds | Yes (`backend.getMenuBackground`) | Mode switch needs restart |
-| `rendererMesher` (`wasm` / `legacy-js`) | Proxy flag syncs | Yes — mesher worker script swap |
-| `rendererWorldPerformance` | Config syncs | Yes — worker count |
+| Menu V2 scene / camera / speeds | Yes (`backend.getMenuBackground`) | Mode switch needs restart |
+| `rendererMesher` (`wasm` / `legacy-js`) | Yes — recreates mesher workers | Chunks reload (`requiresChunksReload`) |
+| `rendererWorldPerformance` | Yes — recreates mesher workers | Chunks reload (`requiresChunksReload`) |
 | Volume | App `watchValue` only | No |
 
 Sync runs on the **main thread** only; `inWorldRenderingConfig` uses existing valtio `__syncToWorker` for off-thread backends. Do not call `subscribeRendererOptions` from mesher workers.
@@ -170,7 +170,7 @@ const blockLight = chunk.getBlockLight(pos)
 const skyLight = chunk.getSkyLight(pos)
 
 // Combined light level
-const light = Math.max(blockLight, skyLight * skyLightMultiplier)
+const light = Math.max(blockLight, Math.min(skyLight, skyLightCap))
 
 // Light level to color multiplier
 const brightness = lightLevelToBrightness[light]

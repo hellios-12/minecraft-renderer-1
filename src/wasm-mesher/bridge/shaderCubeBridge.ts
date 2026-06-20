@@ -9,7 +9,7 @@ import { WORD0, WORD1, WORD2, WORD3 } from '../../three/shaders/cubeBlockShader'
 import { TextureIndexMapping, type TextureEntry } from '../../three/shaders/textureIndexMapping'
 import { TintPalette } from '../../three/shaders/tintPalette'
 
-export const SHADER_CUBES_FORMAT_VERSION = 2 as const
+export const SHADER_CUBES_FORMAT_VERSION = 3 as const
 export const SHADER_CUBES_WORDS_PER_FACE = 4 as const
 
 export type ShaderCubesOutput = {
@@ -58,7 +58,11 @@ export interface ShaderCubeBlockInput {
   position: [number, number, number]
   visible_faces: number
   ao_data: number[][]
-  light_data: number[][]
+  /** @deprecated combined f32; prefer sky_light_data + block_light_data or light_combined */
+  light_data?: number[][]
+  sky_light_data?: number[][]
+  block_light_data?: number[][]
+  /** Per-corner nibble-packed byte: high=sky4, low=block4 */
   light_combined?: number[][]
 }
 
@@ -237,26 +241,40 @@ function packWord1(lightCombined: number[]): number {
   return w >>> 0
 }
 
-export function packWord2(texIndex: number, aoDiagonalFlip: boolean, sectionBaseY: number): number {
+function biasedSectionIndex(sectionBaseCoord: number): number {
+  return (Math.floor(sectionBaseCoord / 16) + WORD3.SECTION_BIAS) & WORD3.SECTION_MASK
+}
+
+export function packWord2(
+  texIndex: number,
+  aoDiagonalFlip: boolean,
+  sectionBaseX: number,
+  sectionBaseY: number,
+  sectionBaseZ: number,
+): number {
   let w = texIndex & ((1 << WORD2.TEX_INDEX_BITS) - 1)
   if (aoDiagonalFlip) {
     w |= 1 << WORD2.DIAGONAL_FLAG_SHIFT
   }
   const sectionY = ((Math.floor(sectionBaseY / 16) + 4) & 0x1f) << WORD2.SECTION_Y_SHIFT
   w |= sectionY
+  const sx = biasedSectionIndex(sectionBaseX)
+  const sz = biasedSectionIndex(sectionBaseZ)
+  w |= ((sx >>> 16) & 0x3f) << WORD2.SECTION_X_HI_SHIFT
+  w |= ((sz >>> 16) & 0x3f) << WORD2.SECTION_Z_HI_SHIFT
   return w >>> 0
 }
 
 export function packWord3(sectionBaseX: number, sectionBaseZ: number): number {
-  const sx = (Math.floor(sectionBaseX / 16) + WORD3.SECTION_BIAS) & 0xffff
-  const sz = (Math.floor(sectionBaseZ / 16) + WORD3.SECTION_BIAS) & 0xffff
-  return (sx | (sz << 16)) >>> 0
+  const sx = biasedSectionIndex(sectionBaseX)
+  const sz = biasedSectionIndex(sectionBaseZ)
+  return ((sx & 0xffff) | ((sz & 0xffff) << 16)) >>> 0
 }
 
 /** Decode section base block coords from packed words (round-trip helper for tests). */
 export function decodeSectionBaseFromWords(word2: number, word3: number): { x: number, y: number, z: number } {
-  const sX = (word3 & 0xffff) - WORD3.SECTION_BIAS
-  const sZ = ((word3 >>> 16) & 0xffff) - WORD3.SECTION_BIAS
+  const sX = ((word3 & 0xffff) | (((word2 >>> WORD2.SECTION_X_HI_SHIFT) & 0x3f) << 16)) - WORD3.SECTION_BIAS
+  const sZ = (((word3 >>> 16) & 0xffff) | (((word2 >>> WORD2.SECTION_Z_HI_SHIFT) & 0x3f) << 16)) - WORD3.SECTION_BIAS
   const sY = ((word2 >>> WORD2.SECTION_Y_SHIFT) & ((1 << WORD2.SECTION_Y_BITS) - 1)) - 4
   return { x: sX * 16, y: sY * 16, z: sZ * 16 }
 }
@@ -271,6 +289,12 @@ export function unpackTexIndexFromWord2(word2: number): number {
   return word2 & ((1 << WORD2.TEX_INDEX_BITS) - 1)
 }
 
+function packCornerLightByte (skyNorm: number, blockNorm: number): number {
+  const sky4 = Math.min(15, Math.round(Math.max(0, skyNorm) * 15))
+  const block4 = Math.min(15, Math.round(Math.max(0, blockNorm) * 15))
+  return ((sky4 << 4) | block4) & 0xff
+}
+
 function lightCombinedForFace(
   block: ShaderCubeBlockInput,
   faceDataIndex: number,
@@ -279,11 +303,13 @@ function lightCombinedForFace(
   if (packed && packed.length === 4) {
     return packed
   }
-  const floats = block.light_data[faceDataIndex] ?? [1, 1, 1, 1]
-  return floats.map((f) => {
-    if (f >= 1) return 255
-    return Math.min(255, Math.round(f * 255))
-  })
+  const sky = block.sky_light_data?.[faceDataIndex]
+  const blockL = block.block_light_data?.[faceDataIndex]
+  if (sky && blockL && sky.length === 4 && blockL.length === 4) {
+    return sky.map((s, i) => packCornerLightByte(s ?? 1, blockL[i] ?? 0))
+  }
+  const floats = block.light_data?.[faceDataIndex] ?? [1, 1, 1, 1]
+  return floats.map((f) => packCornerLightByte(f, 0))
 }
 
 function buildWasmFaceToDataIndex(visibleFaces: number): Record<number, number> {
@@ -322,7 +348,14 @@ export function tryBuildShaderCubeInstances(
   opts: BuildShaderCubeInstancesOpts,
   words: number[],
 ): boolean {
-  const { sectionOrigin, sectionHeight, biome, tintPalette, textureIndexMapping, doAO = true } = opts
+  const {
+    sectionOrigin,
+    sectionHeight,
+    biome,
+    tintPalette,
+    textureIndexMapping,
+    doAO = true,
+  } = opts
 
   if (!isShaderCubeBlock(cached, model, sectionHeight, textureIndexMapping)) {
     return false
@@ -380,9 +413,10 @@ export function tryBuildShaderCubeInstances(
     words.push(
       packWord0(lx, ly, lz, faceIdx, tintIndex, ao),
       packWord1(lightCombined),
-      packWord2(texIndex, aoDiagonalFlip, sectionOrigin.y),
+      packWord2(texIndex, aoDiagonalFlip, sectionOrigin.x, sectionOrigin.y, sectionOrigin.z),
       packWord3(sectionOrigin.x, sectionOrigin.z),
     )
+
   }
 
   return true

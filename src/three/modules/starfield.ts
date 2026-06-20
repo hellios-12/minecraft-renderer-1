@@ -39,7 +39,7 @@ class StarfieldMaterial extends THREE.ShaderMaterial {
 
 export class StarfieldModule implements RendererModuleController {
   private points?: THREE.Points
-  private clock = new THREE.Clock()
+  private timer = new THREE.Timer()
   private enabled = false
   private currentTime?: number
   /** Current star brightness multiplier; lerps toward 0 while raining, 1 otherwise. */
@@ -80,7 +80,8 @@ export class StarfieldModule implements RendererModuleController {
     this.points.position.set(0, 0, 0)
 
     const material = this.points.material as StarfieldMaterial
-    material.uniforms.time.value = this.clock.getElapsedTime() * 0.2
+    this.timer.update(performance.now())
+    material.uniforms.time.value = this.timer.getElapsed() * 0.2
 
     // Fade stars out while raining (vanilla scales star brightness by 1 - rainLevel).
     // isRaining is a boolean here, so ease toward the target instead of snapping.

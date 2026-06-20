@@ -8,6 +8,7 @@ import type { MenuBackgroundOptions } from './menuBackground/types'
 import { MENU_BACKGROUND_MC_VERSION } from './menuBackground/shared'
 import { createGraphicsBackendBase, type ThreeJsBackendMethods } from './graphicsBackendBase'
 import { addCanvasForWorker } from './documentRenderer'
+import type { WorldView } from '../worldView'
 
 function initThreeWorker(onGotMessage: (data: any) => void) {
   // Node environment needs an absolute path, but browser needs the url of the file
@@ -30,7 +31,12 @@ function initThreeWorker(onGotMessage: (data: any) => void) {
 }
 
 export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (initOptions) => {
-  const worker = initThreeWorker(() => { })
+  const workerSideChannel = {
+    onMessage: (_data: unknown) => {},
+  }
+  const worker = initThreeWorker((data) => {
+    workerSideChannel.onMessage(data)
+  })
   type WorkerType = ReturnType<ReturnType<typeof createGraphicsBackendBase>['workerProxy']>
 
   const proxy = useWorkerProxy<WorkerType>(worker)
@@ -78,6 +84,15 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
       }
     },
     async startWorld(options) {
+      const worldView = options.worldView as unknown as WorldView
+      workerSideChannel.onMessage = (data: any) => {
+        if (data?.type === 'reloadLoadedChunks') {
+          void worldView.reloadLoadedChunks().catch((err) => {
+            console.error('[Renderer] Failed to reload chunks after mesher reconfigure:', err)
+          })
+        }
+      }
+
       const workerThreeSendData = {
         ...dynamicMcDataFiles,
         items: 'itemsArray',
@@ -151,8 +166,9 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
   return backend
 }
 createGraphicsBackendOffThread.id = 'threejs-off-thread'
-createGraphicsBackendOffThread.displayName = 'three.js Multi-thread'
+createGraphicsBackendOffThread.displayName = 'three.js Multi-thread EXPERIMENTAL'
 createGraphicsBackendOffThread.description = [
+  '(UNSTABLE, DO NOT USE ON ANDROID).',
   'Edge-cutting technology that uses a dedicated thread for graphics.',
   'Slightly higher power and RAM usage.',
   'More stable FPS (mid-range devices), but possible inputlag if TPS is low.',

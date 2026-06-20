@@ -1,11 +1,11 @@
 import {
-  FUTURISTIC_CAMERA_IDS,
-  FUTURISTIC_CAMERA_LABELS,
-  FUTURISTIC_SCENE_IDS,
-  FUTURISTIC_SCENE_LABELS,
+  V2_CAMERA_IDS,
+  V2_CAMERA_LABELS,
+  V2_SCENE_IDS,
+  V2_SCENE_LABELS,
   MINECRAFT_BLOCK_GROUP_IDS,
   MINECRAFT_BLOCK_GROUP_LABELS
-} from '../three/menuBackground/futuristicMeta'
+} from '../three/menuBackground/v2Meta'
 import { MENU_BACKGROUND_OPTION_DEFAULTS } from '../three/menuBackground/config'
 import type { RendererGpuPreference } from '../three/menuBackground/gpuPreference'
 
@@ -53,16 +53,15 @@ export const RENDERER_DEFAULT_OPTIONS = {
   defaultSkybox: true as boolean,
   menuBackgroundMode: MB.mode,
   menuBackgroundMinecraftTextures: MB.minecraftTextures as boolean,
-  menuBackgroundFuturisticScene: MB.futuristicScene,
-  menuBackgroundFuturisticCamera: MB.futuristicCamera,
-  menuBackgroundFuturisticBlockGroup: MB.futuristicBlockGroup,
-  menuBackgroundFuturisticCameraSpeed: MB.futuristicCameraSpeedPercent,
-  menuBackgroundFuturisticBlockSpeed: MB.futuristicBlockSpeedPercent,
+  menuBackgroundV2Scene: MB.v2Scene,
+  menuBackgroundV2Camera: MB.v2Camera,
+  menuBackgroundV2BlockGroup: MB.v2BlockGroup,
+  menuBackgroundV2CameraSpeed: MB.v2CameraSpeedPercent,
+  menuBackgroundV2BlockSpeed: MB.v2BlockSpeedPercent,
   rendererFuturisticReveal: false as boolean,
   rendererPerfDebugOverlay: false as boolean,
   disableBlockEntityTextures: false as boolean,
   rendererMesher: 'wasm' as RendererMesherPipeline,
-  rendererShaderCubeBlocks: false as boolean,
   rendererShaderCubeDebugMode: 'off' as RendererShaderCubeDebugMode,
   showChunkBorders: false as boolean,
   renderEntities: true as boolean,
@@ -109,37 +108,55 @@ export function migrateRendererOptions(saved: Record<string, unknown>): void {
   }
   delete saved.wasmExperimentalMesher
   delete saved.rendererWasmMesher
+  delete saved.rendererShaderCubeBlocks
+
+  if (saved.menuBackgroundMode === 'futuristic') {
+    saved.menuBackgroundMode = 'v2'
+  }
+  const futuristicToV2: Array<[string, string]> = [
+    ['menuBackgroundFuturisticScene', 'menuBackgroundV2Scene'],
+    ['menuBackgroundFuturisticCamera', 'menuBackgroundV2Camera'],
+    ['menuBackgroundFuturisticBlockGroup', 'menuBackgroundV2BlockGroup'],
+    ['menuBackgroundFuturisticCameraSpeed', 'menuBackgroundV2CameraSpeed'],
+    ['menuBackgroundFuturisticBlockSpeed', 'menuBackgroundV2BlockSpeed'],
+  ]
+  for (const [oldKey, newKey] of futuristicToV2) {
+    if (saved[oldKey] !== undefined && saved[newKey] === undefined) {
+      saved[newKey] = saved[oldKey]
+    }
+    delete saved[oldKey]
+  }
 }
 
 /** Settings UI metadata for {@link RENDERER_DEFAULT_OPTIONS} keys. */
 export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, RendererOptionMeta>> = {
   menuBackgroundMode: {
-    possibleValues: [['classic', 'Classic'], ['futuristic', 'Futuristic']],
+    possibleValues: [['classic', 'Classic'], ['v2', 'V2']],
     requiresRestart: true
   },
   menuBackgroundMinecraftTextures: {
     text: 'Minecraft block textures',
-    tooltip: 'Use block atlas on futuristic menu cubes (loads assets on menu)'
+    tooltip: 'Use block atlas on V2 menu cubes (loads assets on menu)'
   },
-  menuBackgroundFuturisticScene: {
-    possibleValues: FUTURISTIC_SCENE_IDS.map(id => [id, FUTURISTIC_SCENE_LABELS[id]] as [string, string])
+  menuBackgroundV2Scene: {
+    possibleValues: V2_SCENE_IDS.map(id => [id, V2_SCENE_LABELS[id]] as [string, string])
   },
-  menuBackgroundFuturisticCamera: {
-    possibleValues: FUTURISTIC_CAMERA_IDS.map(id => [id, FUTURISTIC_CAMERA_LABELS[id]] as [string, string])
+  menuBackgroundV2Camera: {
+    possibleValues: V2_CAMERA_IDS.map(id => [id, V2_CAMERA_LABELS[id]] as [string, string])
   },
-  menuBackgroundFuturisticBlockGroup: {
+  menuBackgroundV2BlockGroup: {
     possibleValues: MINECRAFT_BLOCK_GROUP_IDS.map(id => [id, MINECRAFT_BLOCK_GROUP_LABELS[id]] as [string, string]),
     text: 'Block pool',
     tooltip: 'Block set for textured menu cubes (requires Minecraft textures)'
   },
-  menuBackgroundFuturisticCameraSpeed: {
+  menuBackgroundV2CameraSpeed: {
     text: 'Camera speed',
     tooltip: 'Orbit / fly-through camera path speed. 0 freezes the path; mouse parallax still works.',
     min: 0,
     max: 200,
     unit: '%'
   },
-  menuBackgroundFuturisticBlockSpeed: {
+  menuBackgroundV2BlockSpeed: {
     text: 'Block speed',
     tooltip: 'Floating blocks and sky rotation. Independent of camera path speed.',
     min: 0,
@@ -148,8 +165,8 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   rendererWorldPerformance: {
     text: 'World performance',
-    tooltip: 'Background workers for chunk geometry. Reload to apply.',
-    requiresRestart: true,
+    tooltip: 'Background workers for chunk geometry. Recreates mesher workers and reloads chunks.',
+    requiresChunksReload: true,
     possibleValues: [
       ['low-energy', 'Low Energy'],
       ['normal', 'Normal'],
@@ -175,12 +192,7 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   rendererMesher: {
     possibleValues: [['wasm', 'WASM'], ['legacy-js', 'Legacy JS']],
     text: 'Mesher pipeline',
-    tooltip: 'WASM is faster. Use JS if WASM is not working. Requires reload.',
-    requiresRestart: true
-  },
-  rendererShaderCubeBlocks: {
-    text: 'Instanced shader cubes',
-    tooltip: 'Render full blocks through the global GPU instanced path. Requires WASM mesher and WebGL2.',
+    tooltip: 'Browser technology for processing world geometry before render. WASM is the fastest; if you see a dead tab icon, reloads, or other errors, switch to Legacy JS.',
     requiresChunksReload: true,
   },
   rendererShaderCubeDebugMode: {
@@ -314,16 +326,16 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
       keys: [
         'menuBackgroundMode',
         'menuBackgroundMinecraftTextures',
-        'menuBackgroundFuturisticScene',
-        'menuBackgroundFuturisticCamera',
-        'menuBackgroundFuturisticBlockGroup',
-        'menuBackgroundFuturisticCameraSpeed',
-        'menuBackgroundFuturisticBlockSpeed'
+        'menuBackgroundV2Scene',
+        'menuBackgroundV2Camera',
+        'menuBackgroundV2BlockGroup',
+        'menuBackgroundV2CameraSpeed',
+        'menuBackgroundV2BlockSpeed'
       ]
     },
     {
       title: 'Mesher',
-      keys: ['rendererMesher', 'rendererShaderCubeBlocks']
+      keys: ['rendererMesher']
     },
     {
       title: 'Renderer debug',
