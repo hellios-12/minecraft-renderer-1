@@ -71,6 +71,21 @@ export interface SectionObject extends THREE.Group {
   _waitingForChunkDisplay?: boolean
 }
 
+/** Live vs allocated stats for one global GPU buffer (faces or legacy quads). */
+export type GlobalBufferSlotStats = {
+  used: number
+  capacity: number
+  sections: number
+  usedBytes: number
+  capacityBytes: number
+}
+
+export type GlobalBufferStats = {
+  shaderFaces: GlobalBufferSlotStats | null
+  legacyOpaque: GlobalBufferSlotStats | null
+  legacyBlend: GlobalBufferSlotStats | null
+}
+
 export class ChunkMeshManager {
   private static readonly REBASE_THRESHOLD = 65536
 
@@ -1512,6 +1527,34 @@ export class ChunkMeshManager {
   /**
    * Get pool statistics
    */
+  getGlobalBufferStats (): GlobalBufferStats {
+    const snapshotLegacy = (buffer: GlobalLegacyBuffer | null): GlobalBufferSlotStats | null => {
+      if (!buffer) return null
+      return {
+        used: buffer.getHighWatermark(),
+        capacity: buffer.getCapacityQuads(),
+        sections: buffer.getSectionCount(),
+        usedBytes: buffer.getUsedMemoryBytes(),
+        capacityBytes: buffer.getMemoryBytes(),
+      }
+    }
+
+    const cubes = this.globalBlockBuffer
+    return {
+      shaderFaces: cubes
+        ? {
+            used: cubes.getHighWatermark(),
+            capacity: cubes.getCapacityFaces(),
+            sections: cubes.getSectionCount(),
+            usedBytes: cubes.getUsedMemoryBytes(),
+            capacityBytes: cubes.getMemoryBytes(),
+          }
+        : null,
+      legacyOpaque: snapshotLegacy(this.globalLegacyBuffer),
+      legacyBlend: snapshotLegacy(this.globalLegacyBlendBuffer),
+    }
+  }
+
   getStats () {
     const freeCount = this.meshPool.filter(entry => !entry.inUse).length
     const hitRate = this.hits + this.misses > 0 ? (this.hits / (this.hits + this.misses) * 100).toFixed(1) : '0'

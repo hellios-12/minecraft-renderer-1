@@ -757,11 +757,20 @@ export class WorldRendererThree extends WorldRendererCommon {
         const formatCompact = (num: number) => new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(num)
         let text = ''
         text += `TE: ${formatFull(this.renderer.info.memory.textures)} `
-        text += `F: ${formatCompact(this.tilesRendered)} `
-        text += `B: ${formatCompact(this.blocksRendered)} `
+        const gb = this.chunkMeshManager.getGlobalBufferStats()
+        if (gb.shaderFaces) {
+          const s = gb.shaderFaces
+          text += `CUBE: ${formatCompact(s.used)}/${formatCompact(s.capacity)}f `
+        }
+        if (gb.legacyOpaque) {
+          const s = gb.legacyOpaque
+          text += `LEG-O: ${formatCompact(s.used)}/${formatCompact(s.capacity)}q `
+        }
+        if (gb.legacyBlend) {
+          const s = gb.legacyBlend
+          text += `LEG-B: ${formatCompact(s.used)}/${formatCompact(s.capacity)}q `
+        }
         text += `MEM: ${this.chunkMeshManager.getEstimatedMemoryUsage().total} `
-        const poolStats = this.chunkMeshManager.getStats()
-        text += `POOL: ${poolStats.activeCount}/${poolStats.poolSize} `
         const pf = formatPerformanceFactorsDebug(this.reactiveState.world.instabilityFactors)
         if (pf) text += `PF: ${pf} `
         // entities can be seen in F3

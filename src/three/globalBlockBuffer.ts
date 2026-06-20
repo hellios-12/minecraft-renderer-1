@@ -34,6 +34,9 @@ const MAX_UPLOAD_FACES_PER_FRAME = 15_000   // face-indexed budget (chunksStorag
 const FRAGMENTATION_THRESHOLD = 0.25
 const EMPTY_W2 = packWord2Empty()
 
+/** CPU bytes per instanced cube face (a_w0..a_w3). */
+export const SHADER_CUBE_BYTES_PER_FACE = 16
+
 type PendingMove = { key: string, oldStart: number, newStart: number, count: number }
 
 export type GlobalBlockBufferShaderData = {
@@ -159,6 +162,22 @@ export class GlobalBlockBuffer {
 
   getHighWatermark (): number {
     return this.highWatermark
+  }
+
+  getCapacityFaces (): number {
+    return this.capacityFaces
+  }
+
+  getSectionCount (): number {
+    return this.sectionSlots.size
+  }
+
+  getMemoryBytes (): number {
+    return this.capacityFaces * SHADER_CUBE_BYTES_PER_FACE
+  }
+
+  getUsedMemoryBytes (): number {
+    return this.highWatermark * SHADER_CUBE_BYTES_PER_FACE
   }
 
   hasPendingUploads (): boolean {
