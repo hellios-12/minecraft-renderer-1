@@ -28,7 +28,9 @@
         "unit-test": "vitest",
         "dev": "run-p watch:mesher watch:threeworker dev:playground",
         "dev:playground": "rsbuild dev --config rsbuild.config.ts",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+        "format": "prettier --write .",
+        "format:check": "prettier --check ."
     },
     "browserslist": {
         "production": [
@@ -102,6 +104,7 @@
         "minecraft-data": "3.98.0",
         "mineflayer": "^4.33.0",
         "npm-run-all": "^4.1.5",
+        "prettier": "^3.8.4",
         "prismarine-block": "github:zardoy/prismarine-block#next-era",
         "prismarine-chunk": "github:zardoy/prismarine-chunk#master",
         "prismarine-world": "github:zardoy/prismarine-world#next-era",
