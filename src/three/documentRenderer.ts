@@ -167,6 +167,7 @@ export class DocumentRenderer {
   private currentWidth = 0
   private currentHeight = 0
   private pendingResize = false
+  private resizeObserver?: ResizeObserver
 
   private renderedFps = 0
   private fpsInterval: any
@@ -258,6 +259,12 @@ export class DocumentRenderer {
     }
 
     window.addEventListener('resize', handleResize, { passive: true })
+
+    // body.rotated swaps width/height via CSS without a window resize event
+    if (typeof ResizeObserver !== 'undefined' && typeof document !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(handleResize)
+      this.resizeObserver.observe(document.body)
+    }
   }
 
   updatePixelRatio(): void {
@@ -417,6 +424,7 @@ export class DocumentRenderer {
       this.canvas.remove()
     }
     clearInterval(this.fpsInterval)
+    this.resizeObserver?.disconnect()
     this.stats?.dispose()
     this.renderer.dispose()
   }
@@ -439,6 +447,11 @@ function addCanvasToPage(): HTMLCanvasElement {
 /**
  * Creates a canvas for worker thread rendering.
  */
+const getBodyLayoutSize = () => ({
+  width: document.body.offsetWidth,
+  height: document.body.offsetHeight,
+})
+
 export const addCanvasForWorker = (): {
   canvas: OffscreenCanvas
   destroy: () => void
@@ -453,9 +466,10 @@ export const addCanvasForWorker = (): {
 
   const checkSize = () => {
     if (removed) return
-    if (oldSize.width !== window.innerWidth || oldSize.height !== window.innerHeight) {
-      onSizeChanged(window.innerWidth, window.innerHeight)
-      oldSize = { width: window.innerWidth, height: window.innerHeight }
+    const { width, height } = getBodyLayoutSize()
+    if (oldSize.width !== width || oldSize.height !== height) {
+      onSizeChanged(width, height)
+      oldSize = { width, height }
     }
     requestAnimationFrame(checkSize)
   }
@@ -471,7 +485,7 @@ export const addCanvasForWorker = (): {
       onSizeChanged = cb
     },
     get size() {
-      return { width: window.innerWidth, height: window.innerHeight }
+      return getBodyLayoutSize()
     }
   }
 }
