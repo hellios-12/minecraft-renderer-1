@@ -124,14 +124,14 @@ function createManager (): ChunkMeshManager {
   return new ChunkMeshManager(worldRenderer, scene, material, 256, 1)
 }
 
-type ManagerInternals = ChunkMeshManager & {
+type ManagerInternals = {
   legacyCullSections: Map<string, { worldX: number, worldY: number, worldZ: number }>
   registerLegacyCullSection: (key: string, wx: number, wy: number, wz: number) => void
   maybeUnregisterLegacyCullSection: (key: string) => void
 }
 
 function getLegacyCullSections (manager: ChunkMeshManager): Map<string, { worldX: number, worldY: number, worldZ: number }> {
-  return (manager as ManagerInternals).legacyCullSections
+  return (manager as unknown as ManagerInternals).legacyCullSections
 }
 
 function makeCamera (x: number, y: number, z: number): THREE.PerspectiveCamera {
@@ -172,7 +172,7 @@ test('legacyCullSections: mixed opaque+blend keeps key until both buffers cleare
   expect(getLegacyCullSections(manager).has(key)).toBe(true)
 
   manager.globalLegacyBlendBuffer?.removeSection(key)
-  ;(manager as ManagerInternals).maybeUnregisterLegacyCullSection(key)
+  ;(manager as unknown as ManagerInternals).maybeUnregisterLegacyCullSection(key)
   expect(getLegacyCullSections(manager).has(key)).toBe(false)
 
   manager.cleanupSection(key)
@@ -217,7 +217,7 @@ test('updateSectionCullAndSort: layoutVersion change forces span rebuild', () =>
     makeBlendOnlyGeometry().blend!,
     8, 8, 8,
   )
-  ;(manager as ManagerInternals).registerLegacyCullSection(key, 8, 8, 8)
+  ;(manager as unknown as ManagerInternals).registerLegacyCullSection(key, 8, 8, 8)
 
   manager.updateSectionCullAndSort(camera, 8, 8, 20)
   expect(updateDrawSpansSpy).toHaveBeenCalledTimes(2)
