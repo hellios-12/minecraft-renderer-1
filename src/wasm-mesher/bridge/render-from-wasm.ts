@@ -16,6 +16,7 @@ import { SECTION_HEIGHT } from '../../mesher-shared/shared'
 import type { World } from '../../mesher-shared/world'
 import { resolveBlockPropertiesForMeshing } from '../../mesher-shared/blockPropertiesForMeshing'
 import { isSemiTransparentBlockName } from '../../mesher-shared/models'
+import { faceIsCulled } from '../../mesher-shared/faceOcclusion'
 import { buildShaderCubesFromWords, getShaderCubeResources, tryBuildShaderCubeInstances } from './shaderCubeBridge'
 import { getSideShading, vertexLightFromAo } from '../../mesher-shared/vertexShading'
 import tintsJson from 'minecraft-data/minecraft-data/data/pc/1.16.2/tints.json'
@@ -692,6 +693,8 @@ export function renderWasmOutputToGeometry(
       }
     }
 
+    const neighborStateIdCache = new Map<string, number | null>()
+
     for (const modelVars of models ?? []) {
       const model = modelVars[0]
       if (!model) continue
@@ -745,8 +748,30 @@ export function renderWasmOutputToGeometry(
           const maxy = element.to[1]
           const maxz = element.to[2]
 
-          if (matchingEFace.cullface && faceIdx !== undefined) {
-            if ((block.visible_faces & (1 << faceIdx)) === 0) {
+          if (faceIdx !== undefined && (block.visible_faces & (1 << faceIdx)) === 0) {
+            continue
+          }
+
+          if (matchingEFace.cullface && world) {
+            let neighborStateId = neighborStateIdCache.get(dirKey)
+            if (neighborStateId === undefined) {
+              const neighborBlock = world.getBlock(new Vec3(bx, by, bz).offset(...transformedDirI))
+              neighborStateId = neighborBlock?.stateId ?? null
+              neighborStateIdCache.set(dirKey, neighborStateId)
+            }
+            if (
+              neighborStateId !== null &&
+              faceIsCulled(
+                version,
+                element,
+                faceName,
+                neighborStateId,
+                { stateId: blockStateId, name: prismBlock.name },
+                blockProvider,
+                transformedDirI,
+                globalMatrix
+              )
+            ) {
               continue
             }
           }
