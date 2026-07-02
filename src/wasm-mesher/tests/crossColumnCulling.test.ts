@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, expect, test } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -17,7 +17,9 @@ const VERSION = '1.17.1'
 const ICE_Y = 62
 const WATER_Y = 61
 const WORLD_MIN_Y = 0
-const WORLD_MAX_Y = 256
+// Full overworld height (256) makes multi-column WASM meshing exceed CI's 5s
+// default timeout. Culling only needs the section band that contains ice/water.
+const WORLD_MAX_Y = 80
 const COLUMN_HEIGHT = WORLD_MAX_Y - WORLD_MIN_Y
 
 const EAST_FACE = 1 << 2
@@ -150,51 +152,53 @@ function countIceBorderFaces(output: WasmGeometryOutput, iceStateId: number, pla
   return count
 }
 
-test('cross-column ice culling: two adjacent columns produce zero border faces', () => {
-  const iceStateId = resolveStateId('ice')
-  const output = meshColumns(
-    [
-      { x: 0, z: 0 },
-      { x: 16, z: 0 }
-    ],
-    0,
-    0
-  )
+describe('cross-column ice culling', { timeout: 15_000 }, () => {
+  test('two adjacent columns produce zero border faces', () => {
+    const iceStateId = resolveStateId('ice')
+    const output = meshColumns(
+      [
+        { x: 0, z: 0 },
+        { x: 16, z: 0 }
+      ],
+      0,
+      0
+    )
 
-  expect(countIceBorderFaces(output, iceStateId, 15, EAST_FACE)).toBe(0)
-  expect(countIceBorderFaces(output, iceStateId, 16, WEST_FACE)).toBe(0)
-})
+    expect(countIceBorderFaces(output, iceStateId, 15, EAST_FACE)).toBe(0)
+    expect(countIceBorderFaces(output, iceStateId, 16, WEST_FACE)).toBe(0)
+  })
 
-test('cross-column ice culling: negative coordinates', () => {
-  const iceStateId = resolveStateId('ice')
-  const ax = -504928
-  const bx = ax + 16
-  const z = 496768
-  const output = meshColumns(
-    [
-      { x: ax, z },
-      { x: bx, z }
-    ],
-    ax,
-    z
-  )
+  test('negative coordinates', () => {
+    const iceStateId = resolveStateId('ice')
+    const ax = -504928
+    const bx = ax + 16
+    const z = 496768
+    const output = meshColumns(
+      [
+        { x: ax, z },
+        { x: bx, z }
+      ],
+      ax,
+      z
+    )
 
-  expect(countIceBorderFaces(output, iceStateId, ax + 15, EAST_FACE)).toBe(0)
-  expect(countIceBorderFaces(output, iceStateId, bx, WEST_FACE)).toBe(0)
-})
+    expect(countIceBorderFaces(output, iceStateId, ax + 15, EAST_FACE)).toBe(0)
+    expect(countIceBorderFaces(output, iceStateId, bx, WEST_FACE)).toBe(0)
+  })
 
-test('cross-column ice culling: healed mesh has fewer blocks at the shared boundary plane', () => {
-  const alone = meshColumns([{ x: 0, z: 0 }], 0, 0, { forceMulti: true })
-  const pair = meshColumns(
-    [
-      { x: 0, z: 0 },
-      { x: 16, z: 0 }
-    ],
-    0,
-    0
-  )
-  const aloneBoundaryBlocks = alone.blocks.filter(b => b.position[0] === 15 && b.position[1] === ICE_Y).length
-  const pairBoundaryBlocks = pair.blocks.filter(b => b.position[0] === 15 && b.position[1] === ICE_Y).length
-  expect(aloneBoundaryBlocks).toBeGreaterThanOrEqual(pairBoundaryBlocks)
-  expect(pair.blocks.filter(b => b.position[0] === 16 && b.position[1] === ICE_Y && (b.visible_faces & WEST_FACE) !== 0).length).toBe(0)
+  test('healed mesh has fewer blocks at the shared boundary plane', () => {
+    const alone = meshColumns([{ x: 0, z: 0 }], 0, 0, { forceMulti: true })
+    const pair = meshColumns(
+      [
+        { x: 0, z: 0 },
+        { x: 16, z: 0 }
+      ],
+      0,
+      0
+    )
+    const aloneBoundaryBlocks = alone.blocks.filter(b => b.position[0] === 15 && b.position[1] === ICE_Y).length
+    const pairBoundaryBlocks = pair.blocks.filter(b => b.position[0] === 15 && b.position[1] === ICE_Y).length
+    expect(aloneBoundaryBlocks).toBeGreaterThanOrEqual(pairBoundaryBlocks)
+    expect(pair.blocks.filter(b => b.position[0] === 16 && b.position[1] === ICE_Y && (b.visible_faces & WEST_FACE) !== 0).length).toBe(0)
+  })
 })
