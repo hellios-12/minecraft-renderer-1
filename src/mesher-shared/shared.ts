@@ -104,7 +104,12 @@ export interface MesherMainEvents {
     // Per-event counts for the column-mode conversion cache.
     preCacheHits?: number
     preCacheMisses?: number
+    chunkCount?: number
+    worldColumns3x3?: number
+    parsedCache3x3?: number
+    columnMeshPath?: string
   }
+  neighborDataArrived: { type: 'neighborDataArrived'; x: number; z: number; workerIndex: number }
   blockStateModelInfo: { type: 'blockStateModelInfo'; info: Record<string, BlockStateModelInfo> }
   heightmap: { type: 'heightmap'; key: string; heightmap: Int16Array }
   /** Reply to `{ type: 'mc-web-ping', t?, workerIndex? }` from the main thread (not batched in worker). */

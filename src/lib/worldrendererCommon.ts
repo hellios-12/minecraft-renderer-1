@@ -675,6 +675,13 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       const heightmap = new Int16Array(data.heightmap)
       this.reactiveState.world.heightmaps[data.key] = heightmap
     }
+
+    if (data.type === 'neighborDataArrived') {
+      const sectionHeight = this.getSectionHeight()
+      for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
+        this.setSectionDirty(new Vec3(data.x, y, data.z))
+      }
+    }
   }
 
   downloadMesherLog() {

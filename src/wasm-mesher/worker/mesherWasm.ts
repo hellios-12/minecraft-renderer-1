@@ -9,6 +9,16 @@ import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMe
 import { SectionRequestTracker } from './mesherWasmRequestTracker'
 import { sectionYsForLightColumnDirty } from './mesherWasmLightDirty'
 import { CONVERSION_CACHE_LIMIT, clearConversionCache, getOrConvertColumn, invalidateConversion, setConversionCacheLimit } from './mesherWasmConversionCache'
+import { PendingChunkBuffer } from './mesherWasmChunkBuffer'
+import {
+  PendingNeighborHealTracker,
+  SIDE_NEIGHBOR_OFFSETS,
+  collectChunksForColumnUnion,
+  columnDataAvailable,
+  countParsedCache3x3,
+  countWorldColumns3x3,
+  type PacketCaches
+} from './mesherWasmNeighborhood'
 
 let wasm: typeof import('../runtime-build/wasm_mesher.js') | null = null
 let wasmInitialized = false
@@ -261,6 +271,70 @@ interface ParsedV16Entry {
   biomes: Int32Array
 }
 const parsedV16Cache = new Map<string, ParsedV16Entry>()
+
+const pendingChunks = new PendingChunkBuffer()
+const pendingNeighborHeal = new PendingNeighborHealTracker()
+let blindMeshWarnCount = 0
+const BLIND_MESH_WARN_LIMIT = 5
+
+const packetCaches = (): PacketCaches => ({
+  raw: rawMapChunkCache,
+  v17: parsedV17Cache,
+  v16: parsedV16Cache
+})
+
+function notifyColumnsAwaitingNeighbor(neighborX: number, neighborZ: number) {
+  for (const col of pendingNeighborHeal.takeColumnsAwaitingNeighbor(neighborX, neighborZ)) {
+    postMessage({ type: 'neighborDataArrived', x: col.x, z: col.z, workerIndex })
+  }
+}
+
+function onColumnDataArrived(x: number, z: number) {
+  notifyColumnsAwaitingNeighbor(x, z)
+}
+
+function warnGenuinelyBlindMesh(columnX: number, columnZ: number, missingSides: number) {
+  if (missingSides <= 0) return
+  blindMeshWarnCount++
+  if (blindMeshWarnCount <= BLIND_MESH_WARN_LIMIT) {
+    console.warn(
+      `[mesher] column ${columnX},${columnZ} meshed with ${missingSides}/4 side neighbors missing from both pipelines — genuinely blind mesh`
+    )
+  } else if (blindMeshWarnCount === BLIND_MESH_WARN_LIMIT + 1) {
+    console.warn(`[mesher] genuinely blind mesh warnings suppressed after ${BLIND_MESH_WARN_LIMIT} occurrences`)
+  }
+}
+
+function processChunkMessage(data: { x: number; z: number; chunk: any; customBlockModels?: any }) {
+  world.addColumn(data.x, data.z, data.chunk)
+  if (data.customBlockModels) {
+    const chunkKey = `${data.x},${data.z}`
+    world.customBlockModels.set(chunkKey, data.customBlockModels)
+  }
+  const sectionH = SECTION_HEIGHT
+  const minY = config?.worldMinY ?? 0
+  const maxY = config?.worldMaxY ?? 256
+  const column = world.getColumn(data.x, data.z)
+  let hasAnySection = false
+  for (let y = minY; y < maxY; y += sectionH) {
+    if (column?.getSection?.(new Vec3(0, y, 0))) {
+      hasAnySection = true
+      break
+    }
+  }
+  if (!hasAnySection) {
+    const emptyHeightmap = new Int16Array(256).fill(EMPTY_COLUMN_HEIGHTMAP_SENTINEL)
+    postMessage({ type: 'heightmap', key: `${data.x >> 4},${data.z >> 4}`, heightmap: emptyHeightmap }, [emptyHeightmap.buffer])
+  }
+}
+
+function drainPendingChunks() {
+  if (!world) return
+  pendingChunks.drain(msg => {
+    processChunkMessage(msg)
+    onColumnDataArrived(msg.x, msg.z)
+  })
+}
 
 // 1.16 sky/block light cache — same shape as the v17 entry, populated by
 // `processUpdateLightV16` (which calls the shared `parseUpdateLightV17`
@@ -706,6 +780,7 @@ const handleMessage = async (data: any) => {
       await initWasm()
       allDataReady = true
       workerIndex = data.workerIndex
+      drainPendingChunks()
       break
     }
     case 'dirty': {
@@ -717,39 +792,17 @@ const handleMessage = async (data: any) => {
       // Invalidate BEFORE replacing the column reference so a stale entry
       // can never outlive the old chunk object.
       invalidateConversion(data.x, data.z)
-      if (!world) break
-      world.addColumn(data.x, data.z, data.chunk)
-      if (data.customBlockModels) {
-        const chunkKey = `${data.x},${data.z}`
-        world.customBlockModels.set(chunkKey, data.customBlockModels)
+      if (!world) {
+        pendingChunks.enqueue({
+          x: data.x,
+          z: data.z,
+          chunk: data.chunk,
+          customBlockModels: data.customBlockModels
+        })
+        break
       }
-      // Safety-net heightmap push for fully empty columns. With WASM
-      // mesher as the sole path, the main thread no longer requests
-      // `getHeightmap` on chunk load — heightmaps come from
-      // `processColumnTick`. But a fully empty column (no sections, or
-      // all sections missing) never enters that path because
-      // `setSectionDirty` short-circuits when `chunk.getSection(pos)` is
-      // falsy, so `processColumnTick` never sees it. Without this push
-      // downstream consumers (e.g. `rain.ts`) would have no heightmap
-      // entry for such columns. We send a cheap sentinel-filled
-      // `Int16Array(256).fill(-32768)` — no JS heightmap scan — only when
-      // we detect zero sections; non-empty columns get their real
-      // heightmap from the next `processColumnTick`.
-      const sectionH = SECTION_HEIGHT
-      const minY = config?.worldMinY ?? 0
-      const maxY = config?.worldMaxY ?? 256
-      const column = world.getColumn(data.x, data.z)
-      let hasAnySection = false
-      for (let y = minY; y < maxY; y += sectionH) {
-        if (column?.getSection?.(new Vec3(0, y, 0))) {
-          hasAnySection = true
-          break
-        }
-      }
-      if (!hasAnySection) {
-        const emptyHeightmap = new Int16Array(256).fill(EMPTY_COLUMN_HEIGHTMAP_SENTINEL)
-        postMessage({ type: 'heightmap', key: `${data.x >> 4},${data.z >> 4}`, heightmap: emptyHeightmap }, [emptyHeightmap.buffer])
-      }
+      processChunkMessage(data)
+      onColumnDataArrived(data.x, data.z)
       break
     }
     case 'unloadChunk': {
@@ -762,6 +815,7 @@ const handleMessage = async (data: any) => {
       if (!world) break
       world.removeColumn(data.x, data.z)
       world.customBlockModels.delete(`${data.x},${data.z}`)
+      pendingNeighborHeal.clearColumn(data.x, data.z)
       requestTracker.clearColumn(data.x, data.z)
       for (const key of [...dirtySections.keys()]) {
         const [sx, , sz] = key.split(',').map(Number)
@@ -808,6 +862,7 @@ const handleMessage = async (data: any) => {
         numSections: data.numSections as number
       })
       invalidateConversion(data.x, data.z)
+      onColumnDataArrived(data.x, data.z)
       break
     }
     case 'setParsedMapChunkV17': {
@@ -821,6 +876,7 @@ const handleMessage = async (data: any) => {
         biomes: data.biomes as Int32Array | undefined
       })
       invalidateConversion(data.x, data.z)
+      onColumnDataArrived(data.x, data.z)
       break
     }
     case 'setUpdateLightV17': {
@@ -845,6 +901,7 @@ const handleMessage = async (data: any) => {
         biomes: data.biomes as Int32Array
       })
       invalidateConversion(data.x, data.z)
+      onColumnDataArrived(data.x, data.z)
       break
     }
     case 'setUpdateLightV16': {
@@ -864,6 +921,9 @@ const handleMessage = async (data: any) => {
       updateLightV17Cache.clear()
       parsedV16Cache.clear()
       updateLightV16Cache.clear()
+      pendingChunks.clear()
+      pendingNeighborHeal.clear()
+      blindMeshWarnCount = 0
       globalVar.mcData = null
       globalVar.loadedData = null
       allDataReady = false
@@ -935,23 +995,8 @@ self.onmessage = ({ data }) => {
 // Section height is always 16 in column mode (the only WASM path).
 const getSectionHeight = () => SECTION_HEIGHT
 
-// 3x3 X/Z neighbor set for column meshing. Y-agnostic because full-column
-// meshing converts the entire world Y range in one go.
 function collectChunksForColumn(x: number, z: number) {
-  const result = [] as Array<{ x: number; z: number; chunk: any }>
-  const target = world.getColumn(x, z)
-  if (target) result.push({ x, z, chunk: target })
-  const offsets = [-16, 0, 16]
-  for (const dx of offsets) {
-    for (const dz of offsets) {
-      if (dx === 0 && dz === 0) continue
-      const nx = x + dx
-      const nz = z + dz
-      const c = world.getColumn(nx, nz)
-      if (c) result.push({ x: nx, z: nz, chunk: c })
-    }
-  }
-  return result
+  return collectChunksForColumnUnion(x, z, (nx, nz) => world.getColumn(nx, nz), packetCaches())
 }
 
 function makeEmptyColumnGeometry(sx: number, sy: number, sz: number, sectionHeight: number, hadErrors: boolean): MesherGeometryOutput {
@@ -1030,6 +1075,9 @@ function processColumnTick() {
     let preCacheMisses = 0
     let hadError = false
     let columnMeshPath = 'none'
+    let chunkCount = 0
+    let worldColumns3x3 = 0
+    let parsedCache3x3 = 0
     // Outer-scope timestamps so we can finalize `processTime` and
     // `postPhase` AFTER the per-section emit loop runs (the loop builds
     // typed arrays, walks block-entity metadata, and calls postMessage —
@@ -1044,7 +1092,21 @@ function processColumnTick() {
       const t0 = start
       try {
         const chunksToUse = collectChunksForColumn(x, z)
-        const chunkCount = chunksToUse.length
+        chunkCount = chunksToUse.length
+        const caches = packetCaches()
+        worldColumns3x3 = countWorldColumns3x3(x, z, (nx, nz) => world.getColumn(nx, nz))
+        parsedCache3x3 = countParsedCache3x3(x, z, caches)
+
+        let missingSideCount = 0
+        for (const [dx, dz] of SIDE_NEIGHBOR_OFFSETS) {
+          const nx = x + dx
+          const nz = z + dz
+          if (!columnDataAvailable(nx, nz, (cx, cz) => world.getColumn(cx, cz), caches)) {
+            pendingNeighborHeal.recordMissingSide(x, z, nx, nz)
+            missingSideCount++
+          }
+        }
+        warnGenuinelyBlindMesh(x, z, missingSideCount)
 
         let wasmResult: any
         let t1 = 0
@@ -1134,7 +1196,9 @@ function processColumnTick() {
 
         if (!wasmResult) {
           // --- Old two-step path (multi-column or fused fallback) ---
-          const conversions = chunksToUse.map(({ x: cx, z: cz, chunk }) => {
+          const conversions: ChunkConversionResult[] = []
+          const meshChunks: typeof chunksToUse = []
+          for (const { x: cx, z: cz, chunk } of chunksToUse) {
             const cs = performance.now()
             const rawEntry = rawMapChunkCache.get(rawCacheKey(cx, cz))
             const v17Entry = parsedV17Cache.get(rawCacheKey(cx, cz))
@@ -1162,6 +1226,9 @@ function processColumnTick() {
             if (!conv) {
               // JS-fallback (column walk) — still cached, since this is the
               // expensive path the conversion cache was built for.
+              // Cache-only neighbors (pipeline B without world.columns) are
+              // skipped — fused multi should have handled them already.
+              if (!chunk) continue
               const cached = getOrConvertColumn(
                 cx,
                 cz,
@@ -1185,12 +1252,18 @@ function processColumnTick() {
               preNeighborConvert += ce - cs
               preNeighborCount++
             }
-            return conv
-          })
+            conversions.push(conv)
+            meshChunks.push({ x: cx, z: cz, chunk })
+          }
+
+          const twoStepChunkCount = conversions.length
+          if (twoStepChunkCount === 0) {
+            throw new Error(`[WASM Mesher] no convertible columns for ${x},${z}`)
+          }
 
           const { invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks } = conversions[0]
 
-          if (chunkCount === 1 || !(wasm as any).generate_geometry_multi) {
+          if (twoStepChunkCount === 1 || !(wasm as any).generate_geometry_multi) {
             const { blockStates, blockLight, skyLight, biomesArray } = conversions[0]
             t1 = performance.now()
             wasmResult = wasm.generate_geometry(
@@ -1218,17 +1291,17 @@ function processColumnTick() {
           } else {
             const tBuildStart = performance.now()
             const perChunkLen = conversions[0].blockStates.length
-            const xs = new Int32Array(chunkCount)
-            const zs = new Int32Array(chunkCount)
-            const blockStatesAll = new Uint16Array(perChunkLen * chunkCount)
-            const blockLightAll = new Uint8Array(perChunkLen * chunkCount)
-            const skyLightAll = new Uint8Array(perChunkLen * chunkCount)
-            const biomesAll = new Uint8Array(perChunkLen * chunkCount)
+            const xs = new Int32Array(twoStepChunkCount)
+            const zs = new Int32Array(twoStepChunkCount)
+            const blockStatesAll = new Uint16Array(perChunkLen * twoStepChunkCount)
+            const blockLightAll = new Uint8Array(perChunkLen * twoStepChunkCount)
+            const skyLightAll = new Uint8Array(perChunkLen * twoStepChunkCount)
+            const biomesAll = new Uint8Array(perChunkLen * twoStepChunkCount)
 
-            for (let i = 0; i < chunkCount; i++) {
+            for (let i = 0; i < twoStepChunkCount; i++) {
               const c = conversions[i]
-              xs[i] = chunksToUse[i].x
-              zs[i] = chunksToUse[i].z
+              xs[i] = meshChunks[i].x
+              zs[i] = meshChunks[i].z
               blockStatesAll.set(c.blockStates, perChunkLen * i)
               blockLightAll.set(c.blockLight, perChunkLen * i)
               skyLightAll.set(c.skyLight, perChunkLen * i)
@@ -1496,7 +1569,11 @@ function processColumnTick() {
           preTypedArrayBuild: !attributed ? preTypedArrayBuild : 0,
           preOther: !attributed ? preOther : 0,
           preCacheHits: !attributed ? preCacheHits : 0,
-          preCacheMisses: !attributed ? preCacheMisses : 0
+          preCacheMisses: !attributed ? preCacheMisses : 0,
+          chunkCount: !attributed ? chunkCount : 0,
+          worldColumns3x3: !attributed ? worldColumns3x3 : 0,
+          parsedCache3x3: !attributed ? parsedCache3x3 : 0,
+          columnMeshPath: !attributed ? columnMeshPath : 'none'
         })
         attributed = true
       }
