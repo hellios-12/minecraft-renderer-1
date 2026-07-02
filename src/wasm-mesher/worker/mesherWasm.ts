@@ -270,8 +270,8 @@ function syncV17LightToColumn(x: number, z: number): boolean {
   if (!col || !entry) return false
 
   const CHUNK_SIZE = 16
-  const minY = col.minY ?? config?.worldMinY ?? 0
-  const maxY = col.worldHeight != null ? minY + col.worldHeight : (config?.worldMaxY ?? 256)
+  const minY = config?.worldMinY ?? 0
+  const maxY = config?.worldMaxY ?? 256
   const { blockLight, skyLight } = entry
 
   for (let y = minY; y < maxY; y++) {
