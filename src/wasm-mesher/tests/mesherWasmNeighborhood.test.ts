@@ -12,12 +12,7 @@ describe('collectChunksForColumnUnion', () => {
     const worldCols = new Map<string, any>([['0,0', { id: 'A' }]])
     const packet = new Set(['16,0'])
 
-    const result = collectChunksForColumnUnion(
-      0,
-      0,
-      (x, z) => worldCols.get(`${x},${z}`) ?? null,
-      { raw: packet, v17: new Set(), v16: new Set() }
-    )
+    const result = collectChunksForColumnUnion(0, 0, (x, z) => worldCols.get(`${x},${z}`) ?? null, { raw: packet, v17: new Set(), v16: new Set() })
 
     expect(result).toHaveLength(2)
     expect(result[0]).toEqual({ x: 0, z: 0, chunk: { id: 'A' } })
@@ -46,7 +41,12 @@ describe('collectChunksForColumnUnion', () => {
 
 describe('column availability counters', () => {
   test('detects pipeline A lag behind packet caches', () => {
-    const worldCols = new Map<string, any>([['0,0', {}], ['16,0', {}], ['-16,0', {}], ['0,16', {}]])
+    const worldCols = new Map<string, any>([
+      ['0,0', {}],
+      ['16,0', {}],
+      ['-16,0', {}],
+      ['0,16', {}]
+    ])
     const packet = new Set(['0,0', '16,0', '-16,0', '0,16', '0,-16', '16,16', '-16,16', '-16,-16', '16,-16'])
     const caches = { raw: packet, v17: new Set(), v16: new Set() }
 

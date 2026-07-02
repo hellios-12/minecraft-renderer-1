@@ -19,12 +19,7 @@ export function columnHasPacketCache(x: number, z: number, caches: PacketCaches)
   return caches.raw.has(k) || caches.v17.has(k) || caches.v16.has(k)
 }
 
-export function columnDataAvailable(
-  x: number,
-  z: number,
-  getColumn: (x: number, z: number) => any | null | undefined,
-  caches: PacketCaches
-): boolean {
+export function columnDataAvailable(x: number, z: number, getColumn: (x: number, z: number) => any | null | undefined, caches: PacketCaches): boolean {
   return !!getColumn(x, z) || columnHasPacketCache(x, z, caches)
 }
 

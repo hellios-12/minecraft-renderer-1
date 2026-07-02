@@ -297,9 +297,7 @@ function warnGenuinelyBlindMesh(columnX: number, columnZ: number, missingSides: 
   if (missingSides <= 0) return
   blindMeshWarnCount++
   if (blindMeshWarnCount <= BLIND_MESH_WARN_LIMIT) {
-    console.warn(
-      `[mesher] column ${columnX},${columnZ} meshed with ${missingSides}/4 side neighbors missing from both pipelines — genuinely blind mesh`
-    )
+    console.warn(`[mesher] column ${columnX},${columnZ} meshed with ${missingSides}/4 side neighbors missing from both pipelines — genuinely blind mesh`)
   } else if (blindMeshWarnCount === BLIND_MESH_WARN_LIMIT + 1) {
     console.warn(`[mesher] genuinely blind mesh warnings suppressed after ${BLIND_MESH_WARN_LIMIT} occurrences`)
   }

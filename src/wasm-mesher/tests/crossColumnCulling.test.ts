@@ -63,12 +63,7 @@ function buildIceOverWaterColumn() {
   return chunk.toJson()
 }
 
-function meshColumns(
-  columnOrigins: Array<{ x: number; z: number }>,
-  targetX: number,
-  targetZ: number,
-  options?: { forceMulti?: boolean }
-): WasmGeometryOutput {
+function meshColumns(columnOrigins: Array<{ x: number; z: number }>, targetX: number, targetZ: number, options?: { forceMulti?: boolean }): WasmGeometryOutput {
   const meta = getBlockMeta(VERSION)
   const conversions = columnOrigins.map(({ x, z }) => {
     const chunkJson = buildIceOverWaterColumn()
