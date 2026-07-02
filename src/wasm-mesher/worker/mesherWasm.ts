@@ -254,26 +254,11 @@ const updateLightV17Cache = new Map<string, UpdateLightV17Entry>()
 const pendingLightDirtyColumns = new Set<string>()
 const _syncLightPos = new Vec3(0, 0, 0)
 
-function resolveUpdateLightV17Entry(
-  x: number,
-  z: number,
-  chunk: any | undefined,
-  worldMinY: number,
-  worldMaxY: number
-): UpdateLightV17Entry | undefined {
+function resolveUpdateLightV17Entry(x: number, z: number, chunk: any | undefined, worldMinY: number, worldMaxY: number): UpdateLightV17Entry | undefined {
   const cached = updateLightV17Cache.get(rawCacheKey(x, z))
   if (cached?.blockLight?.length) return cached
   if (!chunk) return cached
-  const { result } = getOrConvertColumn(
-    x,
-    z,
-    chunk,
-    version,
-    worldMinY,
-    worldMaxY,
-    () => convertChunkToWasm(chunk, version, x, z, worldMinY, worldMaxY),
-    chunk
-  )
+  const { result } = getOrConvertColumn(x, z, chunk, version, worldMinY, worldMaxY, () => convertChunkToWasm(chunk, version, x, z, worldMinY, worldMaxY), chunk)
   return { blockLight: result.blockLight, skyLight: result.skyLight }
 }
 
