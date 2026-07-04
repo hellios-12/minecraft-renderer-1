@@ -674,6 +674,21 @@ test('GlobalLegacyBuffer: carveSpansAroundPendingRanges splits merged span', () 
   ])
 })
 
+test('GlobalLegacyBuffer: carved merged adjacent sections stay within union of input ranges', () => {
+  const sectionRanges = [
+    { start: 100, count: 10 },
+    { start: 110, count: 10 }
+  ]
+  const merged = [{ start: 100, count: 20 }]
+  const carved = carveSpansAroundPendingRanges(merged, [{ start: 105, end: 114 }])
+  for (const span of carved) {
+    for (let q = span.start; q < span.start + span.count; q++) {
+      const inUnion = sectionRanges.some(r => q >= r.start && q < r.start + r.count)
+      expect(inUnion, `quad ${q} not in union of section ranges`).toBe(true)
+    }
+  }
+})
+
 test('GlobalLegacyBuffer: uploadEpoch increments when dirty range drains', () => {
   const scene = new THREE.Scene()
   const mat = createGlobalLegacyBlockMaterial()

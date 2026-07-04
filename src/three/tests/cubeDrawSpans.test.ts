@@ -1,6 +1,18 @@
 import { describe, expect, test } from 'vitest'
 import { buildVisibleCubeSpans } from '../cubeDrawSpans'
 
+type DrawSpan = { start: number; count: number }
+
+/** Every index in output spans must lie in the union of input section ranges. */
+function expectEveryIndexInUnion(spans: DrawSpan[], sectionRanges: DrawSpan[]): void {
+  for (const span of spans) {
+    for (let i = span.start; i < span.start + span.count; i++) {
+      const inUnion = sectionRanges.some(r => i >= r.start && i < r.start + r.count)
+      expect(inUnion, `index ${i} not in union of section ranges`).toBe(true)
+    }
+  }
+}
+
 describe('buildVisibleCubeSpans', () => {
   test('contiguous slots merge into one span', () => {
     const spans = buildVisibleCubeSpans(
@@ -98,5 +110,24 @@ describe('buildVisibleCubeSpans', () => {
   test('empty input returns empty spans', () => {
     expect(buildVisibleCubeSpans([], 10)).toEqual([])
     expect(buildVisibleCubeSpans([{ start: 0, count: 1 }], 0)).toEqual([])
+  })
+
+  test('merged adjacent sections stay within union of input ranges', () => {
+    const sectionRanges = [
+      { start: 100, count: 10 },
+      { start: 110, count: 10 }
+    ]
+    const spans = buildVisibleCubeSpans(sectionRanges, 120, false)
+    expect(spans).toEqual([{ start: 100, count: 20 }])
+    expectEveryIndexInUnion(spans, sectionRanges)
+  })
+
+  test('carved merged spans stay within union of input ranges', () => {
+    const sectionRanges = [
+      { start: 0, count: 10 },
+      { start: 10, count: 10 }
+    ]
+    const spans = buildVisibleCubeSpans(sectionRanges, 20, false, undefined, [{ start: 5, end: 14 }])
+    expectEveryIndexInUnion(spans, sectionRanges)
   })
 })

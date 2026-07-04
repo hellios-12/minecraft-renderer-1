@@ -710,10 +710,8 @@ export class GlobalBlockBuffer {
       this.finalizePendingReplace(key)
     }
 
-    console.warn('[globalBlockBuffer] growing faces', this.capacityFaces, '->', '(need', minFaces, ')')
     let newCap = this.capacityFaces
     while (newCap < minFaces) newCap += GROWTH_INCREMENT_FACES
-    console.warn('[globalBlockBuffer] growing faces', this.capacityFaces, '->', newCap)
 
     const nw0 = new Uint32Array(newCap)
     const nw1 = new Uint32Array(newCap)
