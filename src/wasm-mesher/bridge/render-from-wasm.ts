@@ -558,13 +558,21 @@ export function renderWasmOutputToGeometry(
   const uvs: number[] = []
   const indices: number[] = []
 
-  const blendPositions: number[] = []
-  const blendNormals: number[] = []
-  const blendColors: number[] = []
-  const blendSkyLights: number[] = []
-  const blendBlockLights: number[] = []
-  const blendUvs: number[] = []
-  const blendIndices: number[] = []
+  const blockBlendPositions: number[] = []
+  const blockBlendNormals: number[] = []
+  const blockBlendColors: number[] = []
+  const blockBlendSkyLights: number[] = []
+  const blockBlendBlockLights: number[] = []
+  const blockBlendUvs: number[] = []
+  const blockBlendIndices: number[] = []
+
+  const liquidPositions: number[] = []
+  const liquidNormals: number[] = []
+  const liquidColors: number[] = []
+  const liquidSkyLights: number[] = []
+  const liquidBlockLights: number[] = []
+  const liquidUvs: number[] = []
+  const liquidIndices: number[] = []
 
   const liquidQueue: Array<{
     pos: Vec3
@@ -690,13 +698,13 @@ export function renderWasmOutputToGeometry(
     if (!models || models.length == 0) continue
 
     const routeToBlend = prismBlock.transparent && isSemiTransparentBlockName(cachedModel.blockName)
-    const tgtPos = routeToBlend ? blendPositions : positions
-    const tgtNorm = routeToBlend ? blendNormals : normals
-    const tgtCol = routeToBlend ? blendColors : colors
-    const tgtSky = routeToBlend ? blendSkyLights : skyLights
-    const tgtBlock = routeToBlend ? blendBlockLights : blockLights
-    const tgtUv = routeToBlend ? blendUvs : uvs
-    const tgtIdx = routeToBlend ? blendIndices : indices
+    const tgtPos = routeToBlend ? blockBlendPositions : positions
+    const tgtNorm = routeToBlend ? blockBlendNormals : normals
+    const tgtCol = routeToBlend ? blockBlendColors : colors
+    const tgtSky = routeToBlend ? blockBlendSkyLights : skyLights
+    const tgtBlock = routeToBlend ? blockBlendBlockLights : blockLights
+    const tgtUv = routeToBlend ? blockBlendUvs : uvs
+    const tgtIdx = routeToBlend ? blockBlendIndices : indices
 
     const faceNameToIndex: Record<string, number> = {
       up: 0,
@@ -946,14 +954,36 @@ export function renderWasmOutputToGeometry(
         q.biome,
         q.water,
         q.isRealWater,
-        blendPositions,
-        blendNormals,
-        blendColors,
-        blendSkyLights,
-        blendBlockLights,
-        blendUvs,
-        blendIndices
+        liquidPositions,
+        liquidNormals,
+        liquidColors,
+        liquidSkyLights,
+        liquidBlockLights,
+        liquidUvs,
+        liquidIndices
       )
+    }
+  }
+
+  let blendPositions: number[] = []
+  let blendNormals: number[] = []
+  let blendColors: number[] = []
+  let blendSkyLights: number[] = []
+  let blendBlockLights: number[] = []
+  let blendUvs: number[] = []
+  const blendIndices: number[] = []
+
+  if (liquidPositions.length > 0 || blockBlendPositions.length > 0) {
+    const liquidVertexCount = liquidPositions.length / 3
+    blendPositions = liquidPositions.concat(blockBlendPositions)
+    blendNormals = liquidNormals.concat(blockBlendNormals)
+    blendColors = liquidColors.concat(blockBlendColors)
+    blendSkyLights = liquidSkyLights.concat(blockBlendSkyLights)
+    blendBlockLights = liquidBlockLights.concat(blockBlendBlockLights)
+    blendUvs = liquidUvs.concat(blockBlendUvs)
+    blendIndices.push(...liquidIndices)
+    for (const idx of blockBlendIndices) {
+      blendIndices.push(idx + liquidVertexCount)
     }
   }
 
