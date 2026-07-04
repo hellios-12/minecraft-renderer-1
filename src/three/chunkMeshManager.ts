@@ -332,7 +332,8 @@ export class ChunkMeshManager {
       this.globalLegacyBlendBuffer = new GlobalLegacyBuffer(this.getGlobalLegacyBlendShaderMaterial(), this.scene, {
         name: 'globalLegacyBlend',
         initialCapacityQuads: 32_000,
-        growthIncrementQuads: 32_000
+        growthIncrementQuads: 32_000,
+        sortBlend: true
       })
       this.globalLegacyBlendBuffer.setRenderOrigin(this.renderOrigin)
     }

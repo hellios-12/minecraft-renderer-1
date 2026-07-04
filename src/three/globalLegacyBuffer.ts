@@ -95,6 +95,8 @@ export type GlobalLegacyBufferOptions = {
   name?: string
   initialCapacityQuads?: number
   growthIncrementQuads?: number
+  /** When true, pre-sort blend indices on addSection and support per-quad reorder. */
+  sortBlend?: boolean
 }
 
 export type VisibleSectionSpan = { key: string; distSq: number }
@@ -125,6 +127,7 @@ export class GlobalLegacyBuffer {
   readonly material: THREE.ShaderMaterial
 
   private readonly growthIncrementQuads: number
+  private readonly blendSort: boolean
   private capacityQuads: number
   private positions: Float32Array
   private colors: Float32Array
@@ -150,12 +153,20 @@ export class GlobalLegacyBuffer {
   private uploadEpoch = 0
   private visibleIndexSpans: LegacyDrawSpan[] = []
   private readonly _drawScratch: LegacyMultiDrawScratch = createLegacyMultiDrawScratch()
+  /** Reusable scratch for applyBlendSort; grown on demand, never allocated per call. */
+  private _sortOrder: Uint32Array = new Uint32Array(0)
+  private _sortDistSq: Float64Array = new Float64Array(0)
   private multiDrawCaps: LegacyMultiDrawCaps | null = null
   private debugOverlay = false
+  private _camX = 0
+  private _camY = 0
+  private _camZ = 0
+  private _camInitialized = false
 
   constructor(material: THREE.ShaderMaterial, scene: THREE.Object3D, opts?: GlobalLegacyBufferOptions) {
     this.material = material
     this.growthIncrementQuads = opts?.growthIncrementQuads ?? DEFAULT_GROWTH_INCREMENT_QUADS
+    this.blendSort = opts?.sortBlend ?? false
     this.capacityQuads = opts?.initialCapacityQuads ?? DEFAULT_INITIAL_CAPACITY_QUADS
     const maxVerts = this.capacityQuads * VERTS_PER_QUAD
     this.positions = new Float32Array(maxVerts * FLOATS_PER_VERT)
@@ -339,6 +350,9 @@ export class GlobalLegacyBuffer {
     this.sectionSlots.set(sectionKey, slot)
     if (isRemesh && previousSlot) {
       this.pendingReplace.set(sectionKey, { oldStart: previousSlot.start, oldCount: previousSlot.count })
+    }
+    if (this.blendSort && this._camInitialized && quadCount >= 2) {
+      this.applyBlendSort(slot.start, quadCount, this._camX, this._camY, this._camZ)
     }
     this.markDirty(slot.start, slot.start + quadCount - 1)
     this.syncDefaultDrawGroups()
@@ -605,16 +619,27 @@ export class GlobalLegacyBuffer {
     if (!this.rangeFullyUploaded(slot.start, slot.start + slot.count - 1)) return false
     if (slot.count < 2) return false
 
-    const dstFloatBase = slot.start * VERTS_PER_QUAD * FLOATS_PER_VERT
+    this.applyBlendSort(slot.start, slot.count, camX, camY, camZ)
+    this.markIndexDirty(slot.start, slot.start + slot.count - 1)
+    return true
+  }
+
+  /** Rewrite indices for [slotStart, slotStart+slotCount) back-to-front by quad centroid distance. */
+  private applyBlendSort(slotStart: number, slotCount: number, camX: number, camY: number, camZ: number): void {
+    const dstFloatBase = slotStart * VERTS_PER_QUAD * FLOATS_PER_VERT
     const sx = this.aOrigin[dstFloatBase]! + this.renderOrigin.x
     const sy = this.aOrigin[dstFloatBase + 1]! + this.renderOrigin.y
     const sz = this.aOrigin[dstFloatBase + 2]! + this.renderOrigin.z
 
-    const order = new Array<number>(slot.count)
-    const distSq = new Float64Array(slot.count)
-    for (let p = 0; p < slot.count; p++) {
+    if (this._sortOrder.length < slotCount) {
+      this._sortOrder = new Uint32Array(slotCount)
+      this._sortDistSq = new Float64Array(slotCount)
+    }
+    const order = this._sortOrder
+    const distSq = this._sortDistSq
+    for (let p = 0; p < slotCount; p++) {
       order[p] = p
-      const physQuad = slot.start + p
+      const physQuad = slotStart + p
       const centBase = physQuad * 3
       const wx = sx + this.quadCentroids[centBase]!
       const wy = sy + this.quadCentroids[centBase + 1]!
@@ -624,24 +649,22 @@ export class GlobalLegacyBuffer {
       const dz = wz - camZ
       distSq[p] = dx * dx + dy * dy + dz * dz
     }
-    order.sort((a, b) => {
+    const orderView = order.subarray(0, slotCount)
+    orderView.sort((a, b) => {
       const d = distSq[b]! - distSq[a]!
       if (d !== 0) return d
       return a - b
     })
 
-    for (let k = 0; k < slot.count; k++) {
-      const src = order[k]!
-      const srcVertBase = (slot.start + src) * VERTS_PER_QUAD
-      const dstIdxBase = (slot.start + k) * INDICES_PER_QUAD
-      const tmplBase = (slot.start + src) * INDICES_PER_QUAD
+    for (let k = 0; k < slotCount; k++) {
+      const src = orderView[k]!
+      const srcVertBase = (slotStart + src) * VERTS_PER_QUAD
+      const dstIdxBase = (slotStart + k) * INDICES_PER_QUAD
+      const tmplBase = (slotStart + src) * INDICES_PER_QUAD
       for (let i = 0; i < INDICES_PER_QUAD; i++) {
         this.indices[dstIdxBase + i] = srcVertBase + this.quadIndexTemplate[tmplBase + i]!
       }
     }
-
-    this.markIndexDirty(slot.start, slot.start + slot.count - 1)
-    return true
   }
 
   uploadDirtyRange(): void {
@@ -744,6 +767,10 @@ export class GlobalLegacyBuffer {
   }
 
   setCameraOrigin(x: number, y: number, z: number): void {
+    this._camX = x
+    this._camY = y
+    this._camZ = z
+    this._camInitialized = true
     const { originDelta, cameraOriginFrac } = computeCameraRelativeUniforms(this.renderOrigin, x, y, z)
     const u = this.material.uniforms.u_originDelta
     if (u?.value?.set) u.value.set(originDelta.x, originDelta.y, originDelta.z)

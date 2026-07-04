@@ -820,6 +820,28 @@ test('GlobalLegacyBuffer: reorderSectionBlendIndices sorts quads back-to-front',
   mat.dispose()
 })
 
+test('GlobalLegacyBuffer: sortBlend pre-sorts indices on addSection before upload', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene, { sortBlend: true })
+  const geo = makeTwoQuadGeometry()
+
+  buffer.setCameraOrigin(0, 0, -20)
+  buffer.addSection('blend', geo, 0, 0, 0)
+
+  const slot = buffer.getSectionSlot('blend')!
+  const vertBase0 = slot.start * 4
+  const vertBase1 = (slot.start + 1) * 4
+  const indices = readSectionIndices(buffer, 'blend')
+
+  expect(indices.slice(0, 6)).toEqual([vertBase1, vertBase1 + 2, vertBase1 + 1, vertBase1, vertBase1 + 1, vertBase1 + 2])
+  expect(indices.slice(6, 12)).toEqual([vertBase0, vertBase0 + 1, vertBase0 + 2, vertBase0, vertBase0 + 2, vertBase0 + 3])
+  expect(getInternals(buffer).indexPendingRanges.length).toBe(0)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
 test('GlobalLegacyBuffer: blend reorder metadata survives compaction', () => {
   const scene = new THREE.Scene()
   const mat = createGlobalLegacyBlockMaterial()
