@@ -1,9 +1,4 @@
-import {
-  carveSpansAroundPendingRanges,
-  FULL_DRAW_VISIBLE_FRACTION,
-  MAX_OPAQUE_SPANS,
-  type DirtyRange
-} from './globalLegacyBuffer'
+import { carveSpansAroundPendingRanges, FULL_DRAW_VISIBLE_FRACTION, MAX_OPAQUE_SPANS, type DirtyRange } from './globalLegacyBuffer'
 
 export { FULL_DRAW_VISIBLE_FRACTION, MAX_OPAQUE_SPANS as MAX_CUBE_SPANS }
 
