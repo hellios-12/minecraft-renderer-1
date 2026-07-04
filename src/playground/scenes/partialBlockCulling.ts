@@ -1,6 +1,6 @@
 import { BasePlaygroundScene } from '../baseScene'
 
-/** Manual check for issue #49: farmland field + cut copper stairs (1.18.2). */
+/** Manual check for issue #49/#73: partial-block culling + cactus on grass (1.18.2). */
 export default class extends BasePlaygroundScene {
   override version = '1.18.2'
   enableCameraOrbitControl = true
@@ -26,5 +26,18 @@ export default class extends BasePlaygroundScene {
       this.addWorldBlock(20 + x, stairY, 4, 'cut_copper_stairs', stairProps)
       this.addWorldBlock(20 + x, stairY + 1, 4, 'cut_copper_stairs', stairProps)
     }
+
+    const cactusY = 64
+    for (let x = 0; x < 4; x++) {
+      this.addWorldBlock(30 + x, cactusY - 1, 8, 'grass_block')
+      this.addWorldBlock(30 + x, cactusY, 8, 'cactus')
+    }
+    this.addWorldBlock(35, cactusY - 1, 8, 'grass_block')
+    this.addWorldBlock(35, cactusY, 8, 'cactus')
+    this.addWorldBlock(35, cactusY + 1, 8, 'cactus')
+
+    this.addWorldBlock(30, cactusY - 1, 10, 'soul_sand')
+    this.addWorldBlock(31, cactusY - 1, 10, 'stone_slab', { type: 'bottom' })
+    this.addWorldBlock(32, cactusY - 1, 10, 'stone_slab', { type: 'bottom' })
   }
 }

@@ -252,19 +252,21 @@ function getBlockFromStateId(version: string, stateId: number) {
   return Block.fromStateId(stateId, 1)
 }
 
-function getAllShapesForState(version: string, stateId: number, blockProvider: WorldBlockProvider): Uint16Array[] {
-  const cacheKey = `${version}:${stateId}`
-  const cached = shapeCache.get(cacheKey)
-  if (cached) return cached
-
-  const shapes = DIR_KEYS.map(() => emptyShape())
-  const blockObj = getBlockFromStateId(version, stateId)
-  if (!blockObj || !blockRendersSolid(blockObj)) {
-    shapeCache.set(cacheKey, shapes)
-    return shapes
+function isFullCubeRenderModel(models: BlockModelPartsResolved | undefined): boolean {
+  try {
+    if (!models?.length || models.length !== 1) return false
+    return models[0]!.every(v =>
+      (v.elements ?? []).every(e => {
+        return e.from[0] === 0 && e.from[1] === 0 && e.from[2] === 0 && e.to[0] === 16 && e.to[1] === 16 && e.to[2] === 16
+      })
+    )
+  } catch {
+    return false
   }
+}
 
-  const models = blockProvider.getAllResolvedModels0_1({ name: blockObj.name, properties: blockObj.getProperties() }, false) as BlockModelPartsResolved
+function buildShapesFromRenderModel(models: BlockModelPartsResolved | undefined): Uint16Array[] {
+  const shapes = DIR_KEYS.map(() => emptyShape())
 
   for (const modelVars of models ?? []) {
     const model = modelVars[0]
@@ -288,8 +290,50 @@ function getAllShapesForState(version: string, stateId: number, blockProvider: W
     }
   }
 
-  shapeCache.set(cacheKey, shapes)
   return shapes
+}
+
+function buildShapesFromCollisionBoxes(boxes: number[][]): Uint16Array[] {
+  const shapes = DIR_KEYS.map(() => emptyShape())
+
+  for (const box of boxes) {
+    const x0 = snapBlockUnit(box[0]! * 16)
+    const y0 = snapBlockUnit(box[1]! * 16)
+    const z0 = snapBlockUnit(box[2]! * 16)
+    const x1 = snapBlockUnit(box[3]! * 16)
+    const y1 = snapBlockUnit(box[4]! * 16)
+    const z1 = snapBlockUnit(box[5]! * 16)
+
+    if (y1 === 16) orRectIntoShape(x0, z0, x1, z1, shapes[dirIndex([0, 1, 0])]!)
+    if (y0 === 0) orRectIntoShape(x0, z0, x1, z1, shapes[dirIndex([0, -1, 0])]!)
+    if (x1 === 16) orRectIntoShape(z0, y0, z1, y1, shapes[dirIndex([1, 0, 0])]!)
+    if (x0 === 0) orRectIntoShape(z0, y0, z1, y1, shapes[dirIndex([-1, 0, 0])]!)
+    if (z1 === 16) orRectIntoShape(x0, y0, x1, y1, shapes[dirIndex([0, 0, 1])]!)
+    if (z0 === 0) orRectIntoShape(x0, y0, x1, y1, shapes[dirIndex([0, 0, -1])]!)
+  }
+
+  return shapes
+}
+
+function getAllShapesForState(version: string, stateId: number, blockProvider: WorldBlockProvider): Uint16Array[] {
+  const cacheKey = `${version}:${stateId}`
+  const cached = shapeCache.get(cacheKey)
+  if (cached) return cached
+
+  const shapes = DIR_KEYS.map(() => emptyShape())
+  const blockObj = getBlockFromStateId(version, stateId)
+  if (!blockObj || !blockRendersSolid(blockObj)) {
+    shapeCache.set(cacheKey, shapes)
+    return shapes
+  }
+
+  const models = blockProvider.getAllResolvedModels0_1({ name: blockObj.name, properties: blockObj.getProperties() }, false) as BlockModelPartsResolved
+  const boxes = blockObj.shapes as number[][] | undefined
+
+  const resolvedShapes = isFullCubeRenderModel(models) ? buildShapesFromRenderModel(models) : boxes?.length ? buildShapesFromCollisionBoxes(boxes) : shapes
+
+  shapeCache.set(cacheKey, resolvedShapes)
+  return resolvedShapes
 }
 
 export function getOcclusionShape(version: string, stateId: number, worldDir: CardinalDir, blockProvider: WorldBlockProvider): Uint16Array {

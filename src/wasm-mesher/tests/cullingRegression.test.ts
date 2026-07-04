@@ -278,6 +278,32 @@ test('culling regression: glass/leaves cluster — see-through blocks not over-c
   assertMesherParity(world, 20)
 })
 
+test('culling regression: cactus on grass — ground top face not culled (issue #73)', () => {
+  const world = buildWorld([
+    { x: 0, y: 0, z: 0, name: 'grass_block' },
+    { x: 0, y: 1, z: 0, name: 'cactus' }
+  ])
+  // Pre-fix: grass top culled by cactus cosmetic cap → 14 quads. Post-fix: grass top drawn → 15.
+  assertMesherParity(world, 15)
+})
+
+test('culling regression: cactus stacked on cactus — no over-cull holes', () => {
+  const world = buildWorld([
+    { x: 0, y: 0, z: 0, name: 'cactus' },
+    { x: 0, y: 1, z: 0, name: 'cactus' }
+  ])
+  assertMesherParity(world, 12)
+})
+
+test('culling regression: cactus beside solid block — side faces still drawn', () => {
+  const world = buildWorld([
+    { x: 0, y: 0, z: 0, name: 'dirt' },
+    { x: 1, y: 0, z: 0, name: 'cactus' }
+  ])
+  expect(countQuadsFromLegacy(world)).toBeGreaterThan(9)
+  expect(countQuadsFromWasm(world, false)).toBeGreaterThan(9)
+})
+
 test('shader cubes: dirt UP face culled under farmland', () => {
   const world = buildWorld([
     { x: 0, y: 0, z: 0, name: 'dirt' },
