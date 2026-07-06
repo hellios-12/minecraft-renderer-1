@@ -8,7 +8,7 @@ const threeVersion = parseInt(THREE.REVISION.replaceAll(/\D+/g, ''), 10)
 class StarfieldMaterial extends THREE.ShaderMaterial {
   constructor() {
     super({
-      uniforms: { time: { value: 0 }, fade: { value: 1 } },
+      uniforms: { time: { value: 0 } },
       vertexShader: /* glsl */ `
         uniform float time;
         attribute float size;
@@ -22,13 +22,9 @@ class StarfieldMaterial extends THREE.ShaderMaterial {
         }`,
       fragmentShader: /* glsl */ `
         uniform sampler2D pointTexture;
-        uniform float fade;
         varying vec3 vColor;
         void main() {
-          // fade scales star brightness (0 = invisible). With additive blending this is
-          // the only way to dim stars — scene fog never reaches this shader. Driven by the
-          // rain state so stars disappear in rain like in vanilla.
-          gl_FragColor = vec4(vColor * fade, 1.0);
+          gl_FragColor = vec4(vColor, 1.0);
 
           #include <tonemapping_fragment>
           #include <${threeVersion >= 154 ? 'colorspace_fragment' : 'encodings_fragment'}>
@@ -42,8 +38,6 @@ export class StarfieldModule implements RendererModuleController {
   private timer = new THREE.Timer()
   private enabled = false
   private currentTime?: number
-  /** Current star brightness multiplier; lerps toward 0 while raining, 1 otherwise. */
-  private fade = 1
 
   constructor(private readonly worldRenderer: WorldRendererThree) {}
 
@@ -75,20 +69,13 @@ export class StarfieldModule implements RendererModuleController {
     return this.currentTime > nightTime && this.currentTime < morningStart
   }
 
-  render?: (deltaTime: number) => void = deltaTime => {
+  render?: (deltaTime: number) => void = () => {
     if (!this.points) return
     this.points.position.set(0, 0, 0)
 
     const material = this.points.material as StarfieldMaterial
     this.timer.update(performance.now())
     material.uniforms.time.value = this.timer.getElapsed() * 0.2
-
-    // Fade stars out while raining (vanilla scales star brightness by 1 - rainLevel).
-    // isRaining is a boolean here, so ease toward the target instead of snapping.
-    const target = this.worldRenderer.worldRendererConfig.isRaining ? 0 : 1
-    const t = Math.min(1, deltaTime * 2)
-    this.fade += (target - this.fade) * t
-    material.uniforms.fade.value = this.fade
   }
 
   /**
