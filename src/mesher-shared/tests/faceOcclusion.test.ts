@@ -72,6 +72,42 @@ test('getOcclusionShape: full cube covers entire plane', () => {
   }
 })
 
+test('getOcclusionShape: cactus down occlusion is inset, not full footprint', () => {
+  const mcData = MinecraftData(VERSION)
+  const cactusId = mcData.blocksByName.cactus!.defaultState
+  const downShape = getOcclusionShape(VERSION, cactusId, [0, -1, 0], blockProvider())
+  expect(downShape[0]! & 1).toBe(0)
+  expect(downShape[0]! & (1 << 15)).toBe(0)
+  let covered = 0
+  for (let row = 0; row < 16; row++) {
+    for (let col = 0; col < 16; col++) {
+      if (downShape[row]! & (1 << col)) covered++
+    }
+  }
+  expect(covered).toBe(14 * 14)
+  expect(getOcclusionShape(VERSION, cactusId, [0, 1, 0], blockProvider())[0]).toBe(0)
+})
+
+test('faceIsCulled: grass top not culled by cactus above', () => {
+  const mcData = MinecraftData(VERSION)
+  const grassId = mcData.blocksByName.grass_block!.defaultState
+  const cactusId = mcData.blocksByName.cactus!.defaultState
+  const provider = blockProvider()
+  const blockObj = PrismarineBlockLoader(VERSION).fromStateId(grassId, 1)
+  const models = provider.getAllResolvedModels0_1({ name: blockObj.name, properties: blockObj.getProperties() }, false)
+  const element = models[0]![0]!.elements![0]!
+  expect(faceIsCulled(VERSION, element, 'up', cactusId, { stateId: grassId, name: 'grass_block' }, provider, [0, 1, 0], null)).toBe(false)
+})
+
+test('getOcclusionShape: soul sand keeps full render-model occlusion despite shorter collision', () => {
+  const mcData = MinecraftData(VERSION)
+  const soulSandId = mcData.blocksByName.soul_sand!.defaultState
+  const downShape = getOcclusionShape(VERSION, soulSandId, [0, -1, 0], blockProvider())
+  for (let row = 0; row < 16; row++) {
+    expect(downShape[row]).toBe(0xffff)
+  }
+})
+
 test('getOcclusionShape: farmland side is shorter than full height', () => {
   const mcData = MinecraftData(VERSION)
   const farmlandId = mcData.blocksByName.farmland!.defaultState
