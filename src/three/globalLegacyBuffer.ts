@@ -95,6 +95,8 @@ export type GlobalLegacyBufferOptions = {
   name?: string
   initialCapacityQuads?: number
   growthIncrementQuads?: number
+  /** When true, pre-sort blend indices on addSection and support per-quad reorder. */
+  sortBlend?: boolean
 }
 
 export type VisibleSectionSpan = { key: string; distSq: number }
@@ -125,6 +127,7 @@ export class GlobalLegacyBuffer {
   readonly material: THREE.ShaderMaterial
 
   private readonly growthIncrementQuads: number
+  private readonly blendSort: boolean
   private capacityQuads: number
   private positions: Float32Array
   private colors: Float32Array
@@ -133,10 +136,15 @@ export class GlobalLegacyBuffer {
   private uvs: Float32Array
   private aOrigin: Float32Array
   private indices: Uint32Array
+  /** Section-relative world centroid per physical quad (3 floats each). */
+  private quadCentroids: Float32Array
+  /** Per-quad local index template (6 bytes each, values 0..3). */
+  private quadIndexTemplate: Uint8Array
   private readonly sectionSlots = new Map<string, { start: number; count: number }>()
   private freeList: Array<{ start: number; count: number }> = []
   private highWatermark = 0
   private pendingRanges: Array<{ start: number; end: number }> = []
+  private indexPendingRanges: Array<{ start: number; end: number }> = []
   private readonly _spanScratch: Array<{ start: number; count: number }> = []
   private renderOrigin: RenderOrigin = { x: 0, y: 0, z: 0 }
   private layoutVersion = 0
@@ -145,12 +153,20 @@ export class GlobalLegacyBuffer {
   private uploadEpoch = 0
   private visibleIndexSpans: LegacyDrawSpan[] = []
   private readonly _drawScratch: LegacyMultiDrawScratch = createLegacyMultiDrawScratch()
+  /** Reusable scratch for applyBlendSort; grown on demand, never allocated per call. */
+  private _sortOrder: Uint32Array = new Uint32Array(0)
+  private _sortDistSq: Float64Array = new Float64Array(0)
   private multiDrawCaps: LegacyMultiDrawCaps | null = null
   private debugOverlay = false
+  private _camX = 0
+  private _camY = 0
+  private _camZ = 0
+  private _camInitialized = false
 
   constructor(material: THREE.ShaderMaterial, scene: THREE.Object3D, opts?: GlobalLegacyBufferOptions) {
     this.material = material
     this.growthIncrementQuads = opts?.growthIncrementQuads ?? DEFAULT_GROWTH_INCREMENT_QUADS
+    this.blendSort = opts?.sortBlend ?? false
     this.capacityQuads = opts?.initialCapacityQuads ?? DEFAULT_INITIAL_CAPACITY_QUADS
     const maxVerts = this.capacityQuads * VERTS_PER_QUAD
     this.positions = new Float32Array(maxVerts * FLOATS_PER_VERT)
@@ -160,6 +176,8 @@ export class GlobalLegacyBuffer {
     this.uvs = new Float32Array(maxVerts * FLOATS_PER_UV_VERT)
     this.aOrigin = new Float32Array(maxVerts * FLOATS_PER_VERT)
     this.indices = new Uint32Array(this.capacityQuads * INDICES_PER_QUAD)
+    this.quadCentroids = new Float32Array(this.capacityQuads * 3)
+    this.quadIndexTemplate = new Uint8Array(this.capacityQuads * INDICES_PER_QUAD)
 
     const geometry = new THREE.BufferGeometry()
     const mkAttr = (arr: Float32Array, itemSize: number, name: string) => {
@@ -304,9 +322,37 @@ export class GlobalLegacyBuffer {
       this.indices[dstIndexBase + i] = geo.indices[i]! + vertexBase
     }
 
+    for (let q = 0; q < quadCount; q++) {
+      const physQuad = slot.start + q
+      const localVertBase = q * VERTS_PER_QUAD
+      const posBase = localVertBase * FLOATS_PER_VERT
+      let cx = 0
+      let cy = 0
+      let cz = 0
+      for (let v = 0; v < VERTS_PER_QUAD; v++) {
+        const p = posBase + v * FLOATS_PER_VERT
+        cx += geo.positions[p]!
+        cy += geo.positions[p + 1]!
+        cz += geo.positions[p + 2]!
+      }
+      const centBase = physQuad * 3
+      this.quadCentroids[centBase] = cx / VERTS_PER_QUAD
+      this.quadCentroids[centBase + 1] = cy / VERTS_PER_QUAD
+      this.quadCentroids[centBase + 2] = cz / VERTS_PER_QUAD
+
+      const idxBase = q * INDICES_PER_QUAD
+      const tmplBase = physQuad * INDICES_PER_QUAD
+      for (let i = 0; i < INDICES_PER_QUAD; i++) {
+        this.quadIndexTemplate[tmplBase + i] = geo.indices[idxBase + i]! - localVertBase
+      }
+    }
+
     this.sectionSlots.set(sectionKey, slot)
     if (isRemesh && previousSlot) {
       this.pendingReplace.set(sectionKey, { oldStart: previousSlot.start, oldCount: previousSlot.count })
+    }
+    if (this.blendSort && this._camInitialized && quadCount >= 2) {
+      this.applyBlendSort(slot.start, quadCount, this._camX, this._camY, this._camZ)
     }
     this.markDirty(slot.start, slot.start + quadCount - 1)
     this.syncDefaultDrawGroups()
@@ -557,6 +603,70 @@ export class GlobalLegacyBuffer {
     return this.pendingRanges.length > 0
   }
 
+  hasPendingIndexUploads(): boolean {
+    return this.indexPendingRanges.length > 0
+  }
+
+  /**
+   * Reorder a section's index buffer back-to-front by quad centroid distance to camera.
+   * Does not bump layoutVersion or uploadEpoch (draw spans unchanged).
+   */
+  reorderSectionBlendIndices(sectionKey: string, camX: number, camY: number, camZ: number): boolean {
+    const slot = this.sectionSlots.get(sectionKey)
+    if (!slot) return false
+    if (this.pendingMove?.key === sectionKey) return false
+    if (this.pendingReplace.has(sectionKey)) return false
+    if (!this.rangeFullyUploaded(slot.start, slot.start + slot.count - 1)) return false
+    if (slot.count < 2) return false
+
+    this.applyBlendSort(slot.start, slot.count, camX, camY, camZ)
+    this.markIndexDirty(slot.start, slot.start + slot.count - 1)
+    return true
+  }
+
+  /** Rewrite indices for [slotStart, slotStart+slotCount) back-to-front by quad centroid distance. */
+  private applyBlendSort(slotStart: number, slotCount: number, camX: number, camY: number, camZ: number): void {
+    const dstFloatBase = slotStart * VERTS_PER_QUAD * FLOATS_PER_VERT
+    const sx = this.aOrigin[dstFloatBase]! + this.renderOrigin.x
+    const sy = this.aOrigin[dstFloatBase + 1]! + this.renderOrigin.y
+    const sz = this.aOrigin[dstFloatBase + 2]! + this.renderOrigin.z
+
+    if (this._sortOrder.length < slotCount) {
+      this._sortOrder = new Uint32Array(slotCount)
+      this._sortDistSq = new Float64Array(slotCount)
+    }
+    const order = this._sortOrder
+    const distSq = this._sortDistSq
+    for (let p = 0; p < slotCount; p++) {
+      order[p] = p
+      const physQuad = slotStart + p
+      const centBase = physQuad * 3
+      const wx = sx + this.quadCentroids[centBase]!
+      const wy = sy + this.quadCentroids[centBase + 1]!
+      const wz = sz + this.quadCentroids[centBase + 2]!
+      const dx = wx - camX
+      const dy = wy - camY
+      const dz = wz - camZ
+      distSq[p] = dx * dx + dy * dy + dz * dz
+    }
+    const orderView = order.subarray(0, slotCount)
+    orderView.sort((a, b) => {
+      const d = distSq[b]! - distSq[a]!
+      if (d !== 0) return d
+      return a - b
+    })
+
+    for (let k = 0; k < slotCount; k++) {
+      const src = orderView[k]!
+      const srcVertBase = (slotStart + src) * VERTS_PER_QUAD
+      const dstIdxBase = (slotStart + k) * INDICES_PER_QUAD
+      const tmplBase = (slotStart + src) * INDICES_PER_QUAD
+      for (let i = 0; i < INDICES_PER_QUAD; i++) {
+        this.indices[dstIdxBase + i] = srcVertBase + this.quadIndexTemplate[tmplBase + i]!
+      }
+    }
+  }
+
   uploadDirtyRange(): void {
     const r = this.pendingRanges[0]
     if (!r) return
@@ -612,6 +722,27 @@ export class GlobalLegacyBuffer {
     this.uploadEpoch++
   }
 
+  uploadDirtyIndexRange(): void {
+    const r = this.indexPendingRanges[0]
+    if (!r) return
+
+    const quadOffset = r.start
+    const quadCount = Math.min(r.end - r.start + 1, MAX_UPLOAD_QUADS_PER_FRAME)
+    const indexOffset = quadOffset * INDICES_PER_QUAD
+    const indexCount = quadCount * INDICES_PER_QUAD
+
+    const indexAttr = this.mesh.geometry.index as THREE.BufferAttribute
+    indexAttr.clearUpdateRanges()
+    indexAttr.addUpdateRange(indexOffset, indexCount)
+    indexAttr.needsUpdate = true
+
+    if (quadOffset + quadCount > r.end) {
+      this.indexPendingRanges.shift()
+    } else {
+      r.start = quadOffset + quadCount
+    }
+  }
+
   setRenderOrigin(renderOrigin: RenderOrigin): void {
     this.renderOrigin = { ...renderOrigin }
   }
@@ -636,6 +767,10 @@ export class GlobalLegacyBuffer {
   }
 
   setCameraOrigin(x: number, y: number, z: number): void {
+    this._camX = x
+    this._camY = y
+    this._camZ = z
+    this._camInitialized = true
     const { originDelta, cameraOriginFrac } = computeCameraRelativeUniforms(this.renderOrigin, x, y, z)
     const u = this.material.uniforms.u_originDelta
     if (u?.value?.set) u.value.set(originDelta.x, originDelta.y, originDelta.z)
@@ -668,6 +803,7 @@ export class GlobalLegacyBuffer {
     this.freeList.length = 0
     this.highWatermark = 0
     this.pendingRanges.length = 0
+    this.indexPendingRanges.length = 0
     this.pendingMove = null
     this.pendingReplace.clear()
     this.uploadEpoch = 0
@@ -685,6 +821,29 @@ export class GlobalLegacyBuffer {
     this.pendingRanges.push({ start, end })
     this.pendingRanges.sort((a, b) => a.start - b.start)
     this.mergePendingRanges()
+  }
+
+  private markIndexDirty(start: number, end: number): void {
+    this.indexPendingRanges.push({ start, end })
+    this.indexPendingRanges.sort((a, b) => a.start - b.start)
+    this.mergeIndexPendingRanges()
+  }
+
+  private mergeIndexPendingRanges(): void {
+    if (this.indexPendingRanges.length < 2) return
+    const merged: Array<{ start: number; end: number }> = []
+    let cur = this.indexPendingRanges[0]!
+    for (let i = 1; i < this.indexPendingRanges.length; i++) {
+      const next = this.indexPendingRanges[i]!
+      if (next.start <= cur.end + 1) {
+        cur = { start: cur.start, end: Math.max(cur.end, next.end) }
+      } else {
+        merged.push(cur)
+        cur = next
+      }
+    }
+    merged.push(cur)
+    this.indexPendingRanges = merged
   }
 
   private mergePendingRanges(): void {
@@ -834,6 +993,14 @@ export class GlobalLegacyBuffer {
     for (let i = 0; i < indexLen; i++) {
       this.indices[newIndexBase + i] = this.indices[oldIndexBase + i]! + vertDelta
     }
+
+    const oldCentroidBase = oldStart * 3
+    const newCentroidBase = newStart * 3
+    this.quadCentroids.copyWithin(newCentroidBase, oldCentroidBase, oldCentroidBase + quadCount * 3)
+
+    const oldTemplateBase = oldStart * INDICES_PER_QUAD
+    const newTemplateBase = newStart * INDICES_PER_QUAD
+    this.quadIndexTemplate.copyWithin(newTemplateBase, oldTemplateBase, oldTemplateBase + quadCount * INDICES_PER_QUAD)
   }
 
   private rangeFullyUploaded(start: number, end: number): boolean {
@@ -897,6 +1064,8 @@ export class GlobalLegacyBuffer {
     const nUv = new Float32Array(newMaxVerts * FLOATS_PER_UV_VERT)
     const nOrigin = new Float32Array(newMaxVerts * FLOATS_PER_VERT)
     const nIdx = new Uint32Array(newCap * INDICES_PER_QUAD)
+    const nCentroids = new Float32Array(newCap * 3)
+    const nTemplate = new Uint8Array(newCap * INDICES_PER_QUAD)
 
     nPos.set(this.positions)
     nCol.set(this.colors)
@@ -905,6 +1074,8 @@ export class GlobalLegacyBuffer {
     nUv.set(this.uvs)
     nOrigin.set(this.aOrigin)
     nIdx.set(this.indices)
+    nCentroids.set(this.quadCentroids)
+    nTemplate.set(this.quadIndexTemplate)
 
     this.positions = nPos
     this.colors = nCol
@@ -913,6 +1084,8 @@ export class GlobalLegacyBuffer {
     this.uvs = nUv
     this.aOrigin = nOrigin
     this.indices = nIdx
+    this.quadCentroids = nCentroids
+    this.quadIndexTemplate = nTemplate
     this.capacityQuads = newCap
 
     const geometry = this.mesh.geometry
@@ -937,5 +1110,6 @@ export class GlobalLegacyBuffer {
     geometry.setIndex(indexAttr)
 
     this.pendingRanges.length = 0
+    this.indexPendingRanges.length = 0
   }
 }
