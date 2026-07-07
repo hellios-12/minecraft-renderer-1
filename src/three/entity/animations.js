@@ -147,27 +147,27 @@ export class WalkingGeneralSwing extends PlayerAnimation {
     }
 
     if (this.isRunning) {
-      player.skin.leftLeg.rotation.x = Math.cos(t + Math.PI) * 1.3
-      player.skin.rightLeg.rotation.x = Math.cos(t) * 1.3
+      player.skin.leftLeg.rotation.x += Math.cos(t + Math.PI) * 1.3 * this._moveBlend
+      player.skin.rightLeg.rotation.x += Math.cos(t) * 1.3 * this._moveBlend
     } else {
-      player.skin.leftLeg.rotation.x = Math.sin(t) * 0.5
-      player.skin.rightLeg.rotation.x = Math.sin(t + Math.PI) * 0.5
+      player.skin.leftLeg.rotation.x += Math.sin(t) * 0.5 * this._moveBlend
+      player.skin.rightLeg.rotation.x += Math.sin(t + Math.PI) * 0.5 * this._moveBlend
     }
 
     if (this.isRunning) {
-      player.skin.leftArm.rotation.x = Math.cos(t) * 1.5
-      player.skin.rightArm.rotation.x = Math.cos(t + Math.PI) * 1.5
+      player.skin.leftArm.rotation.x += Math.cos(t) * 1.5 * this._moveBlend
+      player.skin.rightArm.rotation.x += Math.cos(t + Math.PI) * 1.5 * this._moveBlend
 
       const basicArmRotationZ = Math.PI * 0.1
-      player.skin.leftArm.rotation.z = Math.cos(t) * 0.1 + basicArmRotationZ
-      player.skin.rightArm.rotation.z = Math.cos(t + Math.PI) * 0.1 - basicArmRotationZ
+      player.skin.leftArm.rotation.z += (Math.cos(t) * 0.1 + basicArmRotationZ) * this._moveBlend
+      player.skin.rightArm.rotation.z += (Math.cos(t + Math.PI) * 0.1 - basicArmRotationZ) * this._moveBlend
     } else {
-      player.skin.leftArm.rotation.x = Math.sin(t + Math.PI) * 0.5
-      player.skin.rightArm.rotation.x = Math.sin(t) * 0.5
+      player.skin.leftArm.rotation.x += Math.sin(t + Math.PI) * 0.5 * this._moveBlend
+      player.skin.rightArm.rotation.x += Math.sin(t) * 0.5 * this._moveBlend
 
       const basicArmRotationZ = Math.PI * 0.02
-      player.skin.leftArm.rotation.z = Math.cos(t) * 0.03 + basicArmRotationZ
-      player.skin.rightArm.rotation.z = Math.cos(t + Math.PI) * 0.03 - basicArmRotationZ
+      player.skin.leftArm.rotation.z += (Math.cos(t) * 0.03 + basicArmRotationZ) * this._moveBlend
+      player.skin.rightArm.rotation.z += (Math.cos(t + Math.PI) * 0.03 - basicArmRotationZ) * this._moveBlend
     }
 
     if (this._swingTime !== null) {
@@ -178,15 +178,15 @@ export class WalkingGeneralSwing extends PlayerAnimation {
     }
 
     if (this.isRunning) {
-      player.rotation.z = Math.cos(t + Math.PI) * 0.01
+      player.rotation.z = Math.cos(t + Math.PI) * 0.01 * this._moveBlend
     }
 
     if (this.isRunning) {
       const basicCapeRotationX = Math.PI * 0.3
-      player.cape.rotation.x = Math.sin(t * 2) * 0.1 + basicCapeRotationX
+      player.cape.rotation.x += (Math.sin(t * 2) * 0.1 + basicCapeRotationX) * this._moveBlend
     } else {
       const basicCapeRotationX = Math.PI * 0.06
-      player.cape.rotation.x = Math.sin(t / 1.5) * 0.06 + basicCapeRotationX
+      player.cape.rotation.x += (Math.sin(t / 1.5) * 0.06 + basicCapeRotationX) * this._moveBlend
     }
 
     if (reset) {
