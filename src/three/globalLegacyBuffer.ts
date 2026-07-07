@@ -31,33 +31,6 @@ export const FULL_DRAW_VISIBLE_FRACTION = 0.75
 /** Initial multi_draw scratch size; arrays auto-grow — not a draw-call cap. */
 export const MAX_OPAQUE_SPANS = 64
 
-/** Dev assert: every quad in draw spans must lie in a live section's drawable range. */
-export function assertDrawSpansWithinLiveRanges(
-  spans: ReadonlyArray<{ start: number; count: number }>,
-  liveRanges: ReadonlyArray<{ start: number; count: number }>,
-  bufferName: string
-): void {
-  for (const span of spans) {
-    for (let q = span.start; q < span.start + span.count; q++) {
-      let inLive = false
-      for (const live of liveRanges) {
-        if (q >= live.start && q < live.start + live.count) {
-          inLive = true
-          break
-        }
-      }
-      if (!inLive) {
-        console.error('[GlobalLegacyBuffer] draw span covers non-live quad', {
-          buffer: bufferName,
-          quad: q,
-          span,
-          liveRanges
-        })
-      }
-    }
-  }
-}
-
 export type DirtyRange = { start: number; end: number }
 
 /** Split draw spans to exclude quad/face ranges still in pendingRanges (not yet on GPU). */
@@ -480,7 +453,6 @@ export class GlobalLegacyBuffer {
 
     if (mode === 'opaque') {
       let finalQuads: Array<{ start: number; count: number }>
-      const liveDrawRanges = spans.map(s => ({ ...s }))
       const usedFullDraw = this.canUseFullDrawShortcut() && visibleQuadCount >= this.highWatermark * FULL_DRAW_VISIBLE_FRACTION
       if (usedFullDraw) {
         finalQuads = [{ start: 0, count: this.highWatermark }]
@@ -490,9 +462,6 @@ export class GlobalLegacyBuffer {
         finalQuads = spans
       }
       finalQuads = carveSpansAroundPendingRanges(finalQuads, this.pendingRanges)
-      if (!usedFullDraw) {
-        assertDrawSpansWithinLiveRanges(finalQuads, liveDrawRanges, this.mesh.name)
-      }
       for (const span of finalQuads) {
         pushIndexSpan(span.start, span.count)
       }

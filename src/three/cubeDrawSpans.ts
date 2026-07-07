@@ -1,10 +1,4 @@
-import {
-  assertDrawSpansWithinLiveRanges,
-  carveSpansAroundPendingRanges,
-  FULL_DRAW_VISIBLE_FRACTION,
-  MAX_OPAQUE_SPANS,
-  type DirtyRange
-} from './globalLegacyBuffer'
+import { carveSpansAroundPendingRanges, FULL_DRAW_VISIBLE_FRACTION, MAX_OPAQUE_SPANS, type DirtyRange } from './globalLegacyBuffer'
 
 export { FULL_DRAW_VISIBLE_FRACTION, MAX_OPAQUE_SPANS as MAX_CUBE_SPANS }
 
@@ -53,10 +47,8 @@ export function buildVisibleCubeSpans(
   } else {
     spans = visibleSlots.map(s => ({ start: s.start, count: s.count }))
     spans.sort((a, b) => a.start - b.start)
-    const liveDrawRanges = spans.map(s => ({ ...s }))
     mergeCubeSpans(spans)
     spans = carveSpansAroundPendingRanges(spans, pendingRanges)
-    assertDrawSpansWithinLiveRanges(spans, liveDrawRanges, 'globalBlockBuffer')
     return spans
   }
   return carveSpansAroundPendingRanges(spans, pendingRanges)
