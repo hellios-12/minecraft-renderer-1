@@ -60,13 +60,10 @@ export interface SectionObject extends THREE.Group {
   signsContainer?: THREE.Group
   headsContainer?: THREE.Group
   bannersContainer?: THREE.Group
-  boxHelper?: THREE.BoxHelper
   /**
-   * World-space coordinates of the section origin. Cached so that
-   * {@link ChunkMeshManager.updateBoxHelper} can position lazily-created
-   * border helpers correctly under camera-relative rendering, where
-   * `mesh.position` is proxied to (world - sceneOrigin) and cannot be
-   * reused directly for objects that are tracked separately.
+   * World-space coordinates of the section origin. Cached for legacy cull /
+   * matrix setup under camera-relative rendering, where `mesh.position` is
+   * proxied to (world - sceneOrigin) and cannot be reused directly.
    */
   worldX?: number
   worldY?: number
@@ -129,13 +126,6 @@ export class ChunkMeshManager {
   private minPoolSize!: number
   private readonly signHeadsRenderer: SignHeadsRenderer
   private readonly blockEntityLightRegistry = new BlockEntityLightRegistry()
-  /**
-   * Shared transparent material used as the basis for the wireframe chunk
-   * border `BoxHelper` created lazily in {@link updateBoxHelper}. Kept on the
-   * manager so the BoxHelper machinery doesn't allocate a new material per
-   * section.
-   */
-  private readonly chunkBoxMaterial = new THREE.MeshBasicMaterial({ color: 0x00_00_00, transparent: true, opacity: 0 })
   /** Shared across all sections — atlas/tint uniforms updated via {@link syncCubeShaderUniforms}. */
   private cubeShaderMaterial: THREE.ShaderMaterial | null = null
   /** Per-section blend meshes — atlas + camera origin updated each frame. */
@@ -1077,13 +1067,6 @@ export class ChunkMeshManager {
     this.scene.add(sectionObject)
     sectionObject.matrixAutoUpdate = false
 
-    // Create chunk border helper eagerly when the option is on so freshly
-    // streamed sections immediately get the F3+G yellow wireframe instead of
-    // appearing only on the next toggle.
-    if (this.worldRenderer.displayOptions?.inWorldRenderingConfig?.showChunkBorders) {
-      this.updateBoxHelper(sectionKey, true)
-    }
-
     // Honor "Batch Chunks Display" (`_renderByChunks`): keep this section's
     // mesh hidden until the whole chunk has finished meshing, so users see a
     // chunk appear as a single 16xHx16 tile instead of streaming per-section.
@@ -1334,21 +1317,6 @@ export class ChunkMeshManager {
       }
       this.worldRenderer.sceneOrigin.removeAndUntrackAll(sectionObject)
       this.scene.remove(sectionObject)
-      // boxHelper lives directly on the scene (so it stays world-anchored
-      // under camera-relative rendering), so it must be cleaned up explicitly
-      // — `removeAndUntrackAll` above only walks `sectionObject` descendants.
-      if (sectionObject.boxHelper) {
-        this.worldRenderer.sceneOrigin.removeAndUntrack(sectionObject.boxHelper)
-        this.scene.remove(sectionObject.boxHelper)
-        sectionObject.boxHelper.geometry.dispose()
-        const helperMat = sectionObject.boxHelper.material as THREE.Material | THREE.Material[]
-        if (Array.isArray(helperMat)) {
-          for (const m of helperMat) m.dispose()
-        } else {
-          helperMat.dispose()
-        }
-        sectionObject.boxHelper = undefined
-      }
       delete this.sectionObjects[sectionKey]
       if (!opts?.forRemesh) {
         this.worldRenderer.getModule<{ onSectionRemoved?: (key: string) => void }>('futuristicReveal')?.onSectionRemoved?.(sectionKey)
@@ -1402,51 +1370,6 @@ export class ChunkMeshManager {
    */
   getSectionObject(sectionKey: string): SectionObject | undefined {
     return this.sectionObjects[sectionKey]
-  }
-
-  /**
-   * Update box helper for a section
-   */
-  updateBoxHelper(sectionKey: string, showChunkBorders: boolean, chunkBoxMaterial: THREE.Material = this.chunkBoxMaterial) {
-    const sectionObject = this.sectionObjects[sectionKey]
-    if (!sectionObject) return
-
-    if (showChunkBorders) {
-      if (!sectionObject.boxHelper) {
-        // Build a 16x16x16 reference mesh in world coordinates so BoxHelper's
-        // `setFromObject` produces the correct geometry. The reference mesh is
-        // not added to the scene; only the resulting BoxHelper is.
-        const staticChunkMesh = new THREE.Mesh(new THREE.BoxGeometry(16, 16, 16), chunkBoxMaterial)
-        const boxHelper = new THREE.BoxHelper(staticChunkMesh, 0xff_ff_00)
-        boxHelper.name = 'helper'
-        // Add directly to the scene and track it through sceneOrigin so that
-        // camera-relative rendering (floating origin) keeps the helper pinned
-        // to its world coordinates instead of following the camera.
-        const sx = sectionObject.worldX ?? 0
-        const sy = sectionObject.worldY ?? 0
-        const sz = sectionObject.worldZ ?? 0
-        this.worldRenderer.sceneOrigin.track(boxHelper, { updateMatrix: true })
-        boxHelper.position.set(sx, sy, sz)
-        boxHelper.updateMatrix()
-        this.scene.add(boxHelper)
-        sectionObject.boxHelper = boxHelper
-      }
-      sectionObject.boxHelper.visible = true
-    } else if (sectionObject.boxHelper) {
-      sectionObject.boxHelper.visible = false
-    }
-  }
-
-  /**
-   * Create / toggle chunk border helpers for every active section. Used by
-   * `WorldRendererThree.updateShowChunksBorder` so the F3+G hotkey works
-   * after the move from `WorldBlockGeometry` (which created the helpers
-   * eagerly per section) to the pooled `ChunkMeshManager`.
-   */
-  updateAllBoxHelpers(showChunkBorders: boolean) {
-    for (const sectionKey of Object.keys(this.sectionObjects)) {
-      this.updateBoxHelper(sectionKey, showChunkBorders)
-    }
   }
 
   /**
@@ -1662,7 +1585,6 @@ export class ChunkMeshManager {
 
     this.meshPool.length = 0
     this.activeSections.clear()
-    this.chunkBoxMaterial.dispose()
     this.shaderSectionRaycastBoxes.clear()
     this.lastBufferStateKey = ''
     this.globalBlockBuffer?.dispose()
