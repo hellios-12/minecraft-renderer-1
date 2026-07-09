@@ -10,6 +10,8 @@ import { MesherGeometryOutput, HighestBlockInfo } from './shared'
 import { collectBlockEntityMetadata } from './blockEntityMetadata'
 import { preflatBlockCalculation, resolveBlockPropertiesForMeshing } from './blockPropertiesForMeshing'
 import { faceIsCulled, roundCardinalDir } from './faceOcclusion'
+import { getOccludingBlockMeta } from './occludingBlocks'
+import { packVisibilitySet, VisGraph } from './visGraph'
 
 export { preflatBlockCalculation, resolveBlockPropertiesForMeshing } from './blockPropertiesForMeshing'
 
@@ -539,12 +541,18 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
     indicesCount: 0
   }
 
+  const { occludingLookup } = getOccludingBlockMeta(world.config.version)
+  const visGraph = new VisGraph()
+
   const cursor = new Vec3(0, 0, 0)
   for (cursor.y = sy; cursor.y < sy + readHeight; cursor.y++) {
     for (cursor.z = sz; cursor.z < sz + 16; cursor.z++) {
       for (cursor.x = sx; cursor.x < sx + 16; cursor.x++) {
         let block = world.getBlock(cursor, blockProvider, attr)!
         if (INVISIBLE_BLOCKS.has(block.name)) continue
+        if (occludingLookup[block.stateId]) {
+          visGraph.setOpaque(cursor.x - sx, cursor.y - sy, cursor.z - sz)
+        }
         collectBlockEntityMetadata(block, cursor.x, cursor.y, cursor.z, attr, { disableBlockEntityTextures: world.config.disableBlockEntityTextures }, world)
         const biome = block.biome.name
 
@@ -678,6 +686,8 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
     delete attr.colors
     delete attr.uvs
   }
+
+  attr.visibilitySet = packVisibilitySet(visGraph.resolve())
 
   return attr
 }

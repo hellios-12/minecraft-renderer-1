@@ -215,6 +215,12 @@ export class GlobalLegacyBuffer {
     return this.visibleIndexSpans
   }
 
+  getVisibleQuadCount(): number {
+    let indices = 0
+    for (const s of this.visibleIndexSpans) indices += s.indexCount
+    return indices / INDICES_PER_QUAD
+  }
+
   private syncDefaultDrawGroups(): void {
     const geometry = this.mesh.geometry
     geometry.clearGroups()

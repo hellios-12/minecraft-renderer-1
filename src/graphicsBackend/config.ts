@@ -20,6 +20,9 @@ export const defaultWorldRendererConfig = {
   debugModelVariant: undefined as undefined | number[],
   futuristicReveal: false,
 
+  /** Master toggle for section occlusion graph (smart / cave cull). Disabled in spectator. */
+  smartCull: true,
+
   // Performance settings
   wasmMesher: true,
   /** Render full 1×1 cubes through the instanced shader path (requires WebGL2). */

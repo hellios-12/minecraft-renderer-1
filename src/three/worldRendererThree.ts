@@ -48,6 +48,25 @@ export class WorldRendererThree extends WorldRendererCommon {
   protected override isShaderCubeBlocksEnabled(): boolean {
     return this.worldRendererConfig.shaderCubeBlocks === true && !!this.renderer?.capabilities?.isWebGL2
   }
+
+  /** Section occlusion graph (smart / cave cull); forced off in spectator per issue #77. */
+  isSmartCullEnabled(): boolean {
+    return this.worldRendererConfig.smartCull !== false && this.reactiveDebugParams.smartCull !== false && this.playerStateReactive.gameMode !== 'spectator'
+  }
+
+  isSectionOcclusionVisible(sectionKey: string): boolean {
+    if (!this.isSmartCullEnabled()) return true
+    return this.chunkMeshManager.isSectionOcclusionVisible(sectionKey)
+  }
+
+  entitySectionKey(worldX: number, worldY: number, worldZ: number): string {
+    const sectionHeight = this.getSectionHeight()
+    const x = Math.floor(worldX / 16) * 16
+    const y = Math.floor(worldY / sectionHeight) * sectionHeight
+    const z = Math.floor(worldZ / 16) * 16
+    return `${x},${y},${z}`
+  }
+
   chunkMeshManager: ChunkMeshManager
   get sectionObjects() {
     return this.chunkMeshManager.sectionObjects
@@ -786,6 +805,8 @@ export class WorldRendererThree extends WorldRendererCommon {
           const s = gb.legacyBlend
           text += `LEG-B: ${formatCompact(s.used)}/${formatCompact(s.capacity)}q `
         }
+        const drawn = this.chunkMeshManager.getDrawnStats()
+        text += `DRAWN: ${formatCompact(drawn.cubeFaces)}f ${formatCompact(drawn.legacyOpaqueQuads)}q ${formatCompact(drawn.legacyBlendQuads)}q `
         text += `MEM: ${this.chunkMeshManager.getEstimatedMemoryUsage().total} `
         const camCollisionBytes = this.cameraCollisionBlockCache.getAllocatedBytes()
         if (camCollisionBytes > 0) {
@@ -1284,11 +1305,6 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
 
     let entitiesRenderMs = 0
-    if (!this.reactiveDebugParams.disableEntities) {
-      const entitiesStart = performance.now()
-      this.entities.render()
-      entitiesRenderMs = performance.now() - entitiesStart
-    }
 
     // eslint-disable-next-line @typescript-eslint/non-nullable-type-assertion-style
     const cam =
@@ -1339,9 +1355,17 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.chunkMeshManager.markCullDirtyIfBufferStateChanged()
     this.chunkMeshManager.setLegacyCameraOrigin(camX, camY, camZ)
     this.chunkMeshManager.updateCullDirtyFromCamera(cam, camX, camY, camZ)
+    const smartCull = this.isSmartCullEnabled()
+    this.chunkMeshManager.notifySmartCullChanged(smartCull)
     if (this.chunkMeshManager.cullDirty) {
-      this.chunkMeshManager.updateSectionCullAndSort(cam, this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
+      this.chunkMeshManager.updateSectionCullAndSort(cam, this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z, smartCull)
       this.chunkMeshManager.clearCullDirty()
+    }
+    this.chunkMeshManager.updateCaveCullingDebug(this.reactiveDebugParams.caveCullingDebug, smartCull)
+    if (!this.reactiveDebugParams.disableEntities) {
+      const entitiesStart = performance.now()
+      this.entities.render()
+      entitiesRenderMs = performance.now() - entitiesStart
     }
     this.chunkMeshManager.sortVisibleBlendSections(camX, camY, camZ)
     if (!didBlendAllAttrUpload && globalLegacyBlendBuffer?.hasPendingIndexUploads()) {

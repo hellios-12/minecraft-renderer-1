@@ -81,6 +81,8 @@ export type MesherGeometryOutput = {
     count: number
     formatVersion: 3
   }
+  /** Packed VisibilitySet (36 bits) for section occlusion / smart cull. */
+  visibilitySet?: number
 }
 
 export interface MesherMainEvents {

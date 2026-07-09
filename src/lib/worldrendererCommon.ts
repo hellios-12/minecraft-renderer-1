@@ -53,7 +53,10 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     chunksRenderBelowEnabled: false,
     chunksRenderDistanceOverride: undefined as number | undefined,
     chunksRenderDistanceEnabled: false,
-    disableEntities: false
+    disableEntities: false,
+    /** Tint section borders by occlusion BFS step (perf debug overlay). */
+    caveCullingDebug: false,
+    smartCull: true
     // disableParticles: false
   })
 

@@ -242,13 +242,13 @@ test('ChunkMeshManager: hidden section excluded from draw spans', () => {
   camera.lookAt(8, 8, 8)
   camera.updateMatrixWorld()
 
-  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  manager.updateSectionCullAndSort(camera, 8, 8, 20, false)
   expect(manager.globalLegacyBlendBuffer?.getVisibleIndexSpans().length).toBe(0)
 
   section.visible = true
   const blendBuf = manager.globalLegacyBlendBuffer!
   while (blendBuf.hasPendingUploads()) blendBuf.uploadDirtyRange()
-  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  manager.updateSectionCullAndSort(camera, 8, 8, 20, false)
   expect(manager.globalLegacyBlendBuffer?.getVisibleIndexSpans().length).toBeGreaterThan(0)
 
   manager.cleanupSection(key)
@@ -322,15 +322,15 @@ test('ChunkMeshManager: hidden cube section excluded from draw spans', () => {
   drainCubeUploads(manager)
 
   const camera = makeCullCamera()
-  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  manager.updateSectionCullAndSort(camera, 8, 8, 20, false)
   expect(manager.globalBlockBuffer?.getVisibleSpans().length).toBeGreaterThan(0)
 
   section.visible = false
-  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  manager.updateSectionCullAndSort(camera, 8, 8, 20, false)
   expect(manager.globalBlockBuffer?.getVisibleSpans().length).toBe(0)
 
   section.visible = true
-  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  manager.updateSectionCullAndSort(camera, 8, 8, 20, false)
   expect(manager.globalBlockBuffer?.getVisibleSpans().length).toBeGreaterThan(0)
 
   manager.cleanupSection(key)
@@ -345,7 +345,7 @@ test('ChunkMeshManager: finishChunkDisplay reveals cube spans and marks cull dir
   expect(manager.globalBlockBuffer?.hasSection(key)).toBe(true)
 
   const camera = makeCullCamera()
-  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  manager.updateSectionCullAndSort(camera, 8, 8, 20, false)
   expect(manager.globalBlockBuffer?.getVisibleSpans().length).toBe(0)
 
   const markCullDirtySpy = vi.spyOn(manager, 'markCullDirty')
@@ -354,7 +354,7 @@ test('ChunkMeshManager: finishChunkDisplay reveals cube spans and marks cull dir
   expect(markCullDirtySpy).toHaveBeenCalled()
 
   drainCubeUploads(manager)
-  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  manager.updateSectionCullAndSort(camera, 8, 8, 20, false)
   expect(manager.globalBlockBuffer?.getVisibleSpans().length).toBeGreaterThan(0)
 
   markCullDirtySpy.mockRestore()
