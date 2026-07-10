@@ -17,7 +17,14 @@ import { WorldRendererConfig } from './config'
 export type MaybePromise<T> = Promise<T> | T
 
 export interface SoundSystem {
-  playSound: (position: { x: number; y: number; z: number }, path: string, volume?: number, pitch?: number, timeout?: number) => void
+  playSound: (
+    position: { x: number; y: number; z: number },
+    path: string,
+    volume?: number,
+    pitch?: number,
+    timeout?: number,
+    attenuationDistance?: number
+  ) => void
   destroy: () => void
 }
 
