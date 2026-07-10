@@ -161,13 +161,7 @@ function renderWasmSection(world: World, shaderCubes = false): ExportedSection {
 }
 
 /** Inset stair riser in cell (bx, by, bz): normal along expectedNx, all four verts on the cell mid-x-plane and within the cell AABB. */
-function hasInsetHorizontalRiser(
-  section: ExportedSection,
-  bx: number,
-  by: number,
-  bz: number,
-  expectedNx: 1 | -1
-): boolean {
+function hasInsetHorizontalRiser(section: ExportedSection, bx: number, by: number, bz: number, expectedNx: 1 | -1): boolean {
   const pos = section.geometry.positions
   const norm = section.geometry.normals
   const idx = section.geometry.indices
@@ -197,24 +191,14 @@ function hasInsetHorizontalRiser(
       const px = pos[vi * 3]!
       const py = pos[vi * 3 + 1]!
       const pz = pos[vi * 3 + 2]!
-      return (
-        px >= minX - eps &&
-        px <= maxX + eps &&
-        py >= minY - eps &&
-        py <= maxY + eps &&
-        pz >= minZ - eps &&
-        pz <= maxZ + eps
-      )
+      return px >= minX - eps && px <= maxX + eps && py >= minY - eps && py <= maxY + eps && pz >= minZ - eps && pz <= maxZ + eps
     })
     if (inCell) return true
   }
   return false
 }
 
-function stairWithStoneNeighbor(
-  facing: 'east' | 'west' | 'south' | 'north',
-  stone: { x: number; y: number; z: number }
-): BlockSpec[] {
+function stairWithStoneNeighbor(facing: 'east' | 'west' | 'south' | 'north', stone: { x: number; y: number; z: number }): BlockSpec[] {
   return [
     { x: 0, y: 0, z: 0, name: 'cut_copper_stairs', props: { facing, half: 'bottom', shape: 'straight', waterlogged: false } },
     { x: stone.x, y: stone.y, z: stone.z, name: 'stone' }
