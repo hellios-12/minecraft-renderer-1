@@ -13,6 +13,7 @@ import { setBlockStatesData, getSectionGeometry } from '../../mesher-shared/mode
 import { resetFaceOcclusionCache } from '../../mesher-shared/faceOcclusion'
 import { convertChunkToWasm } from '../bridge/convertChunk'
 import { renderWasmOutputToGeometry } from '../bridge/render-from-wasm'
+import type { ExportedSection } from '../../mesher-shared/exportedGeometryTypes'
 
 const VERSION = '1.18.2'
 const SECTION_Y = 0
@@ -127,6 +128,81 @@ function assertMesherParity(world: World, expectedQuads: number) {
   expect(legacy).toBe(expectedQuads)
   expect(wasmLegacy).toBe(expectedQuads)
   expect(wasmShader).toBe(expectedQuads)
+}
+
+function renderWasmSection(world: World, shaderCubes = false): ExportedSection {
+  const column = world.getColumn(0, 0)!
+  const conversion = convertChunkToWasm(column, VERSION, 0, 0, SECTION_Y, SECTION_Y + SECTION_HEIGHT, SECTION_Y, SECTION_HEIGHT)
+  const wasmResult = wasmModule.generate_geometry(
+    0,
+    SECTION_Y,
+    0,
+    SECTION_HEIGHT,
+    SECTION_Y,
+    SECTION_Y + SECTION_HEIGHT,
+    SECTION_Y,
+    conversion.blockStates,
+    conversion.blockLight,
+    conversion.skyLight,
+    conversion.biomesArray,
+    conversion.invisibleBlocks,
+    conversion.transparentBlocks,
+    conversion.noAoBlocks,
+    conversion.cullIdenticalBlocks,
+    conversion.occludingBlocks,
+    true,
+    false,
+    15
+  )
+  return renderWasmOutputToGeometry(wasmResult, VERSION, '0,0,0', { x: 8, y: 8, z: 8 }, world, {
+    sectionHeight: SECTION_HEIGHT,
+    shaderCubes
+  })
+}
+
+/** Inset stair riser in cell (bx, by, bz): normal along expectedNx, all four verts on the cell mid-x-plane and within the cell AABB. */
+function hasInsetHorizontalRiser(section: ExportedSection, bx: number, by: number, bz: number, expectedNx: 1 | -1): boolean {
+  const pos = section.geometry.positions
+  const norm = section.geometry.normals
+  const idx = section.geometry.indices
+  const eps = 1e-3
+  const minX = (bx & 15) - 8
+  const maxX = minX + 1
+  const minY = (by & 15) - 8
+  const maxY = minY + 1
+  const minZ = (bz & 15) - 8
+  const maxZ = minZ + 1
+  const riserX = minX + 0.5
+
+  for (let i = 0; i < idx.length; i += 6) {
+    const vertIndices = [...new Set([idx[i], idx[i + 1], idx[i + 2], idx[i + 3], idx[i + 4], idx[i + 5]])]
+    if (vertIndices.length !== 4) continue
+
+    const nx = norm[vertIndices[0]! * 3]!
+    const ny = norm[vertIndices[0]! * 3 + 1]!
+    const nz = norm[vertIndices[0]! * 3 + 2]!
+    if (Math.abs(ny) > eps || Math.abs(nz) > eps) continue
+    if (Math.abs(nx - expectedNx) > eps) continue
+
+    const onRiserPlane = vertIndices.every(vi => Math.abs(pos[vi * 3]! - riserX) < eps)
+    if (!onRiserPlane) continue
+
+    const inCell = vertIndices.every(vi => {
+      const px = pos[vi * 3]!
+      const py = pos[vi * 3 + 1]!
+      const pz = pos[vi * 3 + 2]!
+      return px >= minX - eps && px <= maxX + eps && py >= minY - eps && py <= maxY + eps && pz >= minZ - eps && pz <= maxZ + eps
+    })
+    if (inCell) return true
+  }
+  return false
+}
+
+function stairWithStoneNeighbor(facing: 'east' | 'west' | 'south' | 'north', stone: { x: number; y: number; z: number }): BlockSpec[] {
+  return [
+    { x: 0, y: 0, z: 0, name: 'cut_copper_stairs', props: { facing, half: 'bottom', shape: 'straight', waterlogged: false } },
+    { x: stone.x, y: stone.y, z: stone.z, name: 'stone' }
+  ]
 }
 
 function farmlandFieldBlocks(): BlockSpec[] {
@@ -329,4 +405,60 @@ test('shader cubes: dirt side not culled beside bottom slab', () => {
   const wasmShader = countQuadsFromWasm(world, true)
   expect(wasmShader).toBe(legacy)
   expect(wasmShader).toBeGreaterThan(5)
+})
+
+test('culling regression: east-facing stair + stone to east — full silhouette, no inset riser drop (issue #81)', () => {
+  const world = buildWorld(stairWithStoneNeighbor('east', { x: 1, y: 0, z: 0 }))
+  assertMesherParity(world, 14)
+})
+
+test('culling regression: west-facing stair + stone to east — inset riser kept (issue #81)', () => {
+  const world = buildWorld(stairWithStoneNeighbor('west', { x: 1, y: 0, z: 0 }))
+  assertMesherParity(world, 16)
+  expect(hasInsetHorizontalRiser(renderWasmSection(world), 0, 0, 0, 1)).toBe(true)
+})
+
+test('culling regression: south-facing stair + stone to south — inset riser kept (issue #81)', () => {
+  const world = buildWorld(stairWithStoneNeighbor('south', { x: 0, y: 0, z: 1 }))
+  // Tall half faces south toward stone (east/west analog); stone's north face is culled.
+  assertMesherParity(world, 14)
+})
+
+test('culling regression: north-facing stair + stone to south — inset riser kept (issue #81)', () => {
+  const world = buildWorld([
+    { x: 0, y: 0, z: 0, name: 'cut_copper_stairs', props: { facing: 'north', half: 'bottom', shape: 'straight', waterlogged: false } },
+    { x: 0, y: 0, z: 1, name: 'stone' }
+  ])
+  assertMesherParity(world, 16)
+})
+
+test('culling regression: all horizontal facings beside occluding cube — parity table (issue #81)', () => {
+  const cases: Array<{ blocks: BlockSpec[]; quads: number }> = [
+    { blocks: stairWithStoneNeighbor('east', { x: 1, y: 0, z: 0 }), quads: 14 },
+    { blocks: stairWithStoneNeighbor('west', { x: 1, y: 0, z: 0 }), quads: 16 },
+    { blocks: stairWithStoneNeighbor('south', { x: 0, y: 0, z: 1 }), quads: 14 },
+    {
+      blocks: [
+        { x: 0, y: 0, z: 0, name: 'cut_copper_stairs', props: { facing: 'north', half: 'bottom', shape: 'straight', waterlogged: false } },
+        { x: 0, y: 0, z: 1, name: 'stone' }
+      ],
+      quads: 16
+    }
+  ]
+  for (const { blocks, quads } of cases) {
+    assertMesherParity(buildWorld(blocks), quads)
+  }
+})
+
+test('culling regression: sofa scene — acacia stairs risers beside stripped log (issue #81)', () => {
+  const world = buildWorld([
+    { x: 1, y: 0, z: 0, name: 'stripped_acacia_log' },
+    { x: 1, y: 1, z: 0, name: 'acacia_pressure_plate' },
+    { x: 0, y: 0, z: 0, name: 'acacia_stairs', props: { facing: 'west', half: 'bottom', shape: 'straight', waterlogged: false } },
+    { x: 2, y: 0, z: 0, name: 'acacia_stairs', props: { facing: 'east', half: 'bottom', shape: 'straight', waterlogged: false } }
+  ])
+  assertMesherParity(world, 31)
+  const section = renderWasmSection(world)
+  expect(hasInsetHorizontalRiser(section, 0, 0, 0, 1)).toBe(true)
+  expect(hasInsetHorizontalRiser(section, 2, 0, 0, -1)).toBe(true)
 })

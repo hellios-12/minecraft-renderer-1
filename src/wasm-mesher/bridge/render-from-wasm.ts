@@ -641,7 +641,7 @@ export function renderWasmOutputToGeometry(
         const doAO = (model as { ao?: boolean }).ao ?? cachedModel.boundingBox !== 'empty'
 
         let forceCullMask = 0
-        if (world) {
+        if (world && cachedModel.isCube) {
           const shaderCubeFaceNameToIndex: Record<string, number> = {
             up: 0,
             down: 1,
@@ -786,7 +786,11 @@ export function renderWasmOutputToGeometry(
           const maxy = element.to[1]
           const maxz = element.to[2]
 
-          if (faceIdx !== undefined && (block.visible_faces & (1 << faceIdx)) === 0) {
+          // `visible_faces` is a cell-boundary occlusion mask, so it may only cull faces
+          // that vanilla considers cullable at all — i.e. faces that declare `cullface`.
+          // Inset faces without it (a stair riser) are always drawn. Removing this guard
+          // is what broke issue #81 in 7ce1ebb.
+          if (matchingEFace.cullface && faceIdx !== undefined && (block.visible_faces & (1 << faceIdx)) === 0) {
             continue
           }
 
