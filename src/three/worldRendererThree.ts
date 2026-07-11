@@ -18,6 +18,7 @@ import { getMesh } from './entity/EntityMesh'
 import { armorModel } from './entity/armorModels'
 import { disposeObject, loadThreeJsTextureFromBitmap } from './threeJsUtils'
 import { CursorBlock } from './world/cursorBlock'
+import { ChunkBorders } from './world/chunkBorders'
 import { getItemUv } from './appShared'
 import { Entities } from './entities'
 import { ThreeJsSound } from './threeJsSound'
@@ -67,6 +68,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, alphaTest: 0.1 })
   itemsTexture!: THREE.Texture
   cursorBlock: CursorBlock
+  chunkBorders: ChunkBorders
   onRender: Array<(deltaTime: number) => void> = []
   private lastRenderTime = 0
   private lastSciFiTickMs = 0
@@ -189,6 +191,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.syncSkyLevelFromTime(this.timeOfTheDay)
 
     this.cursorBlock = new CursorBlock(this)
+    this.chunkBorders = new ChunkBorders(this)
     this.holdingBlock = createHoldingBlock(this)
     this.holdingBlockLeft = createHoldingBlock(this, true)
 
@@ -1270,6 +1273,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     const deltaTime = this.lastRenderTime > 0 ? Math.min(Math.max((start - this.lastRenderTime) / 1000, 0), 0.1) : 1 / 60
     this.lastRenderTime = start
     this.cursorBlock.render()
+    this.chunkBorders.render()
     this.updateSectionOffsets()
 
     // Update skybox position to follow camera
@@ -1442,9 +1446,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   updateShowChunksBorder(value: boolean) {
-    // Lazily create helpers on the first toggle (they are not created upfront
-    // for sections streamed in while the option was off).
-    this.chunkMeshManager.updateAllBoxHelpers(value)
+    this.chunkBorders.setVisible(value)
   }
 
   resetWorld() {
@@ -1452,8 +1454,13 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     this.pendingSectionUpdates.clear()
     this.pendingSectionBufferStartTimes.clear()
+    this.chunkBorders.dispose()
+    this.chunkBorders = new ChunkBorders(this)
     this.chunkMeshManager.dispose()
     this.chunkMeshManager = new ChunkMeshManager(this, this.scene, this.material, this.worldSizeParams.worldHeight, this.viewDistance)
+    if (this.displayOptions.inWorldRenderingConfig.showChunkBorders) {
+      this.chunkBorders.setVisible(true)
+    }
 
     // Clean up debug objects
     if (this.debugRaycastHelper) {
