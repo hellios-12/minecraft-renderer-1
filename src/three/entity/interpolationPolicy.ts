@@ -6,6 +6,7 @@ export type Vec3Like = { x: number; y: number; z: number }
 export type EntityRenderHints = {
   localVehicle?: boolean
   boatWaterPatchVisible?: boolean
+  boatPassengerIds?: number[]
 }
 
 export type EntityWithRenderHints = {
@@ -28,5 +29,23 @@ export function getLocalVehicleWorldPosition(cameraWorldPos: Vec3Like, vehicleY:
     x: cameraWorldPos.x,
     y: vehicleY,
     z: cameraWorldPos.z
+  }
+}
+
+const BOAT_PASSENGER_RIDING_OFFSET_Y = -0.1
+const PLAYER_RIDING_OFFSET_Y = -0.35
+
+export function getBoatPassengerSeatOffset(passengerIndex: number, passengerCount: number): number {
+  if (passengerCount <= 1) return 0
+  return passengerIndex === 0 ? 0.2 : -0.6
+}
+
+/** Vanilla 1.17.1 Boat#positionRider position, without applying the passenger pose. */
+export function getBoatPassengerWorldPosition(boatWorldPos: Vec3Like, boatYaw: number, passengerIndex: number, passengerCount: number): Vec3Like {
+  const seatOffset = getBoatPassengerSeatOffset(passengerIndex, passengerCount)
+  return {
+    x: boatWorldPos.x - Math.sin(boatYaw) * seatOffset,
+    y: boatWorldPos.y + BOAT_PASSENGER_RIDING_OFFSET_Y + PLAYER_RIDING_OFFSET_Y,
+    z: boatWorldPos.z + Math.cos(boatYaw) * seatOffset
   }
 }

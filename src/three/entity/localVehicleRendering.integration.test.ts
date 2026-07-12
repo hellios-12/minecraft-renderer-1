@@ -1,5 +1,8 @@
-import { expect, test } from 'vitest'
-import { getLocalVehicleWorldPosition } from './interpolationPolicy'
+import * as THREE from 'three'
+import { expect, test, vi } from 'vitest'
+import { SceneOrigin } from '../sceneOrigin'
+import { anchorBoatPassengerPosition, releaseBoatPassengerPosition } from './boatPassengerRendering'
+import { getBoatPassengerWorldPosition, getLocalVehicleWorldPosition } from './interpolationPolicy'
 
 type Vec3 = { x: number; y: number; z: number }
 
@@ -58,4 +61,72 @@ test('render frames between press and release keep zero horizontal delta to came
     expect(boat.y).toBe(vehicleY)
     expect(boat.y).not.toBe(camera.y)
   }
+})
+
+test('boat passenger positions use vanilla 1.17.1 riding and seat offsets', () => {
+  const boat = { x: 10, y: 64, z: 20 }
+
+  expect(getBoatPassengerWorldPosition(boat, 0, 0, 1)).toEqual({
+    x: 10,
+    y: 63.55,
+    z: 20
+  })
+  expect(getBoatPassengerWorldPosition(boat, 0, 0, 2)).toEqual({
+    x: 10,
+    y: 63.55,
+    z: 20.2
+  })
+  expect(getBoatPassengerWorldPosition(boat, 0, 1, 2)).toEqual({
+    x: 10,
+    y: 63.55,
+    z: 19.4
+  })
+
+  const rotated = getBoatPassengerWorldPosition(boat, Math.PI / 2, 0, 2)
+  expect(rotated.x).toBeCloseTo(9.8)
+  expect(rotated.y).toBe(63.55)
+  expect(rotated.z).toBeCloseTo(20)
+})
+
+test('remote player follows the tracked boat each frame and releases from an empty passenger list', () => {
+  const sceneOrigin = new SceneOrigin(new THREE.Scene())
+  sceneOrigin.update(96, 60, 192)
+
+  const boat = new THREE.Group()
+  sceneOrigin.track(boat)
+  boat.position.set(100, 64, 200)
+
+  const passenger = new THREE.Group()
+  const stopPositionTween = vi.fn()
+  passenger.userData._posTween = { stop: stopPositionTween }
+  sceneOrigin.track(passenger)
+  passenger.position.set(90, 64, 190)
+
+  const firstPassengerPosition = getBoatPassengerWorldPosition(sceneOrigin.getWorldPosition(boat)!, boat.rotation.y, 0, 1)
+  anchorBoatPassengerPosition(passenger, firstPassengerPosition, '10')
+
+  expect(stopPositionTween).toHaveBeenCalledOnce()
+  expect(sceneOrigin.getWorldPosition(passenger)).toEqual({ x: 100, y: 63.55, z: 200 })
+  expect(passenger.userData._tweenTarget).toEqual({ x: 100, y: 63.55, z: 200 })
+
+  boat.position.set(102, 64.2, 203)
+  boat.rotation.y = Math.PI / 2
+  const movedPassengerPosition = getBoatPassengerWorldPosition(sceneOrigin.getWorldPosition(boat)!, boat.rotation.y, 0, 1)
+  anchorBoatPassengerPosition(passenger, movedPassengerPosition, '10')
+  expect(sceneOrigin.getWorldPosition(passenger)?.x).toBe(102)
+  expect(sceneOrigin.getWorldPosition(passenger)?.y).toBeCloseTo(63.75)
+  expect(sceneOrigin.getWorldPosition(passenger)?.z).toBe(203)
+
+  sceneOrigin.update(112, 70, 208)
+  expect(sceneOrigin.getWorldPosition(passenger)?.x).toBe(102)
+  expect(sceneOrigin.getWorldPosition(passenger)?.y).toBeCloseTo(63.75)
+  expect(sceneOrigin.getWorldPosition(passenger)?.z).toBe(203)
+
+  const detachedWorldPosition = sceneOrigin.getWorldPosition(passenger)
+  expect(releaseBoatPassengerPosition(passenger, '10', detachedWorldPosition)).toBe(true)
+  expect(passenger.userData._boatPassengerVehicleId).toBeUndefined()
+  expect(passenger.userData._tweenTarget).toEqual(detachedWorldPosition)
+
+  boat.position.set(110, 65, 210)
+  expect(sceneOrigin.getWorldPosition(passenger)).toEqual(detachedWorldPosition)
 })

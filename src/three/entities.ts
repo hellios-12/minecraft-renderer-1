@@ -21,8 +21,10 @@ import { createItemMesh } from './itemMesh'
 import * as Entity from './entity/EntityMesh'
 import { setupBoatMesh, disposeBoatWaterPatch } from './entity/boatRenderSetup'
 import { getBoatMeshYawOffset, isBoatEntityName } from './entity/boatModelRotation'
+import { anchorBoatPassengerPosition, releaseBoatPassengerPosition } from './entity/boatPassengerRendering'
 import {
   ENTITY_TWEEN_DURATION_MS,
+  getBoatPassengerWorldPosition,
   getEntityTweenDurationMs,
   getLocalVehicleWorldPosition,
   type EntityRenderHints,
@@ -490,6 +492,35 @@ export class Entities {
           }
         })
       }
+    }
+
+    this.updateBoatPassengerPositions()
+  }
+
+  updateBoatPassengerPositions() {
+    const attachedPassengers = new Set<SceneEntity>()
+
+    for (const boat of Object.values(this.entities)) {
+      if (!isBoatEntityName(boat['realName'] ?? boat.originalEntity.name)) continue
+      const passengerIds = boat.userData.renderHints?.boatPassengerIds
+      if (!Array.isArray(passengerIds) || passengerIds.length === 0) continue
+      const boatWorldPos = this.worldRenderer.sceneOrigin.getWorldPosition(boat)
+      if (!boatWorldPos) continue
+
+      for (const [passengerIndex, passengerId] of passengerIds.entries()) {
+        const passenger = this.entities[passengerId]
+        if (!passenger?.playerObject) continue
+        const passengerWorldPos = getBoatPassengerWorldPosition(boatWorldPos, boat.rotation.y, passengerIndex, passengerIds.length)
+
+        anchorBoatPassengerPosition(passenger, passengerWorldPos, String(boat.originalEntity.id))
+        attachedPassengers.add(passenger)
+      }
+    }
+
+    for (const passenger of Object.values(this.entities)) {
+      const vehicleId = passenger.userData._boatPassengerVehicleId as string | undefined
+      if (vehicleId === undefined || attachedPassengers.has(passenger)) continue
+      releaseBoatPassengerPosition(passenger, vehicleId, this.worldRenderer.sceneOrigin.getWorldPosition(passenger))
     }
   }
 
@@ -1219,6 +1250,16 @@ export class Entities {
 
   applyEntityRenderHints(e: SceneEntity, entity: SceneEntity['originalEntity']) {
     if (entity.renderHints) {
+      if (isBoatEntityName(entity.name)) {
+        const nextPassengerIds = new Set(entity.renderHints.boatPassengerIds ?? [])
+        for (const previousPassengerId of e.userData.renderHints?.boatPassengerIds ?? []) {
+          if (nextPassengerIds.has(previousPassengerId)) continue
+          const previousPassenger = this.entities[previousPassengerId]
+          if (previousPassenger) {
+            releaseBoatPassengerPosition(previousPassenger, String(entity.id), this.worldRenderer.sceneOrigin.getWorldPosition(previousPassenger))
+          }
+        }
+      }
       e.userData.renderHints = entity.renderHints
     }
     if (!isBoatEntityName(entity.name)) return
