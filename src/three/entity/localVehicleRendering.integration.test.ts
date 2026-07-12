@@ -1,0 +1,65 @@
+import { expect, test } from 'vitest'
+import { getLocalVehicleWorldPosition } from './interpolationPolicy'
+
+type Vec3 = { x: number; y: number; z: number }
+
+function staleOffsetVehiclePosition (
+  cameraWorldPos: Vec3,
+  vehiclePosition: Vec3,
+  stalePassengerPosition: Vec3,
+): Vec3 {
+  return {
+    x: cameraWorldPos.x + (vehiclePosition.x - stalePassengerPosition.x),
+    y: cameraWorldPos.y + (vehiclePosition.y - stalePassengerPosition.y),
+    z: cameraWorldPos.z + (vehiclePosition.z - stalePassengerPosition.z),
+  }
+}
+
+test('stale passenger snapshot does not shift rendered boat X/Z relative to camera', () => {
+  const stalePassenger = { x: 0, y: 63, z: 0 }
+  const newVehicle = { x: 1, y: 63.2, z: 2 }
+  const cameraWorldPos = { x: 0.4, y: 63.5, z: 0.8 }
+
+  // 1. Vehicle position updates before passenger sync.
+  // 2. Renderer receives vehicle snapshot while passenger is still stale.
+  const broken = staleOffsetVehiclePosition(cameraWorldPos, newVehicle, stalePassenger)
+  const rendered = getLocalVehicleWorldPosition(cameraWorldPos, newVehicle.y)
+
+  expect(rendered.x).toBe(cameraWorldPos.x)
+  expect(rendered.z).toBe(cameraWorldPos.z)
+  expect(rendered.y).toBe(newVehicle.y)
+  expect(broken.x).not.toBe(cameraWorldPos.x)
+  expect(broken.z).not.toBe(cameraWorldPos.z)
+
+  // 3. Passenger synchronizes to vehicle.
+  const syncedPassenger = { ...newVehicle, y: 63 }
+  const syncedCamera = { x: 0.8, y: 63.5, z: 1.6 }
+
+  // 4. Boat X/Z remain fixed relative to the player/camera on intermediate frames.
+  const afterSync = getLocalVehicleWorldPosition(syncedCamera, newVehicle.y)
+  expect(afterSync.x - syncedCamera.x).toBe(0)
+  expect(afterSync.z - syncedCamera.z).toBe(0)
+  expect(afterSync.y).toBe(newVehicle.y)
+  expect(syncedPassenger.x).toBe(newVehicle.x)
+  expect(syncedPassenger.z).toBe(newVehicle.z)
+})
+
+test('render frames between press and release keep zero horizontal delta to camera', () => {
+  const vehicleY = 62.75
+  const frames = [
+    { x: 0, y: 63.4, z: 0 },
+    { x: 0.2, y: 63.4, z: 0 },
+    { x: 0.45, y: 63.4, z: 0 },
+    { x: 0.7, y: 63.4, z: 0 },
+    { x: 0.7, y: 63.4, z: 0 },
+    { x: 0.55, y: 63.4, z: 0 },
+  ]
+
+  for (const camera of frames) {
+    const boat = getLocalVehicleWorldPosition(camera, vehicleY)
+    expect(boat.x - camera.x).toBe(0)
+    expect(boat.z - camera.z).toBe(0)
+    expect(boat.y).toBe(vehicleY)
+    expect(boat.y).not.toBe(camera.y)
+  }
+})

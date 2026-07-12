@@ -19,7 +19,9 @@ import { configurePlayerSkinMaterials, PlayerObjectType } from '../lib/createPla
 import { getBlockMeshFromModel } from './holdingBlock'
 import { createItemMesh } from './itemMesh'
 import * as Entity from './entity/EntityMesh'
-import { getBoatMeshYawOffset } from './entity/boatModelRotation'
+import { setupBoatMesh, disposeBoatWaterPatch } from './entity/boatRenderSetup'
+import { getBoatMeshYawOffset, isBoatEntityName } from './entity/boatModelRotation'
+import { ENTITY_TWEEN_DURATION_MS, getEntityTweenDurationMs, getLocalVehicleWorldPosition, type EntityRenderHints, usesCameraSyncedVehiclePosition } from './entity/interpolationPolicy'
 import { getMesh } from './entity/EntityMesh'
 import { WalkingGeneralSwing } from './entity/animations'
 import { disposeObject, loadNearestFilterTexture, loadTexture, loadThreeJsTextureFromUrl } from './threeJsUtils'
@@ -41,7 +43,7 @@ type EntityMetadataVersions = {
 
 export const steveTexture = loadThreeJsTextureFromUrl(stevePngUrl)
 
-export const TWEEN_DURATION = 120
+export const TWEEN_DURATION = ENTITY_TWEEN_DURATION_MS
 
 const degreesToRadians = (degrees: number) => degrees * (Math.PI / 180)
 
@@ -265,7 +267,7 @@ export type SceneEntity = THREE.Object3D & {
   username?: string
   uuid?: string
   additionalCleanup?: () => void
-  originalEntity: import('prismarine-entity').Entity & { delete?; pos?; name; team?: Team }
+  originalEntity: import('prismarine-entity').Entity & { delete?; pos?; name; team?: Team; renderHints?: EntityRenderHints }
 }
 
 export class Entities {
@@ -460,6 +462,15 @@ export class Entities {
         entity.visible = !!(distanceSquared < VISIBLE_DISTANCE || this.worldRenderer.shouldObjectVisible(entity))
 
         this.maybeRenderPlayerSkin(entityIdRaw)
+      }
+
+      if (entity.userData.renderHints?.localVehicle) {
+        const vehicleY = entity.userData._localVehicleY ?? entity.position.y
+        const worldPos = getLocalVehicleWorldPosition(
+          this.worldRenderer.cameraWorldPos,
+          vehicleY,
+        )
+        entity.position.set(worldPos.x, worldPos.y, worldPos.z)
       }
 
       if (entity.visible) {
@@ -878,6 +889,8 @@ export class Entities {
       if (!e) return
       e.userData._posTween?.stop()
       e.userData._rotTween?.stop()
+      const boatMesh = e.children.find(c => c.name === 'mesh')
+      if (boatMesh) disposeBoatWaterPatch(boatMesh)
       if (e.additionalCleanup) e.additionalCleanup()
       e.traverse(c => {
         if (c['additionalCleanup']) c['additionalCleanup']()
@@ -971,6 +984,7 @@ export class Entities {
       const boatMeshYawOffset = getBoatMeshYawOffset(entity.name)
       if (boatMeshYawOffset != null) {
         mesh.rotation.y = boatMeshYawOffset
+        setupBoatMesh(mesh)
       }
       // set initial position so there are no weird jumps update after
       const pos = entity.pos ?? entity.position
@@ -1002,7 +1016,12 @@ export class Entities {
       this.afterAddEntity(entity)
     } else {
       mesh = e.children.find(c => c.name === 'mesh')
+      if (entity.renderHints) {
+        e.originalEntity.renderHints = entity.renderHints
+      }
     }
+
+    this.applyEntityRenderHints(e, entity)
 
     // Update equipment
     this.updateEntityEquipment(e, entity)
@@ -1195,26 +1214,53 @@ export class Entities {
     this.updateEntityPosition(entity, justAdded, overrides)
   }
 
-  updateEntityPosition(entity: import('prismarine-entity').Entity, justAdded: boolean, overrides: { rotation?: { head?: { y: number; x: number } } }) {
+  applyEntityRenderHints (e: SceneEntity, entity: SceneEntity['originalEntity']) {
+    if (entity.renderHints) {
+      e.userData.renderHints = entity.renderHints
+    }
+    if (!isBoatEntityName(entity.name)) return
+    const mesh = e.children.find(c => c.name === 'mesh')
+    if (!mesh) return
+    const waterPatch = mesh.userData.boatWaterPatch as THREE.Object3D | undefined
+    if (waterPatch) {
+      waterPatch.visible = entity.renderHints?.boatWaterPatchVisible === true
+    }
+  }
+
+  updateEntityPosition(entity: SceneEntity['originalEntity'], justAdded: boolean, overrides: { rotation?: { head?: { y: number; x: number } } }) {
     const e = this.entities[entity.id]
     if (!e) return
-    const ANIMATION_DURATION = justAdded ? 0 : TWEEN_DURATION
+    this.applyEntityRenderHints(e, entity)
+    const cameraSynced = usesCameraSyncedVehiclePosition(entity)
     if (entity.position) {
-      // Initialize tween target from current world position
-      const currentWorld = this.worldRenderer.sceneOrigin.getWorldPosition(e) ?? { x: entity.position.x, y: entity.position.y, z: entity.position.z }
-      if (!e.userData._tweenTarget) {
-        e.userData._tweenTarget = { x: currentWorld.x, y: currentWorld.y, z: currentWorld.z }
+      if (cameraSynced) {
+        e.userData._localVehicleY = entity.position.y
+        e.userData._posTween?.stop()
+        e.userData._posTween = undefined
+        const worldPos = getLocalVehicleWorldPosition(
+          this.worldRenderer.cameraWorldPos,
+          entity.position.y,
+        )
+        e.position.set(worldPos.x, worldPos.y, worldPos.z)
+      } else {
+        const ANIMATION_DURATION = getEntityTweenDurationMs(entity, justAdded)
+        // Initialize tween target from current world position
+        const currentWorld = this.worldRenderer.sceneOrigin.getWorldPosition(e) ?? { x: entity.position.x, y: entity.position.y, z: entity.position.z }
+        if (!e.userData._tweenTarget) {
+          e.userData._tweenTarget = { x: currentWorld.x, y: currentWorld.y, z: currentWorld.z }
+        }
+        // Stop previous position tween to prevent accumulation
+        e.userData._posTween?.stop()
+        // Tween a separate target object, apply via proxy on each update
+        e.userData._posTween = new TWEEN.Tween(e.userData._tweenTarget)
+          .to({ x: entity.position.x, y: entity.position.y, z: entity.position.z }, ANIMATION_DURATION)
+          .onUpdate(() => {
+            e.position.set(e.userData._tweenTarget.x, e.userData._tweenTarget.y, e.userData._tweenTarget.z)
+          })
+          .start()
       }
-      // Stop previous position tween to prevent accumulation
-      e.userData._posTween?.stop()
-      // Tween a separate target object, apply via proxy on each update
-      e.userData._posTween = new TWEEN.Tween(e.userData._tweenTarget)
-        .to({ x: entity.position.x, y: entity.position.y, z: entity.position.z }, ANIMATION_DURATION)
-        .onUpdate(() => {
-          e.position.set(e.userData._tweenTarget.x, e.userData._tweenTarget.y, e.userData._tweenTarget.z)
-        })
-        .start()
     }
+    const rotationTweenDuration = justAdded ? 0 : ENTITY_TWEEN_DURATION_MS
     /** World yaw for the whole model: for PlayerObject skins, rotate body to head look dir; head mesh stays yaw-fixed (pitch only). */
     let targetYaw: number | undefined
     if (e.playerObject && overrides?.rotation?.head) {
@@ -1230,7 +1276,7 @@ export class Entities {
       const dy = shortestYawRadians(e.rotation.y, targetYaw)
       // Stop previous rotation tween to prevent accumulation (mirror _posTween)
       e.userData._rotTween?.stop()
-      e.userData._rotTween = new TWEEN.Tween(e.rotation).to({ y: e.rotation.y + dy }, ANIMATION_DURATION).start()
+      e.userData._rotTween = new TWEEN.Tween(e.rotation).to({ y: e.rotation.y + dy }, rotationTweenDuration).start()
     }
 
     if (e?.playerObject && overrides?.rotation?.head) {

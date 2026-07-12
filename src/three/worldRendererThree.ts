@@ -20,6 +20,7 @@ import { disposeObject, loadThreeJsTextureFromBitmap } from './threeJsUtils'
 import { CursorBlock } from './world/cursorBlock'
 import { getItemUv } from './appShared'
 import { Entities } from './entities'
+import { LOCAL_MOVEMENT_TWEEN_DURATION_MS } from './entity/interpolationPolicy'
 import { ThreeJsSound } from './threeJsSound'
 import { CameraShake } from './cameraShake'
 import { ThreeJsMedia } from './threeJsMedia'
@@ -1146,7 +1147,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
       this.currentPosTween?.stop()
       // Use instant camera updates (0 delay) in playground mode when camera controls are enabled
-      const tweenDelay = this.displayOptions.inWorldRenderingConfig.instantCameraUpdate ? 0 : this.playerStateUtils.isSpectatingEntity() ? 150 : 50
+      const tweenDelay = this.displayOptions.inWorldRenderingConfig.instantCameraUpdate ? 0 : this.playerStateUtils.isSpectatingEntity() ? 150 : LOCAL_MOVEMENT_TWEEN_DURATION_MS
       this.currentPosTween = new tweenJs.Tween(this.cameraWorldPos)
         .to({ x: pos.x, y: pos.y, z: pos.z }, tweenDelay)
         .onUpdate(() => {
