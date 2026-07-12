@@ -34,6 +34,7 @@ import { disposeObject } from './threeJsUtils'
 import { getBannerTexture, createBannerMesh, releaseBannerTexture } from './bannerRenderer'
 import { getSignTexture, releaseSignTexture, disposeAllSignTextures } from './signTextureCache'
 import { BlockEntityLightRegistry } from '../lib/blockEntityLightRegistry'
+import { SectionOcclusionCull, hsvToRgb } from './occlusion/sectionOcclusionCull'
 
 export interface ChunkMeshPool {
   mesh: THREE.Mesh
@@ -71,6 +72,8 @@ export interface SectionObject extends THREE.Group {
   worldX?: number
   worldY?: number
   worldZ?: number
+  /** Packed VisibilitySet from mesher (section occlusion graph). */
+  visibilitySet?: number
   foutain?: boolean
   /**
    * True while the section is held invisible by the "Batch Chunks Display"
@@ -169,6 +172,9 @@ export class ChunkMeshManager {
   globalLegacyBlendBuffer: GlobalLegacyBuffer | null = null
   /** Tight world AABBs for shader-cube frustum culling (section centers). */
   private readonly shaderSectionRaycastBoxes = new Map<string, ShaderSectionRaycastEntry>()
+  private readonly sectionOcclusionCull = new SectionOcclusionCull()
+  private _lastOcclusionVisibleKeys = ''
+  private _lastSmartCullEnabled: boolean | undefined
 
   // Performance tracking
   private hits = 0
@@ -398,7 +404,13 @@ export class ChunkMeshManager {
     }
   }
 
-  private updatePooledLegacyCullState(cameraWorldX: number, cameraWorldY: number, cameraWorldZ: number): void {
+  private updatePooledLegacyCullState(
+    cameraWorldX: number,
+    cameraWorldY: number,
+    cameraWorldZ: number,
+    smartCull: boolean,
+    occlusionVisible: ReadonlySet<string>
+  ): void {
     for (const poolEntry of this.activeSections.values()) {
       const sectionKey = poolEntry.sectionKey
       if (!sectionKey) continue
@@ -418,15 +430,43 @@ export class ChunkMeshManager {
         this._legacyCullBoxMin,
         this._legacyCullBoxMax
       )
+      if (smartCull && !occlusionVisible.has(sectionKey)) {
+        poolEntry.mesh.visible = false
+      }
     }
+  }
+
+  isSectionOcclusionVisible(sectionKey: string): boolean {
+    return this.sectionOcclusionCull.isSectionVisible(sectionKey)
+  }
+
+  /** Invalidate occlusion graph and mark cull dirty when smart-cull enablement changes. */
+  notifySmartCullChanged(smartCull: boolean): void {
+    if (this._lastSmartCullEnabled === smartCull) return
+    this._lastSmartCullEnabled = smartCull
+    this.sectionOcclusionCull.invalidate()
+    this.markCullDirty()
   }
 
   /**
    * Shared section visibility + span groups for global legacy and cube buffers.
    */
-  updateSectionCullAndSort(camera: THREE.Camera, cameraWorldX: number, cameraWorldY: number, cameraWorldZ: number): void {
+  updateSectionCullAndSort(camera: THREE.Camera, cameraWorldX: number, cameraWorldY: number, cameraWorldZ: number, smartCull: boolean): void {
     this._legacyCullProjScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
     this._legacyCullFrustum.setFromProjectionMatrix(this._legacyCullProjScreen)
+
+    const sectionHeight = this.worldRenderer.getSectionHeight?.() ?? 16
+    const worldSizeParams = this.worldRenderer.worldSizeParams ?? { minY: 0, worldHeight: 256 }
+    const occlusionVisible = this.sectionOcclusionCull.update({
+      smartCull,
+      cameraWorldX,
+      cameraWorldY,
+      cameraWorldZ,
+      viewDistance: this.worldRenderer.viewDistance,
+      sectionHeight,
+      worldMinY: worldSizeParams.minY,
+      worldMaxY: worldSizeParams.minY + worldSizeParams.worldHeight
+    })
 
     const visible = this._visibleSectionSpans
     visible.length = 0
@@ -448,6 +488,14 @@ export class ChunkMeshManager {
       )
       if (inFrustum) {
         visible.push({ key: sectionKey, distSq })
+      }
+    }
+
+    if (smartCull) {
+      for (let i = visible.length - 1; i >= 0; i--) {
+        if (!occlusionVisible.has(visible[i]!.key)) {
+          visible.splice(i, 1)
+        }
       }
     }
 
@@ -492,6 +540,9 @@ export class ChunkMeshManager {
         if (!inFrustum) {
           return
         }
+        if (smartCull && !occlusionVisible.has(key)) {
+          return
+        }
         cubeVisibleKeys.push(key)
         const drawStart = gb.getSectionDrawStart(key)
         const drawCount = gb.getSectionDrawCount(key)
@@ -502,10 +553,13 @@ export class ChunkMeshManager {
     }
     cubeVisibleKeys.sort()
 
+    const occlusionFp = smartCull ? [...occlusionVisible].sort().join(',') : 'off'
     const fingerprint = [
       opaqueKeys.join(','),
       blendKeys.join(','),
       cubeVisibleKeys.join(','),
+      occlusionFp,
+      smartCull ? '1' : '0',
       opaqueBuf?.getLayoutVersion() ?? 0,
       blendBuf?.getLayoutVersion() ?? 0,
       gb?.getLayoutVersion() ?? 0,
@@ -515,10 +569,12 @@ export class ChunkMeshManager {
     ].join('|')
 
     if (fingerprint === this._lastCullFingerprint && !this.hasPendingBufferWork()) {
-      this.updatePooledLegacyCullState(cameraWorldX, cameraWorldY, cameraWorldZ)
+      this.updatePooledLegacyCullState(cameraWorldX, cameraWorldY, cameraWorldZ, smartCull, occlusionVisible)
+      this._lastOcclusionVisibleKeys = occlusionFp
       return
     }
     this._lastCullFingerprint = fingerprint
+    this._lastOcclusionVisibleKeys = occlusionFp
 
     opaqueBuf?.updateDrawSpans(visible, 'opaque')
     blendBuf?.updateDrawSpans(visible, 'sortedBlend')
@@ -535,7 +591,7 @@ export class ChunkMeshManager {
     }
 
     this.lastBufferStateKey = this.bufferStateKey()
-    this.updatePooledLegacyCullState(cameraWorldX, cameraWorldY, cameraWorldZ)
+    this.updatePooledLegacyCullState(cameraWorldX, cameraWorldY, cameraWorldZ, smartCull, occlusionVisible)
   }
 
   private static readonly BLEND_RESORT_DISTANCE = 1.0
@@ -998,6 +1054,8 @@ export class ChunkMeshManager {
     sectionObject.worldX = geometryData.sx
     sectionObject.worldY = geometryData.sy
     sectionObject.worldZ = geometryData.sz
+    sectionObject.visibilitySet = geometryData.visibilitySet
+    this.sectionOcclusionCull.registerSection(sectionKey, geometryData.visibilitySet, geometryData.sx, geometryData.sy, geometryData.sz)
     // Stamp the section key so modules (e.g. sciFiWorldReveal) can resolve
     // mesh -> section without falling back to sceneOrigin world-position math.
     ;(sectionObject as any).sectionKey = sectionKey
@@ -1312,6 +1370,7 @@ export class ChunkMeshManager {
         this.globalLegacyBlendBuffer?.removeSection(sectionKey)
         this.maybeUnregisterLegacyCullSection(sectionKey)
         this.unregisterShaderSectionRaycastBox(sectionKey)
+        this.sectionOcclusionCull.unregisterSection(sectionKey)
       }
       this.markCullDirty()
       delete sectionObject.deferredLegacyOpaque
@@ -1450,6 +1509,38 @@ export class ChunkMeshManager {
   }
 
   /**
+   * Debug overlay: tint section borders by occlusion BFS step (Java ChunkCullingDebugRenderer paths mode).
+   */
+  updateCaveCullingDebug(enabled: boolean, smartCull: boolean): void {
+    if (!enabled) {
+      for (const sectionKey of Object.keys(this.sectionObjects)) {
+        const sectionObject = this.sectionObjects[sectionKey]
+        if (sectionObject?.boxHelper && !this.worldRenderer.displayOptions?.inWorldRenderingConfig?.showChunkBorders) {
+          sectionObject.boxHelper.visible = false
+        }
+      }
+      return
+    }
+
+    for (const [sectionKey, sectionObject] of Object.entries(this.sectionObjects)) {
+      if (!sectionObject) continue
+      if (!sectionObject.boxHelper) {
+        this.updateBoxHelper(sectionKey, true)
+      }
+      const helper = sectionObject.boxHelper
+      if (!helper) continue
+      helper.visible = true
+      const color = !smartCull
+        ? 0x00_ff_00
+        : this.sectionOcclusionCull.isSectionVisible(sectionKey)
+          ? hsvToRgb(this.sectionOcclusionCull.getStep(sectionKey) ?? 0)
+          : 0xff_00_00
+      const mat = helper.material as THREE.LineBasicMaterial
+      mat.color.setHex(color)
+    }
+  }
+
+  /**
    * Get mesh for section if it exists
    */
   getSectionMesh(sectionKey: string): THREE.Mesh | undefined {
@@ -1512,6 +1603,14 @@ export class ChunkMeshManager {
         : null,
       legacyOpaque: snapshotLegacy(this.globalLegacyBuffer),
       legacyBlend: snapshotLegacy(this.globalLegacyBlendBuffer)
+    }
+  }
+
+  getDrawnStats(): { cubeFaces: number; legacyOpaqueQuads: number; legacyBlendQuads: number } {
+    return {
+      cubeFaces: this.globalBlockBuffer?.getVisibleFaceCount() ?? 0,
+      legacyOpaqueQuads: this.globalLegacyBuffer?.getVisibleQuadCount() ?? 0,
+      legacyBlendQuads: this.globalLegacyBlendBuffer?.getVisibleQuadCount() ?? 0
     }
   }
 

@@ -26,6 +26,7 @@ export interface ExportedSection {
     count: number
     formatVersion: 3
   }
+  visibilitySet?: number
 }
 
 export interface ExportedWorldGeometry {

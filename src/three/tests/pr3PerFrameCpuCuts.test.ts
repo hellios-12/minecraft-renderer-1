@@ -216,16 +216,16 @@ test('updateSectionCullAndSort: same visible set skips span rebuild on camera mo
   const updateDrawSpansSpy = vi.spyOn(blendBuffer, 'updateDrawSpans')
 
   const camera1 = makeCamera(8, 8, 20)
-  manager.updateSectionCullAndSort(camera1, 8, 8, 20)
+  manager.updateSectionCullAndSort(camera1, 8, 8, 20, false)
   expect(updateDrawSpansSpy).toHaveBeenCalledTimes(1)
 
   while (blendBuffer.hasPendingUploads()) blendBuffer.uploadDirtyRange()
 
-  manager.updateSectionCullAndSort(camera1, 8, 8, 20)
+  manager.updateSectionCullAndSort(camera1, 8, 8, 20, false)
   expect(updateDrawSpansSpy).toHaveBeenCalledTimes(2)
 
   const camera2 = makeCamera(8, 8, 18)
-  manager.updateSectionCullAndSort(camera2, 8, 8, 18)
+  manager.updateSectionCullAndSort(camera2, 8, 8, 18, false)
   expect(updateDrawSpansSpy).toHaveBeenCalledTimes(2)
 
   manager.cleanupSection(key)
@@ -241,14 +241,14 @@ test('updateSectionCullAndSort: layoutVersion change forces span rebuild', () =>
   const updateDrawSpansSpy = vi.spyOn(blendBuffer, 'updateDrawSpans')
 
   const camera = makeCamera(8, 8, 20)
-  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  manager.updateSectionCullAndSort(camera, 8, 8, 20, false)
   expect(updateDrawSpansSpy).toHaveBeenCalledTimes(1)
 
   blendBuffer.removeSection(key)
   blendBuffer.addSection(key, makeBlendOnlyGeometry().blend!, 8, 8, 8)
   ;(manager as unknown as ManagerInternals).registerLegacyCullSection(key, 8, 8, 8)
 
-  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  manager.updateSectionCullAndSort(camera, 8, 8, 20, false)
   expect(updateDrawSpansSpy).toHaveBeenCalledTimes(2)
 
   manager.cleanupSection(key)
@@ -267,7 +267,7 @@ function simulateRenderCullGate(manager: ChunkMeshManager, camera: THREE.Perspec
   }
   manager.markCullDirtyIfBufferStateChanged()
   if (manager.cullDirty) {
-    manager.updateSectionCullAndSort(camera, x, y, z)
+    manager.updateSectionCullAndSort(camera, x, y, z, false)
     manager.clearCullDirty()
   }
 }
@@ -281,7 +281,7 @@ test('markCullDirtyIfBufferStateChanged: finalize layout bump marks cull dirty',
   drainLegacyUploads(opaqueBuf)
 
   const camera = makeCamera(8, 8, 20)
-  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  manager.updateSectionCullAndSort(camera, 8, 8, 20, false)
   manager.clearCullDirty()
 
   opaqueBuf.addSection(
@@ -352,7 +352,7 @@ test('updateSectionCullAndSort: defrag finalize forces span rebuild with static 
   const updateDrawSpansSpy = vi.spyOn(opaqueBuf, 'updateDrawSpans')
   const camera = makeCamera(8, 8, 20)
 
-  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  manager.updateSectionCullAndSort(camera, 8, 8, 20, false)
   expect(updateDrawSpansSpy).toHaveBeenCalledTimes(1)
 
   opaqueBuf.removeSection('1,0,0')
@@ -361,7 +361,7 @@ test('updateSectionCullAndSort: defrag finalize forces span rebuild with static 
   drainLegacyUploads(opaqueBuf)
   opaqueBuf.compactStep()
 
-  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  manager.updateSectionCullAndSort(camera, 8, 8, 20, false)
   expect(updateDrawSpansSpy).toHaveBeenCalledTimes(2)
 
   for (const key of keys) manager.cleanupSection(key)

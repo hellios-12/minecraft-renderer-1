@@ -1,7 +1,7 @@
 import { Vec3 } from 'vec3'
 import MinecraftData from 'minecraft-data'
-import PrismarineBlockLoader from 'prismarine-block'
 import moreBlockDataGeneratedJson from '../../lib/moreBlockDataGenerated.json'
+import { getOccludingBlockMeta } from '../../mesher-shared/occludingBlocks'
 
 type BlockMeta = {
   invisibleBlocks: Uint16Array
@@ -9,6 +9,7 @@ type BlockMeta = {
   noAoBlocks: Uint16Array
   cullIdenticalBlocks: Uint16Array
   occludingBlocks: Uint16Array
+  occludingLookup: Uint8Array
 }
 
 const metaCache = new Map<string, BlockMeta>()
@@ -21,38 +22,6 @@ const blockToIds = (block: { minStateId: number; maxStateId: number }) => {
   return ids
 }
 
-const isCube = (shapes: any) => {
-  if (!shapes || shapes.length !== 1) return false
-  const s = shapes[0]
-  return s[0] === 0 && s[1] === 0 && s[2] === 0 && s[3] === 1 && s[4] === 1 && s[5] === 1
-}
-
-const isLikelyFullCubeBlockName = (name: string) => {
-  if (!name) return false
-  if (name.includes('stairs')) return false
-  if (name.includes('slab')) return false
-  if (name.includes('fence')) return false
-  if (name.includes('gate')) return false
-  if (name.includes('pane')) return false
-  if (name.includes('wall')) return false
-  if (name.includes('door')) return false
-  if (name.includes('trapdoor')) return false
-  if (name.includes('sign')) return false
-  if (name.includes('banner')) return false
-  if (name.includes('rail')) return false
-  if (name.includes('torch')) return false
-  if (name.includes('lantern')) return false
-  if (name.includes('button')) return false
-  if (name.includes('lever')) return false
-  if (name.includes('pressure_plate')) return false
-  if (name.includes('carpet')) return false
-  if (name.includes('flower')) return false
-  if (name.includes('sapling')) return false
-  if (name.includes('tall_grass')) return false
-  if (name === 'grass' || name === 'short_grass' || name === 'tall_grass') return false
-  return true
-}
-
 export const getBlockMeta = (version: string): BlockMeta => {
   const cached = metaCache.get(version)
   if (cached) return cached
@@ -63,30 +32,15 @@ export const getBlockMeta = (version: string): BlockMeta => {
   const transparentBlocks = new Uint16Array(mcData.blocksArray.filter(x => x.transparent).flatMap(blockToIds))
   const noAoBlocks = new Uint16Array(mcData.blocksArray.filter(x => moreBlockDataGeneratedJson.noOcclusions[x.name]).flatMap(blockToIds))
   const cullIdenticalBlocks = new Uint16Array(mcData.blocksArray.filter(x => x.name.includes('glass') || x.name.includes('ice')).flatMap(blockToIds))
-  const Block = PrismarineBlockLoader(version)
-  const noOcclusionsSet = new Set(Object.keys(moreBlockDataGeneratedJson.noOcclusions))
-
-  const occludingBlockIds: number[] = []
-  for (const idStr of Object.keys((mcData as any).blocksByStateId)) {
-    const id = Number(idStr)
-    if (!id) continue
-    const b = (Block as any).fromStateId(id, 0)
-    if (!b) continue
-    if (b.transparent) continue
-    if (b.boundingBox !== 'block') continue
-    if (noOcclusionsSet.has(b.name)) continue
-    if (!isCube(b.shapes)) continue
-    occludingBlockIds.push(id)
-  }
-
-  const occludingBlocks = new Uint16Array(occludingBlockIds)
+  const { occludingBlocks, occludingLookup } = getOccludingBlockMeta(version)
 
   const meta = {
     invisibleBlocks,
     transparentBlocks,
     noAoBlocks,
     cullIdenticalBlocks,
-    occludingBlocks
+    occludingBlocks,
+    occludingLookup
   }
 
   metaCache.set(version, meta)

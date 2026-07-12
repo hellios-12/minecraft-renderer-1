@@ -146,6 +146,12 @@ export class GlobalBlockBuffer {
     return this.visibleSpans
   }
 
+  getVisibleFaceCount(): number {
+    let faces = 0
+    for (const s of this.visibleSpans) faces += s.count
+    return faces
+  }
+
   forEachSectionSlot(cb: (key: string, slot: { start: number; count: number }) => void): void {
     for (const [key, slot] of this.sectionSlots) {
       cb(key, slot)

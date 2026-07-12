@@ -3,6 +3,8 @@ import { convertChunkToWasm, getBlockMeta, type ChunkConversionResult } from '..
 import { extractColumnHeightmap, splitColumnWasmOutputToSections } from '../bridge/render-from-wasm'
 import { setBlockStatesData as setMesherData } from '../../mesher-shared/models'
 import { defaultMesherConfig, type MesherGeometryOutput, SECTION_HEIGHT } from '../../mesher-shared/shared'
+import { packVisibilitySet, VISIBILITY_SET_ALL_TRUE } from '../../mesher-shared/visibilitySet'
+import { VisGraph } from '../../mesher-shared/visGraph'
 import { worldColumnKey, World } from '../../mesher-shared/world'
 import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from '../../mesher-shared/computeHeightmap'
 import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMeta } from '../../mesher-shared/blockEntityMetadata'
@@ -1076,7 +1078,8 @@ function makeEmptyColumnGeometry(sx: number, sy: number, sz: number, sectionHeig
     signs: {},
     banners: {},
     hadErrors,
-    blocksCount: 0
+    blocksCount: 0,
+    visibilitySet: VISIBILITY_SET_ALL_TRUE
   }
 }
 
@@ -1464,16 +1467,22 @@ function processColumnTick() {
         const banners: Record<string, BannerMeta> = {}
         const beTarget = { signs, heads, banners }
         const beOpts = { disableBlockEntityTextures: world.config.disableBlockEntityTextures }
+        const { occludingLookup } = getBlockMeta(version)
+        const visGraph = new VisGraph()
         const cursor = new Vec3(0, 0, 0)
         for (cursor.y = sy; cursor.y < sy + sectionHeight; cursor.y++) {
           for (cursor.z = sz; cursor.z < sz + 16; cursor.z++) {
             for (cursor.x = sx; cursor.x < sx + 16; cursor.x++) {
               const b = world.getBlock(cursor)
               if (!b) continue
+              if (occludingLookup[b.stateId]) {
+                visGraph.setOpaque(cursor.x - sx, cursor.y - sy, cursor.z - sz)
+              }
               collectBlockEntityMetadata(b, cursor.x, cursor.y, cursor.z, beTarget, beOpts, world)
             }
           }
         }
+        const sectionVisibilitySet = packVisibilitySet(visGraph.resolve())
 
         let geometry: MesherGeometryOutput
         let transferable: any[] = []
@@ -1515,7 +1524,8 @@ function processColumnTick() {
             // `B:` debug overlay stat) and matches the per-section path's
             // semantics: number of blocks that contributed faces to this
             // section's geometry.
-            blocksCount: sectionBlocksCount
+            blocksCount: sectionBlocksCount,
+            visibilitySet: sectionVisibilitySet
           }
           if (exported.shaderCubes) {
             geometry.shaderCubes = {
@@ -1572,6 +1582,7 @@ function processColumnTick() {
           }
         } else {
           geometry = makeEmptyColumnGeometry(sx, sy, sz, sectionHeight, false)
+          geometry.visibilitySet = sectionVisibilitySet
           // Still attach block entity metadata so the main thread sees
           // signs/heads/banners even for empty-mesh sections.
           geometry.signs = signs

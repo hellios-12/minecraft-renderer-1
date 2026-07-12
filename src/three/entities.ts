@@ -456,7 +456,10 @@ export class Entities {
         const dz = entity.position.z - botPos.z
         const distanceSquared = dx * dx + dy * dy + dz * dz
 
-        entity.visible = !!(distanceSquared < VISIBLE_DISTANCE || this.worldRenderer.shouldObjectVisible(entity))
+        const sectionKey = this.worldRenderer.entitySectionKey(entity.position.x, entity.position.y, entity.position.z)
+        const occlusionVisible = this.worldRenderer.isSectionOcclusionVisible(sectionKey)
+
+        entity.visible = !!((distanceSquared < VISIBLE_DISTANCE || this.worldRenderer.shouldObjectVisible(entity)) && occlusionVisible)
 
         this.maybeRenderPlayerSkin(entityIdRaw)
       }
