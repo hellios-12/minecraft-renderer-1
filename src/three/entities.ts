@@ -19,6 +19,7 @@ import { configurePlayerSkinMaterials, PlayerObjectType } from '../lib/createPla
 import { getBlockMeshFromModel } from './holdingBlock'
 import { createItemMesh } from './itemMesh'
 import * as Entity from './entity/EntityMesh'
+import { getBoatMeshYawOffset } from './entity/boatModelRotation'
 import { getMesh } from './entity/EntityMesh'
 import { WalkingGeneralSwing } from './entity/animations'
 import { disposeObject, loadNearestFilterTexture, loadTexture, loadThreeJsTextureFromUrl } from './threeJsUtils'
@@ -967,6 +968,10 @@ export class Entities {
       }
       if (!mesh) return
       mesh.name = 'mesh'
+      const boatMeshYawOffset = getBoatMeshYawOffset(entity.name)
+      if (boatMeshYawOffset != null) {
+        mesh.rotation.y = boatMeshYawOffset
+      }
       // set initial position so there are no weird jumps update after
       const pos = entity.pos ?? entity.position
       this.worldRenderer.sceneOrigin.track(group)
