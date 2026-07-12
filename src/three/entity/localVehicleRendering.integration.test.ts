@@ -3,15 +3,11 @@ import { getLocalVehicleWorldPosition } from './interpolationPolicy'
 
 type Vec3 = { x: number; y: number; z: number }
 
-function staleOffsetVehiclePosition (
-  cameraWorldPos: Vec3,
-  vehiclePosition: Vec3,
-  stalePassengerPosition: Vec3,
-): Vec3 {
+function staleOffsetVehiclePosition(cameraWorldPos: Vec3, vehiclePosition: Vec3, stalePassengerPosition: Vec3): Vec3 {
   return {
     x: cameraWorldPos.x + (vehiclePosition.x - stalePassengerPosition.x),
     y: cameraWorldPos.y + (vehiclePosition.y - stalePassengerPosition.y),
-    z: cameraWorldPos.z + (vehiclePosition.z - stalePassengerPosition.z),
+    z: cameraWorldPos.z + (vehiclePosition.z - stalePassengerPosition.z)
   }
 }
 
@@ -52,7 +48,7 @@ test('render frames between press and release keep zero horizontal delta to came
     { x: 0.45, y: 63.4, z: 0 },
     { x: 0.7, y: 63.4, z: 0 },
     { x: 0.7, y: 63.4, z: 0 },
-    { x: 0.55, y: 63.4, z: 0 },
+    { x: 0.55, y: 63.4, z: 0 }
   ]
 
   for (const camera of frames) {

@@ -4,7 +4,7 @@ import {
   LOCAL_MOVEMENT_TWEEN_DURATION_MS,
   getEntityTweenDurationMs,
   getLocalVehicleWorldPosition,
-  usesCameraSyncedVehiclePosition,
+  usesCameraSyncedVehiclePosition
 } from './interpolationPolicy'
 
 test('local movement tween matches camera tween duration', () => {
@@ -33,7 +33,7 @@ test('local vehicle world position uses camera X/Z and vehicle Y', () => {
   expect(getLocalVehicleWorldPosition(camera, 63.2)).toEqual({
     x: 10,
     y: 63.2,
-    z: -3,
+    z: -3
   })
 })
 

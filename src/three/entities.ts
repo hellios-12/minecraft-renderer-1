@@ -21,7 +21,13 @@ import { createItemMesh } from './itemMesh'
 import * as Entity from './entity/EntityMesh'
 import { setupBoatMesh, disposeBoatWaterPatch } from './entity/boatRenderSetup'
 import { getBoatMeshYawOffset, isBoatEntityName } from './entity/boatModelRotation'
-import { ENTITY_TWEEN_DURATION_MS, getEntityTweenDurationMs, getLocalVehicleWorldPosition, type EntityRenderHints, usesCameraSyncedVehiclePosition } from './entity/interpolationPolicy'
+import {
+  ENTITY_TWEEN_DURATION_MS,
+  getEntityTweenDurationMs,
+  getLocalVehicleWorldPosition,
+  type EntityRenderHints,
+  usesCameraSyncedVehiclePosition
+} from './entity/interpolationPolicy'
 import { getMesh } from './entity/EntityMesh'
 import { WalkingGeneralSwing } from './entity/animations'
 import { disposeObject, loadNearestFilterTexture, loadTexture, loadThreeJsTextureFromUrl } from './threeJsUtils'
@@ -466,10 +472,7 @@ export class Entities {
 
       if (entity.userData.renderHints?.localVehicle) {
         const vehicleY = entity.userData._localVehicleY ?? entity.position.y
-        const worldPos = getLocalVehicleWorldPosition(
-          this.worldRenderer.cameraWorldPos,
-          vehicleY,
-        )
+        const worldPos = getLocalVehicleWorldPosition(this.worldRenderer.cameraWorldPos, vehicleY)
         entity.position.set(worldPos.x, worldPos.y, worldPos.z)
       }
 
@@ -1214,7 +1217,7 @@ export class Entities {
     this.updateEntityPosition(entity, justAdded, overrides)
   }
 
-  applyEntityRenderHints (e: SceneEntity, entity: SceneEntity['originalEntity']) {
+  applyEntityRenderHints(e: SceneEntity, entity: SceneEntity['originalEntity']) {
     if (entity.renderHints) {
       e.userData.renderHints = entity.renderHints
     }
@@ -1237,10 +1240,7 @@ export class Entities {
         e.userData._localVehicleY = entity.position.y
         e.userData._posTween?.stop()
         e.userData._posTween = undefined
-        const worldPos = getLocalVehicleWorldPosition(
-          this.worldRenderer.cameraWorldPos,
-          entity.position.y,
-        )
+        const worldPos = getLocalVehicleWorldPosition(this.worldRenderer.cameraWorldPos, entity.position.y)
         e.position.set(worldPos.x, worldPos.y, worldPos.z)
       } else {
         const ANIMATION_DURATION = getEntityTweenDurationMs(entity, justAdded)

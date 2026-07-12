@@ -22,7 +22,7 @@ export const BOAT_WATER_PATCH_WORLD_BOUNDS = {
   minY: 0.375,
   maxY: 0.5625,
   minZ: -0.5,
-  maxZ: 0.5,
+  maxZ: 0.5
 } as const
 
 export const BOAT_HULL_RENDER_ORDER = 0
@@ -30,27 +30,23 @@ export const BOAT_WATER_PATCH_RENDER_ORDER = 1
 
 export const BOAT_WATER_PATCH_NAME = 'boat_water_patch'
 
-export function getBoatMeshYawOffset (): number {
+export function getBoatMeshYawOffset(): number {
   return BOAT_MESH_YAW_OFFSET
 }
 
-export function createBoatWaterPatchGeometry (): THREE.BoxGeometry {
-  return new THREE.BoxGeometry(
-    BOAT_WATER_PATCH_WIDTH,
-    BOAT_WATER_PATCH_HEIGHT,
-    BOAT_WATER_PATCH_DEPTH,
-  )
+export function createBoatWaterPatchGeometry(): THREE.BoxGeometry {
+  return new THREE.BoxGeometry(BOAT_WATER_PATCH_WIDTH, BOAT_WATER_PATCH_HEIGHT, BOAT_WATER_PATCH_DEPTH)
 }
 
-export function createBoatWaterPatchMaterial (): THREE.MeshBasicMaterial {
+export function createBoatWaterPatchMaterial(): THREE.MeshBasicMaterial {
   return new THREE.MeshBasicMaterial({
     colorWrite: false,
     depthWrite: true,
-    depthTest: true,
+    depthTest: true
   })
 }
 
-export function createBoatWaterPatchMesh (): THREE.Mesh {
+export function createBoatWaterPatchMesh(): THREE.Mesh {
   const mesh = new THREE.Mesh(createBoatWaterPatchGeometry(), createBoatWaterPatchMaterial())
   mesh.name = BOAT_WATER_PATCH_NAME
   mesh.position.set(0, BOAT_WATER_PATCH_CENTER_Y, BOAT_WATER_PATCH_CENTER_Z)
@@ -58,7 +54,7 @@ export function createBoatWaterPatchMesh (): THREE.Mesh {
   return mesh
 }
 
-export function applyBoatHullRenderSettings (root: THREE.Object3D): void {
+export function applyBoatHullRenderSettings(root: THREE.Object3D): void {
   root.traverse(child => {
     if (!(child instanceof THREE.Mesh)) return
     if (child.name === BOAT_WATER_PATCH_NAME) return
@@ -77,7 +73,7 @@ export function applyBoatHullRenderSettings (root: THREE.Object3D): void {
   })
 }
 
-export function getBoatWaterPatchEntitySpaceBounds (objOffsetY = BOAT_OBJ_OFFSET_Y) {
+export function getBoatWaterPatchEntitySpaceBounds(objOffsetY = BOAT_OBJ_OFFSET_Y) {
   const centerY = objOffsetY + BOAT_WATER_PATCH_CENTER_Y
   const halfHeight = BOAT_WATER_PATCH_HEIGHT / 2
   const halfWidth = BOAT_WATER_PATCH_WIDTH / 2
@@ -88,11 +84,11 @@ export function getBoatWaterPatchEntitySpaceBounds (objOffsetY = BOAT_OBJ_OFFSET
     minY: centerY - halfHeight,
     maxY: centerY + halfHeight,
     minZ: BOAT_WATER_PATCH_CENTER_Z - halfDepth,
-    maxZ: BOAT_WATER_PATCH_CENTER_Z + halfDepth,
+    maxZ: BOAT_WATER_PATCH_CENTER_Z + halfDepth
   }
 }
 
-export function setupBoatMesh (root: THREE.Object3D): { waterPatch: THREE.Mesh } {
+export function setupBoatMesh(root: THREE.Object3D): { waterPatch: THREE.Mesh } {
   applyBoatHullRenderSettings(root)
   const waterPatch = createBoatWaterPatchMesh()
   waterPatch.visible = false
@@ -101,7 +97,7 @@ export function setupBoatMesh (root: THREE.Object3D): { waterPatch: THREE.Mesh }
   return { waterPatch }
 }
 
-export function disposeBoatWaterPatch (root: THREE.Object3D): void {
+export function disposeBoatWaterPatch(root: THREE.Object3D): void {
   const patch = root.userData.boatWaterPatch as THREE.Mesh | undefined
   if (!patch) return
   patch.geometry.dispose()

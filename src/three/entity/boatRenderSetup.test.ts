@@ -14,7 +14,7 @@ import {
   applyBoatHullRenderSettings,
   createBoatWaterPatchMesh,
   getBoatWaterPatchEntitySpaceBounds,
-  setupBoatMesh,
+  setupBoatMesh
 } from './boatRenderSetup'
 
 test('water patch uses vanilla dimensions in blocks', () => {
@@ -54,10 +54,7 @@ test('water patch material is depth-only', () => {
 
 test('boat hull renders in opaque list before depth-only patch', () => {
   const root = new THREE.Object3D()
-  const hull = new THREE.Mesh(
-    new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshBasicMaterial({ transparent: true, alphaTest: 0.1 }),
-  )
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ transparent: true, alphaTest: 0.1 }))
   hull.name = 'bottom'
   root.add(hull)
   const { waterPatch } = setupBoatMesh(root)
@@ -70,10 +67,7 @@ test('boat hull renders in opaque list before depth-only patch', () => {
 
 test('boat hull material is alpha-tested opaque with depth write', () => {
   const root = new THREE.Object3D()
-  const hull = new THREE.Mesh(
-    new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshBasicMaterial({ transparent: true, alphaTest: 0.05 }),
-  )
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ transparent: true, alphaTest: 0.05 }))
   root.add(hull)
   applyBoatHullRenderSettings(root)
   const material = hull.material as THREE.MeshBasicMaterial
