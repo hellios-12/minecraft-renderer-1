@@ -1,11 +1,23 @@
 export const LOCAL_MOVEMENT_TWEEN_DURATION_MS = 50
 export const ENTITY_TWEEN_DURATION_MS = 120
+export const SPECTATING_CAMERA_TWEEN_DURATION_MS = 150
+export const CAMERA_POSITION_EPSILON = 1e-4
+
+export type CameraMovementMode = 'local-player' | 'server-vehicle' | 'spectating'
+
+export type UpdateCameraOptions = {
+  movementMode?: CameraMovementMode
+  instant?: boolean
+}
 
 export type Vec3Like = { x: number; y: number; z: number }
 
 export type EntityRenderHints = {
   localVehicle?: boolean
   boatWaterPatchVisible?: boolean
+  passengerIds?: number[]
+  passengerLayout?: 'boat' | 'minecart'
+  /** @deprecated Use passengerIds */
   boatPassengerIds?: number[]
 }
 
@@ -23,6 +35,36 @@ export function getEntityTweenDurationMs(entity: EntityWithRenderHints | undefin
   return ENTITY_TWEEN_DURATION_MS
 }
 
+export function samePosition(a: Vec3Like, b: Vec3Like, epsilon = CAMERA_POSITION_EPSILON): boolean {
+  return Math.abs(a.x - b.x) < epsilon && Math.abs(a.y - b.y) < epsilon && Math.abs(a.z - b.z) < epsilon
+}
+
+export function getCameraMovementTweenDurationMs(mode: CameraMovementMode, instant = false): number {
+  if (instant) return 0
+  switch (mode) {
+    case 'spectating':
+      return SPECTATING_CAMERA_TWEEN_DURATION_MS
+    case 'server-vehicle':
+      return ENTITY_TWEEN_DURATION_MS
+    case 'local-player':
+    default:
+      return LOCAL_MOVEMENT_TWEEN_DURATION_MS
+  }
+}
+
+export function shouldRestartCameraPositionTween(args: {
+  target: Vec3Like
+  currentTarget: Vec3Like | null
+  movementMode: CameraMovementMode
+  previousMovementMode: CameraMovementMode | null
+  instant: boolean
+}): boolean {
+  if (args.instant) return true
+  if (args.currentTarget == null) return true
+  if (args.movementMode !== args.previousMovementMode) return true
+  return !samePosition(args.target, args.currentTarget)
+}
+
 /** Local vehicle X/Z follow camera tween; Y uses latest vehicle physics height. */
 export function getLocalVehicleWorldPosition(cameraWorldPos: Vec3Like, vehicleY: number): Vec3Like {
   return {
@@ -34,6 +76,25 @@ export function getLocalVehicleWorldPosition(cameraWorldPos: Vec3Like, vehicleY:
 
 const BOAT_PASSENGER_RIDING_OFFSET_Y = -0.1
 const PLAYER_RIDING_OFFSET_Y = -0.35
+/** Vanilla 1.17.1 EntityType minecart passengerAttachments(0.1875F) */
+export const MINECART_PASSENGER_ATTACHMENT_Y = 0.1875
+/** Vanilla 1.17.1 Player.DEFAULT_VEHICLE_ATTACHMENT.y */
+export const PLAYER_VEHICLE_ATTACHMENT_Y = 0.6
+
+const RIDEABLE_MINECART_ENTITY_NAMES = new Set([
+  'minecart',
+  'chest_minecart',
+  'furnace_minecart',
+  'hopper_minecart',
+  'tnt_minecart',
+  'spawner_minecart',
+  'command_block_minecart'
+])
+
+export function isRideableMinecartEntityName(name?: string): boolean {
+  if (!name) return false
+  return RIDEABLE_MINECART_ENTITY_NAMES.has(name)
+}
 
 export function getBoatPassengerSeatOffset(passengerIndex: number, passengerCount: number): number {
   if (passengerCount <= 1) return 0
@@ -47,5 +108,14 @@ export function getBoatPassengerWorldPosition(boatWorldPos: Vec3Like, boatYaw: n
     x: boatWorldPos.x - Math.sin(boatYaw) * seatOffset,
     y: boatWorldPos.y + BOAT_PASSENGER_RIDING_OFFSET_Y + PLAYER_RIDING_OFFSET_Y,
     z: boatWorldPos.z + Math.cos(boatYaw) * seatOffset
+  }
+}
+
+/** Vanilla 1.17.1 minecart positionRider for a centered player passenger. */
+export function getMinecartPassengerWorldPosition(minecartWorldPos: Vec3Like): Vec3Like {
+  return {
+    x: minecartWorldPos.x,
+    y: minecartWorldPos.y + MINECART_PASSENGER_ATTACHMENT_Y - PLAYER_VEHICLE_ATTACHMENT_Y,
+    z: minecartWorldPos.z
   }
 }

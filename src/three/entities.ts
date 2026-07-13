@@ -21,12 +21,15 @@ import { createItemMesh } from './itemMesh'
 import * as Entity from './entity/EntityMesh'
 import { setupBoatMesh, disposeBoatWaterPatch } from './entity/boatRenderSetup'
 import { getBoatMeshYawOffset, isBoatEntityName } from './entity/boatModelRotation'
-import { anchorBoatPassengerPosition, releaseBoatPassengerPosition } from './entity/boatPassengerRendering'
+import { anchorVehiclePassengerPosition, releaseVehiclePassengerPosition } from './entity/vehiclePassengerRendering'
+import { applyNetworkHeadPitch, storeNetworkHeadPitch } from './entity/networkHeadPitchRendering'
 import {
   ENTITY_TWEEN_DURATION_MS,
   getBoatPassengerWorldPosition,
   getEntityTweenDurationMs,
   getLocalVehicleWorldPosition,
+  getMinecartPassengerWorldPosition,
+  isRideableMinecartEntityName,
   type EntityRenderHints,
   usesCameraSyncedVehiclePosition
 } from './entity/interpolationPolicy'
@@ -443,7 +446,8 @@ export class Entities {
         const thirdPerson = this.worldRenderer.playerStateUtils.isThirdPerson()
         entity.visible = thirdPerson
 
-        if (thirdPerson) {
+        const isAnchoredPassenger = entity.userData._passengerVehicleId != null || entity.userData._boatPassengerVehicleId != null
+        if (thirdPerson && !isAnchoredPassenger) {
           const yOffset = this.worldRenderer.playerStateReactive.eyeHeight
           entity.position.set(this.worldRenderer.cameraWorldPos.x, this.worldRenderer.cameraWorldPos.y - yOffset, this.worldRenderer.cameraWorldPos.z)
         }
@@ -453,6 +457,10 @@ export class Entities {
 
       if (playerObject?.animation) {
         playerObject.animation.update(playerObject, dt)
+      }
+
+      if (!isPlayerEntity && playerObject) {
+        applyNetworkHeadPitch(playerObject, entity.userData)
       }
 
       entity.traverse(child => {
@@ -494,34 +502,60 @@ export class Entities {
       }
     }
 
-    this.updateBoatPassengerPositions()
+    this.updateVehiclePassengerPositions()
   }
 
-  updateBoatPassengerPositions() {
+  private resolvePassengerEntity(passengerId: number): SceneEntity | undefined {
+    if (this.playerEntity?.originalEntity.id === passengerId) {
+      return this.playerEntity
+    }
+    return this.entities[passengerId]
+  }
+
+  updateVehiclePassengerPositions() {
     const attachedPassengers = new Set<SceneEntity>()
 
-    for (const boat of Object.values(this.entities)) {
-      if (!isBoatEntityName(boat['realName'] ?? boat.originalEntity.name)) continue
-      const passengerIds = boat.userData.renderHints?.boatPassengerIds
+    for (const vehicle of Object.values(this.entities)) {
+      const renderHints = vehicle.userData.renderHints as EntityRenderHints | undefined
+      const passengerIds = renderHints?.passengerIds ?? renderHints?.boatPassengerIds
       if (!Array.isArray(passengerIds) || passengerIds.length === 0) continue
-      const boatWorldPos = this.worldRenderer.sceneOrigin.getWorldPosition(boat)
-      if (!boatWorldPos) continue
+
+      const vehicleName = vehicle['realName'] ?? vehicle.originalEntity.name
+      const layout = renderHints?.passengerLayout ?? (isBoatEntityName(vehicleName) ? 'boat' : undefined)
+      if (layout !== 'boat' && layout !== 'minecart') continue
+      if (layout === 'boat' && !isBoatEntityName(vehicleName)) continue
+      if (layout === 'minecart' && !isRideableMinecartEntityName(vehicleName)) continue
+
+      const vehicleWorldPos = this.worldRenderer.sceneOrigin.getWorldPosition(vehicle)
+      if (!vehicleWorldPos) continue
+      const vehicleId = String(vehicle.originalEntity.id)
 
       for (const [passengerIndex, passengerId] of passengerIds.entries()) {
-        const passenger = this.entities[passengerId]
+        const isLocalPassenger = passengerId === this.playerEntity?.originalEntity.id
+        const passenger = isLocalPassenger ? this.playerEntity : this.entities[passengerId]
         if (!passenger?.playerObject) continue
-        const passengerWorldPos = getBoatPassengerWorldPosition(boatWorldPos, boat.rotation.y, passengerIndex, passengerIds.length)
+        if (passenger === this.playerEntity && layout !== 'minecart') continue
 
-        anchorBoatPassengerPosition(passenger, passengerWorldPos, String(boat.originalEntity.id))
+        const passengerWorldPos =
+          layout === 'minecart'
+            ? getMinecartPassengerWorldPosition(vehicleWorldPos)
+            : getBoatPassengerWorldPosition(vehicleWorldPos, vehicle.rotation.y, passengerIndex, passengerIds.length)
+
+        anchorVehiclePassengerPosition(passenger, passengerWorldPos, vehicleId)
         attachedPassengers.add(passenger)
       }
     }
 
-    for (const passenger of Object.values(this.entities)) {
-      const vehicleId = passenger.userData._boatPassengerVehicleId as string | undefined
+    for (const passenger of [...Object.values(this.entities), ...(this.playerEntity ? [this.playerEntity] : [])]) {
+      const vehicleId = passenger.userData._passengerVehicleId ?? (passenger.userData._boatPassengerVehicleId as string | undefined)
       if (vehicleId === undefined || attachedPassengers.has(passenger)) continue
-      releaseBoatPassengerPosition(passenger, vehicleId, this.worldRenderer.sceneOrigin.getWorldPosition(passenger))
+      releaseVehiclePassengerPosition(passenger, vehicleId, this.worldRenderer.sceneOrigin.getWorldPosition(passenger))
     }
+  }
+
+  /** @deprecated Use updateVehiclePassengerPositions */
+  updateBoatPassengerPositions() {
+    this.updateVehiclePassengerPositions()
   }
 
   private syncArmorPositions(entity: SceneEntity) {
@@ -1250,13 +1284,16 @@ export class Entities {
 
   applyEntityRenderHints(e: SceneEntity, entity: SceneEntity['originalEntity']) {
     if (entity.renderHints) {
-      if (isBoatEntityName(entity.name)) {
-        const nextPassengerIds = new Set(entity.renderHints.boatPassengerIds ?? [])
-        for (const previousPassengerId of e.userData.renderHints?.boatPassengerIds ?? []) {
+      const hints = entity.renderHints as EntityRenderHints
+      const nextPassengerIds = new Set(hints.passengerIds ?? hints.boatPassengerIds ?? [])
+      const previousPassengerIds = e.userData.renderHints?.passengerIds ?? e.userData.renderHints?.boatPassengerIds ?? []
+      const isPassengerVehicle = isBoatEntityName(entity.name) || isRideableMinecartEntityName(entity.name)
+      if (isPassengerVehicle) {
+        for (const previousPassengerId of previousPassengerIds) {
           if (nextPassengerIds.has(previousPassengerId)) continue
-          const previousPassenger = this.entities[previousPassengerId]
+          const previousPassenger = this.resolvePassengerEntity(previousPassengerId)
           if (previousPassenger) {
-            releaseBoatPassengerPosition(previousPassenger, String(entity.id), this.worldRenderer.sceneOrigin.getWorldPosition(previousPassenger))
+            releaseVehiclePassengerPosition(previousPassenger, String(entity.id), this.worldRenderer.sceneOrigin.getWorldPosition(previousPassenger))
           }
         }
       }
@@ -1325,7 +1362,8 @@ export class Entities {
       playerObject.skin.head.rotation.y = 0
 
       const hp = overrides.rotation.head.x
-      playerObject.skin.head.rotation.x = typeof hp === 'number' && Number.isFinite(hp) ? -hp : 0
+      storeNetworkHeadPitch(e.userData, hp)
+      applyNetworkHeadPitch(playerObject, e.userData)
     }
   }
 

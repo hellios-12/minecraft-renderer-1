@@ -2,8 +2,12 @@ import { expect, test } from 'vitest'
 import {
   ENTITY_TWEEN_DURATION_MS,
   LOCAL_MOVEMENT_TWEEN_DURATION_MS,
+  SPECTATING_CAMERA_TWEEN_DURATION_MS,
+  getCameraMovementTweenDurationMs,
   getEntityTweenDurationMs,
   getLocalVehicleWorldPosition,
+  samePosition,
+  shouldRestartCameraPositionTween,
   usesCameraSyncedVehiclePosition
 } from './interpolationPolicy'
 
@@ -15,10 +19,92 @@ test('ordinary entity tween stays at 120 ms', () => {
   expect(ENTITY_TWEEN_DURATION_MS).toBe(120)
 })
 
+test('server-vehicle camera uses entity tween duration', () => {
+  expect(getCameraMovementTweenDurationMs('server-vehicle')).toBe(120)
+  expect(getCameraMovementTweenDurationMs('local-player')).toBe(50)
+  expect(getCameraMovementTweenDurationMs('spectating')).toBe(SPECTATING_CAMERA_TWEEN_DURATION_MS)
+})
+
+test('forced teleport camera update is instant', () => {
+  expect(getCameraMovementTweenDurationMs('server-vehicle', true)).toBe(0)
+  expect(getCameraMovementTweenDurationMs('local-player', true)).toBe(0)
+})
+
+test('same target does not restart camera tween', () => {
+  const target = { x: 1, y: 63.7, z: 2 }
+  expect(
+    shouldRestartCameraPositionTween({
+      target,
+      currentTarget: { ...target },
+      movementMode: 'server-vehicle',
+      previousMovementMode: 'server-vehicle',
+      instant: false
+    })
+  ).toBe(false)
+})
+
+test('dismount switches camera tween mode back to local-player', () => {
+  const target = { x: 1, y: 63.7, z: 2 }
+  expect(
+    shouldRestartCameraPositionTween({
+      target,
+      currentTarget: { ...target },
+      movementMode: 'local-player',
+      previousMovementMode: 'server-vehicle',
+      instant: false
+    })
+  ).toBe(true)
+  expect(getCameraMovementTweenDurationMs('local-player')).toBe(50)
+})
+
+test('sequential minecart targets restart tween only when position changes', () => {
+  const first = { x: 0, y: 63.7, z: 0 }
+  const second = { x: 1, y: 63.7, z: 0 }
+  expect(
+    shouldRestartCameraPositionTween({
+      target: first,
+      currentTarget: null,
+      movementMode: 'server-vehicle',
+      previousMovementMode: null,
+      instant: false
+    })
+  ).toBe(true)
+  expect(
+    shouldRestartCameraPositionTween({
+      target: first,
+      currentTarget: first,
+      movementMode: 'server-vehicle',
+      previousMovementMode: 'server-vehicle',
+      instant: false
+    })
+  ).toBe(false)
+  expect(
+    shouldRestartCameraPositionTween({
+      target: second,
+      currentTarget: first,
+      movementMode: 'server-vehicle',
+      previousMovementMode: 'server-vehicle',
+      instant: false
+    })
+  ).toBe(true)
+  expect(second.x).toBeGreaterThan(first.x)
+})
+
+test('samePosition uses epsilon comparison', () => {
+  expect(samePosition({ x: 1, y: 2, z: 3 }, { x: 1.00001, y: 2.00001, z: 3.00001 })).toBe(true)
+  expect(samePosition({ x: 1, y: 2, z: 3 }, { x: 1.01, y: 2, z: 3 })).toBe(false)
+})
+
 test('local vehicle skips position tween', () => {
   expect(usesCameraSyncedVehiclePosition({ renderHints: { localVehicle: true } })).toBe(true)
   expect(getEntityTweenDurationMs({ renderHints: { localVehicle: true } }, false)).toBe(0)
   expect(getEntityTweenDurationMs({ renderHints: { localVehicle: true } }, true)).toBe(0)
+})
+
+test('boat camera-sync policy stays separate from server-vehicle mode', () => {
+  expect(usesCameraSyncedVehiclePosition({ renderHints: { localVehicle: true } })).toBe(true)
+  expect(usesCameraSyncedVehiclePosition({ renderHints: { passengerLayout: 'minecart' } })).toBe(false)
+  expect(getCameraMovementTweenDurationMs('local-player')).toBe(50)
 })
 
 test('remote entities keep ordinary tween duration', () => {
