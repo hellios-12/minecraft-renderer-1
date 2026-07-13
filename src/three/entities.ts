@@ -27,8 +27,10 @@ import {
   ENTITY_TWEEN_DURATION_MS,
   getBoatPassengerWorldPosition,
   getEntityTweenDurationMs,
+  getHorsePassengerWorldPosition,
   getLocalVehicleWorldPosition,
   getMinecartPassengerWorldPosition,
+  isRideableHorseEntityName,
   isRideableMinecartEntityName,
   type EntityRenderHints,
   usesCameraSyncedVehiclePosition
@@ -522,9 +524,10 @@ export class Entities {
 
       const vehicleName = vehicle['realName'] ?? vehicle.originalEntity.name
       const layout = renderHints?.passengerLayout ?? (isBoatEntityName(vehicleName) ? 'boat' : undefined)
-      if (layout !== 'boat' && layout !== 'minecart') continue
+      if (layout !== 'boat' && layout !== 'minecart' && layout !== 'horse') continue
       if (layout === 'boat' && !isBoatEntityName(vehicleName)) continue
       if (layout === 'minecart' && !isRideableMinecartEntityName(vehicleName)) continue
+      if (layout === 'horse' && !isRideableHorseEntityName(vehicleName)) continue
 
       const vehicleWorldPos = this.worldRenderer.sceneOrigin.getWorldPosition(vehicle)
       if (!vehicleWorldPos) continue
@@ -539,7 +542,9 @@ export class Entities {
         const passengerWorldPos =
           layout === 'minecart'
             ? getMinecartPassengerWorldPosition(vehicleWorldPos)
-            : getBoatPassengerWorldPosition(vehicleWorldPos, vehicle.rotation.y, passengerIndex, passengerIds.length)
+            : layout === 'horse'
+              ? getHorsePassengerWorldPosition(vehicleWorldPos, vehicleName, vehicle.originalEntity.height ?? 1.6)
+              : getBoatPassengerWorldPosition(vehicleWorldPos, vehicle.rotation.y, passengerIndex, passengerIds.length)
 
         anchorVehiclePassengerPosition(passenger, passengerWorldPos, vehicleId)
         attachedPassengers.add(passenger)
@@ -822,7 +827,10 @@ export class Entities {
     }
   }
 
-  private applyMovementAnimation(playerObject: PlayerObjectType, animation: 'walking' | 'running' | 'oneSwing' | 'idle' | 'crouch' | 'crouchWalking'): void {
+  private applyMovementAnimation(
+    playerObject: PlayerObjectType,
+    animation: 'walking' | 'running' | 'oneSwing' | 'idle' | 'crouch' | 'crouchWalking' | 'riding'
+  ): void {
     const anim = playerObject.animation as WalkingGeneralSwing | undefined
     if (!anim) return
 
@@ -832,12 +840,21 @@ export class Entities {
     }
 
     anim.switchAnimationCallback = null
+    if (animation === 'riding') {
+      anim.isMoving = false
+      anim.isRunning = false
+      anim.isCrouched = false
+      anim.isRiding = true
+      return
+    }
+
+    anim.isRiding = false
     anim.isMoving = animation === 'walking' || animation === 'running' || animation === 'crouchWalking'
     anim.isRunning = animation === 'running'
     anim.isCrouched = animation === 'crouch' || animation === 'crouchWalking'
   }
 
-  playAnimation(entityPlayerId, animation: 'walking' | 'running' | 'oneSwing' | 'idle' | 'crouch' | 'crouchWalking') {
+  playAnimation(entityPlayerId, animation: 'walking' | 'running' | 'oneSwing' | 'idle' | 'crouch' | 'crouchWalking' | 'riding') {
     const playerObject =
       entityPlayerId === 'player_entity' ? this.playerEntity?.playerObject : (this.getPlayerObject(entityPlayerId) ?? this.playerEntity?.playerObject)
 

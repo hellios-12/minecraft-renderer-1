@@ -16,7 +16,7 @@ export type EntityRenderHints = {
   localVehicle?: boolean
   boatWaterPatchVisible?: boolean
   passengerIds?: number[]
-  passengerLayout?: 'boat' | 'minecart'
+  passengerLayout?: 'boat' | 'minecart' | 'horse'
   /** @deprecated Use passengerIds */
   boatPassengerIds?: number[]
 }
@@ -91,6 +91,13 @@ const RIDEABLE_MINECART_ENTITY_NAMES = new Set([
   'command_block_minecart'
 ])
 
+const RIDEABLE_HORSE_ENTITY_NAMES = new Set(['horse', 'donkey', 'mule', 'skeleton_horse', 'zombie_horse'])
+
+export function isRideableHorseEntityName(name?: string): boolean {
+  if (!name) return false
+  return RIDEABLE_HORSE_ENTITY_NAMES.has(name)
+}
+
 export function isRideableMinecartEntityName(name?: string): boolean {
   if (!name) return false
   return RIDEABLE_MINECART_ENTITY_NAMES.has(name)
@@ -117,5 +124,24 @@ export function getMinecartPassengerWorldPosition(minecartWorldPos: Vec3Like): V
     x: minecartWorldPos.x,
     y: minecartWorldPos.y + MINECART_PASSENGER_ATTACHMENT_Y - PLAYER_VEHICLE_ATTACHMENT_Y,
     z: minecartWorldPos.z
+  }
+}
+
+function getHorsePassengerFeetOffsetY(name: string | undefined, height: number): number {
+  let variantOffset = 0
+  if (name === 'donkey' || name === 'mule') {
+    variantOffset = 0.25
+  } else if (name === 'skeleton_horse') {
+    variantOffset = 0.1875
+  }
+  return height * 0.75 - variantOffset - 0.35
+}
+
+/** Vanilla 1.17.1 AbstractHorse positionRider feet Y for a centered player passenger. */
+export function getHorsePassengerWorldPosition(vehicleWorldPos: Vec3Like, name: string | undefined, height = 1.6): Vec3Like {
+  return {
+    x: vehicleWorldPos.x,
+    y: vehicleWorldPos.y + getHorsePassengerFeetOffsetY(name, height),
+    z: vehicleWorldPos.z
   }
 }
