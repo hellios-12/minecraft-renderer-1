@@ -101,8 +101,9 @@ test('local vehicle skips position tween', () => {
   expect(getEntityTweenDurationMs({ renderHints: { localVehicle: true } }, true)).toBe(0)
 })
 
-test('boat camera-sync policy stays separate from server-vehicle mode', () => {
+test('locally ridden vehicle camera-sync policy stays separate from server-vehicle mode', () => {
   expect(usesCameraSyncedVehiclePosition({ renderHints: { localVehicle: true } })).toBe(true)
+  expect(usesCameraSyncedVehiclePosition({ renderHints: { localVehicle: true, passengerLayout: 'minecart' } })).toBe(true)
   expect(usesCameraSyncedVehiclePosition({ renderHints: { passengerLayout: 'minecart' } })).toBe(false)
   expect(getCameraMovementTweenDurationMs('local-player')).toBe(50)
 })

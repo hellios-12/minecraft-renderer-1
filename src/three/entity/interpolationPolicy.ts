@@ -65,7 +65,7 @@ export function shouldRestartCameraPositionTween(args: {
   return !samePosition(args.target, args.currentTarget)
 }
 
-/** Local vehicle X/Z follow camera tween; Y uses latest vehicle physics height. */
+/** Locally ridden vehicle X/Z follow camera tween; Y uses latest server vehicle height. */
 export function getLocalVehicleWorldPosition(cameraWorldPos: Vec3Like, vehicleY: number): Vec3Like {
   return {
     x: cameraWorldPos.x,

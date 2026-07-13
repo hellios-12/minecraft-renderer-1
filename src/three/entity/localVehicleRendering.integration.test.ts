@@ -3,7 +3,9 @@ import { expect, test, vi } from 'vitest'
 import { SceneOrigin } from '../sceneOrigin'
 import { anchorVehiclePassengerPosition, releaseVehiclePassengerPosition } from './vehiclePassengerRendering'
 import {
+  ENTITY_TWEEN_DURATION_MS,
   getBoatPassengerWorldPosition,
+  getEntityTweenDurationMs,
   getLocalVehicleWorldPosition,
   getMinecartPassengerWorldPosition,
   usesCameraSyncedVehiclePosition
@@ -19,7 +21,7 @@ function staleOffsetVehiclePosition(cameraWorldPos: Vec3, vehiclePosition: Vec3,
   }
 }
 
-test('stale passenger snapshot does not shift rendered boat X/Z relative to camera', () => {
+test('stale passenger snapshot does not shift rendered locally ridden vehicle X/Z relative to camera', () => {
   const stalePassenger = { x: 0, y: 63, z: 0 }
   const newVehicle = { x: 1, y: 63.2, z: 2 }
   const cameraWorldPos = { x: 0.4, y: 63.5, z: 0.8 }
@@ -48,7 +50,7 @@ test('stale passenger snapshot does not shift rendered boat X/Z relative to came
   expect(syncedPassenger.z).toBe(newVehicle.z)
 })
 
-test('render frames between press and release keep zero horizontal delta to camera', () => {
+test('render frames between press and release keep zero horizontal delta to camera for local boat', () => {
   const vehicleY = 62.75
   const frames = [
     { x: 0, y: 63.4, z: 0 },
@@ -184,7 +186,61 @@ test('minecart passenger anchor follows vehicle world position without inheritin
   expect(sceneOrigin.getWorldPosition(passenger)).toEqual(detachedWorldPosition)
 })
 
-test('minecart does not use camera-synced vehicle policy', () => {
-  expect(usesCameraSyncedVehiclePosition({ renderHints: { localVehicle: true } })).toBe(true)
+test('local minecart with localVehicle uses camera-synced positioning', () => {
+  expect(usesCameraSyncedVehiclePosition({ renderHints: { localVehicle: true, passengerLayout: 'minecart' } })).toBe(true)
+  expect(getEntityTweenDurationMs({ renderHints: { localVehicle: true, passengerLayout: 'minecart' } }, false)).toBe(0)
+})
+
+test('remote minecart keeps ordinary entity interpolation', () => {
   expect(usesCameraSyncedVehiclePosition({ renderHints: { passengerLayout: 'minecart' } })).toBe(false)
+  expect(getEntityTweenDurationMs({ renderHints: { passengerLayout: 'minecart' } }, false)).toBe(ENTITY_TWEEN_DURATION_MS)
+})
+
+test('local minecart X/Z stay aligned with camera on intermediate frames between server targets', () => {
+  const vehicleY = 63.7
+  const cameraFrames = [
+    { x: 0, y: 64.3, z: 0 },
+    { x: 1.2, y: 64.3, z: 0.6 },
+    { x: 5, y: 64.3, z: 3 },
+    { x: 4.1, y: 64.3, z: 2.5 }
+  ]
+
+  for (const camera of cameraFrames) {
+    const minecart = getLocalVehicleWorldPosition(camera, vehicleY)
+    expect(minecart.x - camera.x).toBeCloseTo(0, 5)
+    expect(minecart.z - camera.z).toBeCloseTo(0, 5)
+    expect(minecart.y).toBe(vehicleY)
+  }
+})
+
+test('local minecart passenger anchors to camera-synced vehicle position', () => {
+  const sceneOrigin = new SceneOrigin(new THREE.Scene())
+  sceneOrigin.update(96, 60, 192)
+
+  const minecart = new THREE.Group()
+  sceneOrigin.track(minecart)
+
+  const passenger = new THREE.Group()
+  sceneOrigin.track(passenger)
+
+  const vehicleY = 64
+  const cameraFrames = [
+    { x: 100, y: 64.7, z: 200 },
+    { x: 101.4, y: 64.7, z: 200.8 },
+    { x: 103, y: 64.7, z: 202 }
+  ]
+
+  for (const camera of cameraFrames) {
+    const syncedMinecart = getLocalVehicleWorldPosition(camera, vehicleY)
+    minecart.position.set(syncedMinecart.x, syncedMinecart.y, syncedMinecart.z)
+    const seatPosition = getMinecartPassengerWorldPosition(syncedMinecart)
+    anchorVehiclePassengerPosition(passenger, seatPosition, '42')
+    const passengerWorld = sceneOrigin.getWorldPosition(passenger)!
+
+    expect(syncedMinecart.x - camera.x).toBeCloseTo(0, 5)
+    expect(syncedMinecart.z - camera.z).toBeCloseTo(0, 5)
+    expect(passengerWorld.x).toBe(syncedMinecart.x)
+    expect(passengerWorld.z).toBe(syncedMinecart.z)
+    expect(passengerWorld.y).toBeCloseTo(63.5875)
+  }
 })
