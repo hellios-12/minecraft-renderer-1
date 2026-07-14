@@ -14,6 +14,7 @@ export type Vec3Like = { x: number; y: number; z: number }
 
 export type EntityRenderHints = {
   localVehicle?: boolean
+  localVehicleVerticalCameraLock?: 'horse'
   boatWaterPatchVisible?: boolean
   passengerIds?: number[]
   passengerLayout?: 'boat' | 'minecart' | 'horse'
@@ -72,6 +73,24 @@ export function getLocalVehicleWorldPosition(cameraWorldPos: Vec3Like, vehicleY:
     y: vehicleY,
     z: cameraWorldPos.z
   }
+}
+
+export function resolveLocalVehicleWorldPosition(args: {
+  cameraWorldPos: Vec3Like
+  rawVehicleY: number
+  eyeHeight: number
+  vehicleName: string | undefined
+  vehicleHeight: number
+  verticalCameraLock?: 'horse'
+}): Vec3Like {
+  const { cameraWorldPos, rawVehicleY, eyeHeight, vehicleName, vehicleHeight, verticalCameraLock } = args
+  if (verticalCameraLock === 'horse') {
+    const y = cameraWorldPos.y - eyeHeight - getHorsePassengerFeetOffsetY(vehicleName, vehicleHeight)
+    if (Number.isFinite(y)) {
+      return { x: cameraWorldPos.x, y, z: cameraWorldPos.z }
+    }
+  }
+  return getLocalVehicleWorldPosition(cameraWorldPos, rawVehicleY)
 }
 
 const BOAT_PASSENGER_RIDING_OFFSET_Y = -0.1

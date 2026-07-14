@@ -6,6 +6,7 @@ import {
   getCameraMovementTweenDurationMs,
   getEntityTweenDurationMs,
   getLocalVehicleWorldPosition,
+  resolveLocalVehicleWorldPosition,
   samePosition,
   shouldRestartCameraPositionTween,
   usesCameraSyncedVehiclePosition
@@ -138,4 +139,96 @@ test('intermediate camera frames keep boat X/Z aligned with player', () => {
   expect(start.y).toBe(vehicleY)
   expect(mid.y).toBe(vehicleY)
   expect(end.y).toBe(vehicleY)
+})
+
+test('horse vertical camera lock keeps constant offset from camera across tween progress', () => {
+  const eyeHeight = 1.62
+  const feetOffset = 0.85
+  const expectedGap = -(eyeHeight + feetOffset)
+  const rawVehicleY = 64
+  const cameraStartY = rawVehicleY + feetOffset + eyeHeight
+  const tweenProgress = [0, 0.25, 0.5, 0.75, 1]
+
+  for (const progress of tweenProgress) {
+    const cameraY = cameraStartY + progress * 0.8
+    const resolved = resolveLocalVehicleWorldPosition({
+      cameraWorldPos: { x: 1 + progress, y: cameraY, z: 2 },
+      rawVehicleY,
+      eyeHeight,
+      vehicleName: 'horse',
+      vehicleHeight: 1.6,
+      verticalCameraLock: 'horse',
+    })
+    expect(resolved.y - cameraY).toBeCloseTo(expectedGap, 5)
+    expect(resolved.x).toBe(1 + progress)
+    expect(resolved.z).toBe(2)
+  }
+})
+
+test('horse vertical camera lock uses vanilla feet offset value', () => {
+  const eyeHeight = 1.62
+  const cameraY = 66.47
+  const resolved = resolveLocalVehicleWorldPosition({
+    cameraWorldPos: { x: 0, y: cameraY, z: 0 },
+    rawVehicleY: 64,
+    eyeHeight,
+    vehicleName: 'horse',
+    vehicleHeight: 1.6,
+    verticalCameraLock: 'horse',
+  })
+  expect(resolved.y).toBeCloseTo(cameraY - 2.47, 5)
+})
+
+test('horse vertical camera lock is variant-aware for donkey and skeleton_horse', () => {
+  const eyeHeight = 1.62
+  const cameraY = 65
+
+  const donkey = resolveLocalVehicleWorldPosition({
+    cameraWorldPos: { x: 0, y: cameraY, z: 0 },
+    rawVehicleY: 64,
+    eyeHeight,
+    vehicleName: 'donkey',
+    vehicleHeight: 1.6,
+    verticalCameraLock: 'horse',
+  })
+  expect(donkey.y).toBeCloseTo(cameraY - eyeHeight - 0.6, 5)
+
+  const skeleton = resolveLocalVehicleWorldPosition({
+    cameraWorldPos: { x: 0, y: cameraY, z: 0 },
+    rawVehicleY: 64,
+    eyeHeight,
+    vehicleName: 'skeleton_horse',
+    vehicleHeight: 1.6,
+    verticalCameraLock: 'horse',
+  })
+  expect(skeleton.y).toBeCloseTo(cameraY - eyeHeight - 0.6625, 5)
+})
+
+test('without vertical camera lock resolver keeps raw vehicle Y', () => {
+  const camera = { x: 10, y: 64.5, z: -3 }
+  const rawVehicleY = 63.2
+  expect(
+    resolveLocalVehicleWorldPosition({
+      cameraWorldPos: camera,
+      rawVehicleY,
+      eyeHeight: 1.62,
+      vehicleName: 'horse',
+      vehicleHeight: 1.6,
+    })
+  ).toEqual(getLocalVehicleWorldPosition(camera, rawVehicleY))
+})
+
+test('horse vertical camera lock falls back to raw Y when result is non-finite', () => {
+  const camera = { x: 1, y: 64, z: 2 }
+  const rawVehicleY = 63.5
+  expect(
+    resolveLocalVehicleWorldPosition({
+      cameraWorldPos: camera,
+      rawVehicleY,
+      eyeHeight: Number.NaN,
+      vehicleName: 'horse',
+      vehicleHeight: 1.6,
+      verticalCameraLock: 'horse',
+    })
+  ).toEqual(getLocalVehicleWorldPosition(camera, rawVehicleY))
 })

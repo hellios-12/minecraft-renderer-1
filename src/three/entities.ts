@@ -28,11 +28,12 @@ import {
   getBoatPassengerWorldPosition,
   getEntityTweenDurationMs,
   getHorsePassengerWorldPosition,
-  getLocalVehicleWorldPosition,
   getMinecartPassengerWorldPosition,
   isRideableHorseEntityName,
   isRideableMinecartEntityName,
+  resolveLocalVehicleWorldPosition,
   type EntityRenderHints,
+  type Vec3Like,
   usesCameraSyncedVehiclePosition
 } from './entity/interpolationPolicy'
 import { getMesh } from './entity/EntityMesh'
@@ -483,8 +484,7 @@ export class Entities {
       }
 
       if (entity.userData.renderHints?.localVehicle) {
-        const vehicleY = entity.userData._localVehicleY ?? entity.position.y
-        const worldPos = getLocalVehicleWorldPosition(this.worldRenderer.cameraWorldPos, vehicleY)
+        const worldPos = this.resolveLocalVehicleRenderWorldPos(entity)
         entity.position.set(worldPos.x, worldPos.y, worldPos.z)
       }
 
@@ -512,6 +512,20 @@ export class Entities {
       return this.playerEntity
     }
     return this.entities[passengerId]
+  }
+
+  private resolveLocalVehicleRenderWorldPos(sceneEntity: SceneEntity): Vec3Like {
+    const originalEntity = sceneEntity.originalEntity
+    const renderHints = sceneEntity.userData.renderHints as EntityRenderHints | undefined
+    const rawVehicleY = sceneEntity.userData._localVehicleY ?? originalEntity.position?.y ?? sceneEntity.position.y
+    return resolveLocalVehicleWorldPosition({
+      cameraWorldPos: this.worldRenderer.cameraWorldPos,
+      rawVehicleY,
+      eyeHeight: this.worldRenderer.playerStateReactive.eyeHeight,
+      vehicleName: sceneEntity['realName'] ?? originalEntity.name,
+      vehicleHeight: originalEntity.height ?? 1.6,
+      verticalCameraLock: renderHints?.localVehicleVerticalCameraLock,
+    })
   }
 
   updateVehiclePassengerPositions() {
@@ -1335,7 +1349,7 @@ export class Entities {
         e.userData._localVehicleY = entity.position.y
         e.userData._posTween?.stop()
         e.userData._posTween = undefined
-        const worldPos = getLocalVehicleWorldPosition(this.worldRenderer.cameraWorldPos, entity.position.y)
+        const worldPos = this.resolveLocalVehicleRenderWorldPos(e)
         e.position.set(worldPos.x, worldPos.y, worldPos.z)
       } else {
         const ANIMATION_DURATION = getEntityTweenDurationMs(entity, justAdded)
