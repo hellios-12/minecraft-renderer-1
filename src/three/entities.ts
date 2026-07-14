@@ -524,7 +524,7 @@ export class Entities {
       eyeHeight: this.worldRenderer.playerStateReactive.eyeHeight,
       vehicleName: sceneEntity['realName'] ?? originalEntity.name,
       vehicleHeight: originalEntity.height ?? 1.6,
-      verticalCameraLock: renderHints?.localVehicleVerticalCameraLock,
+      verticalCameraLock: renderHints?.localVehicleVerticalCameraLock
     })
   }
 

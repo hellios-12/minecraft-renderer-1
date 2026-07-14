@@ -157,7 +157,7 @@ test('horse vertical camera lock keeps constant offset from camera across tween 
       eyeHeight,
       vehicleName: 'horse',
       vehicleHeight: 1.6,
-      verticalCameraLock: 'horse',
+      verticalCameraLock: 'horse'
     })
     expect(resolved.y - cameraY).toBeCloseTo(expectedGap, 5)
     expect(resolved.x).toBe(1 + progress)
@@ -174,7 +174,7 @@ test('horse vertical camera lock uses vanilla feet offset value', () => {
     eyeHeight,
     vehicleName: 'horse',
     vehicleHeight: 1.6,
-    verticalCameraLock: 'horse',
+    verticalCameraLock: 'horse'
   })
   expect(resolved.y).toBeCloseTo(cameraY - 2.47, 5)
 })
@@ -189,7 +189,7 @@ test('horse vertical camera lock is variant-aware for donkey and skeleton_horse'
     eyeHeight,
     vehicleName: 'donkey',
     vehicleHeight: 1.6,
-    verticalCameraLock: 'horse',
+    verticalCameraLock: 'horse'
   })
   expect(donkey.y).toBeCloseTo(cameraY - eyeHeight - 0.6, 5)
 
@@ -199,7 +199,7 @@ test('horse vertical camera lock is variant-aware for donkey and skeleton_horse'
     eyeHeight,
     vehicleName: 'skeleton_horse',
     vehicleHeight: 1.6,
-    verticalCameraLock: 'horse',
+    verticalCameraLock: 'horse'
   })
   expect(skeleton.y).toBeCloseTo(cameraY - eyeHeight - 0.6625, 5)
 })
@@ -213,7 +213,7 @@ test('without vertical camera lock resolver keeps raw vehicle Y', () => {
       rawVehicleY,
       eyeHeight: 1.62,
       vehicleName: 'horse',
-      vehicleHeight: 1.6,
+      vehicleHeight: 1.6
     })
   ).toEqual(getLocalVehicleWorldPosition(camera, rawVehicleY))
 })
@@ -228,7 +228,7 @@ test('horse vertical camera lock falls back to raw Y when result is non-finite',
       eyeHeight: Number.NaN,
       vehicleName: 'horse',
       vehicleHeight: 1.6,
-      verticalCameraLock: 'horse',
+      verticalCameraLock: 'horse'
     })
   ).toEqual(getLocalVehicleWorldPosition(camera, rawVehicleY))
 })
