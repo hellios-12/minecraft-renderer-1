@@ -144,13 +144,11 @@ export class WalkingGeneralSwing extends PlayerAnimation {
       player.skin.rightArm.rotation.x -= Math.PI / 5
       player.skin.leftArm.rotation.x -= Math.PI / 5
 
-      player.skin.rightLeg.rotation.x = -1.4137167
-      player.skin.rightLeg.rotation.y = Math.PI / 10
-      player.skin.rightLeg.rotation.z = Math.PI / 40
-
-      player.skin.leftLeg.rotation.x = -1.4137167
-      player.skin.leftLeg.rotation.y = -Math.PI / 10
-      player.skin.leftLeg.rotation.z = -Math.PI / 40
+      // Vanilla HumanoidModel uses ModelPart Z→Y→X order with yRot/zRot signs as in Java.
+      // skinview3d Y/Z axes are opposite the Java model, so ZYX plus inverted Y/Z signs
+      // matches vanilla Rz × Ry × Rx (see BOAT_RIDING_LEG_SPREAD.md).
+      player.skin.rightLeg.rotation.set(-1.4137167, -Math.PI / 10, -Math.PI / 40, 'ZYX')
+      player.skin.leftLeg.rotation.set(-1.4137167, Math.PI / 10, Math.PI / 40, 'ZYX')
     } else {
       const boundary = this.isRunning ? Math.cos(t) : Math.sin(t)
       if (Math.abs(boundary) < 0.02) {

@@ -6,14 +6,14 @@ export const BOAT_WATER_PATCH_WIDTH = 28 / 16
 export const BOAT_WATER_PATCH_HEIGHT = 3 / 16
 export const BOAT_WATER_PATCH_DEPTH = 16 / 16
 
-/** OBJ boat root offset applied in EntityMesh. */
-export const BOAT_OBJ_OFFSET_Y = -1
+/** OBJ boat root offset applied in EntityMesh (single source — import from here, do not duplicate). */
+export const BOAT_OBJ_OFFSET_Y = -1.125
 
 /**
  * Vanilla 1.17.1 water patch center in OBJ-local space.
- * World-relative bounds with BOAT_OBJ_OFFSET_Y: X [-0.875,0.875], Y [0.375,0.5625], Z [-0.5,0.5].
+ * Tuned with BOAT_OBJ_OFFSET_Y so entity-space bounds stay Y [0.375, 0.5625].
  */
-export const BOAT_WATER_PATCH_CENTER_Y = 1.46875
+export const BOAT_WATER_PATCH_CENTER_Y = 1.59375
 export const BOAT_WATER_PATCH_CENTER_Z = 0
 
 export const BOAT_WATER_PATCH_WORLD_BOUNDS = {

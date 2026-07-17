@@ -76,3 +76,31 @@ test('boat hull material is alpha-tested opaque with depth write', () => {
   expect(material.depthWrite).toBe(true)
   expect(material.depthTest).toBe(true)
 })
+
+test('boat OBJ hull entity-space Y bounds after BOAT_OBJ_OFFSET_Y', () => {
+  const fs = require('node:fs')
+  const path = require('node:path')
+  const objPath = path.join(__dirname, 'models/boat.obj')
+  const txt = fs.readFileSync(objPath, 'utf8') as string
+  const groups: Record<string, { min: number; max: number }> = {}
+  let current = ''
+  for (const line of txt.split('\n')) {
+    if (line.startsWith('o ')) current = line.slice(2).trim()
+    if (!line.startsWith('v ')) continue
+    const y = Number(line.split(/\s+/)[2])
+    groups[current] ??= { min: Infinity, max: -Infinity }
+    groups[current].min = Math.min(groups[current].min, y + BOAT_OBJ_OFFSET_Y)
+    groups[current].max = Math.max(groups[current].max, y + BOAT_OBJ_OFFSET_Y)
+  }
+
+  expect(groups.bottom.min).toBeCloseTo(0, 5)
+  expect(groups.bottom.max).toBeCloseTo(0.1875, 5)
+  for (const name of ['front', 'back', 'left', 'right'] as const) {
+    expect(groups[name].min).toBeCloseTo(0.1875, 5)
+    expect(groups[name].max).toBeCloseTo(0.5625, 5)
+  }
+
+  const patch = getBoatWaterPatchEntitySpaceBounds(BOAT_OBJ_OFFSET_Y)
+  expect(patch.minY).toBeCloseTo(0.375, 5)
+  expect(patch.maxY).toBeCloseTo(0.5625, 5)
+})

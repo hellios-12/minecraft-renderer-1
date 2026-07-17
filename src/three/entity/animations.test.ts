@@ -5,9 +5,14 @@ import type { PlayerObjectType } from '../../lib/createPlayerObject'
 import { WalkingGeneralSwing } from './animations'
 
 const RIDING_LEG_X = -1.4137167
-const RIDING_LEG_Y = Math.PI / 10
-const RIDING_LEG_Z = Math.PI / 40
+const VANILLA_RIDING_LEG_Y = Math.PI / 10
+const VANILLA_RIDING_LEG_Z = Math.PI / 40
+const SKINVIEW_RIDING_LEG_Y = -VANILLA_RIDING_LEG_Y
+const SKINVIEW_RIDING_LEG_Z = -VANILLA_RIDING_LEG_Z
+const RIDING_LEG_ORDER = 'ZYX'
 const RIDING_ARM_DELTA = Math.PI / 5
+
+const YZ_AXIS_FLIP = new THREE.Matrix4().makeScale(1, -1, -1)
 
 function makePlayerObject(): PlayerObjectType {
   const playerObject = new PlayerObject() as PlayerObjectType
@@ -24,7 +29,7 @@ function captureRotations(playerObject: PlayerObjectType) {
     leftArm: leftArm.rotation.clone(),
     rightArm: rightArm.rotation.clone(),
     leftLeg: leftLeg.rotation.clone(),
-    rightLeg: rightLeg.rotation.clone(),
+    rightLeg: rightLeg.rotation.clone()
   }
 }
 
@@ -32,17 +37,37 @@ function runAnimationFrame(animation: WalkingGeneralSwing, playerObject: PlayerO
   animation.update(playerObject, dt)
 }
 
-function expectRidingLegPose(playerObject: PlayerObjectType) {
-  expect(playerObject.skin.rightLeg.rotation.x).toBeCloseTo(RIDING_LEG_X)
-  expect(playerObject.skin.rightLeg.rotation.y).toBeCloseTo(RIDING_LEG_Y)
-  expect(playerObject.skin.rightLeg.rotation.z).toBeCloseTo(RIDING_LEG_Z)
-
-  expect(playerObject.skin.leftLeg.rotation.x).toBeCloseTo(RIDING_LEG_X)
-  expect(playerObject.skin.leftLeg.rotation.y).toBeCloseTo(-RIDING_LEG_Y)
-  expect(playerObject.skin.leftLeg.rotation.z).toBeCloseTo(-RIDING_LEG_Z)
+function makeJavaRidingLegMatrix(ySign: 1 | -1): THREE.Matrix4 {
+  return new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(RIDING_LEG_X, ySign * VANILLA_RIDING_LEG_Y, ySign * VANILLA_RIDING_LEG_Z, RIDING_LEG_ORDER))
 }
 
-test('riding sets exact leg X/Y/Z rotations', () => {
+function makeSkinviewRidingLegMatrix(y: number, z: number): THREE.Matrix4 {
+  return new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(RIDING_LEG_X, y, z, RIDING_LEG_ORDER))
+}
+
+function conjugateYzAxisFlip(rotationMatrix: THREE.Matrix4): THREE.Matrix4 {
+  return YZ_AXIS_FLIP.clone().multiply(rotationMatrix).multiply(YZ_AXIS_FLIP.clone())
+}
+
+function expectMatrixNear(a: THREE.Matrix4, b: THREE.Matrix4) {
+  for (let i = 0; i < 16; i++) {
+    expect(a.elements[i]).toBeCloseTo(b.elements[i])
+  }
+}
+
+function expectRidingLegPose(playerObject: PlayerObjectType) {
+  expect(playerObject.skin.rightLeg.rotation.order).toBe(RIDING_LEG_ORDER)
+  expect(playerObject.skin.rightLeg.rotation.x).toBeCloseTo(RIDING_LEG_X)
+  expect(playerObject.skin.rightLeg.rotation.y).toBeCloseTo(SKINVIEW_RIDING_LEG_Y)
+  expect(playerObject.skin.rightLeg.rotation.z).toBeCloseTo(SKINVIEW_RIDING_LEG_Z)
+
+  expect(playerObject.skin.leftLeg.rotation.order).toBe(RIDING_LEG_ORDER)
+  expect(playerObject.skin.leftLeg.rotation.x).toBeCloseTo(RIDING_LEG_X)
+  expect(playerObject.skin.leftLeg.rotation.y).toBeCloseTo(-SKINVIEW_RIDING_LEG_Y)
+  expect(playerObject.skin.leftLeg.rotation.z).toBeCloseTo(-SKINVIEW_RIDING_LEG_Z)
+}
+
+test('riding sets ZYX leg rotations with inverted Y/Z signs for skinview3d axes', () => {
   const playerObject = makePlayerObject()
   const animation = new WalkingGeneralSwing()
   animation._captureDefaults(playerObject)
@@ -51,6 +76,33 @@ test('riding sets exact leg X/Y/Z rotations', () => {
   runAnimationFrame(animation, playerObject)
 
   expectRidingLegPose(playerObject)
+})
+
+test('riding leg rotation matrix matches vanilla after Y/Z axis conversion', () => {
+  const javaRight = makeJavaRidingLegMatrix(1)
+  const skinviewRight = makeSkinviewRidingLegMatrix(SKINVIEW_RIDING_LEG_Y, SKINVIEW_RIDING_LEG_Z)
+  expectMatrixNear(conjugateYzAxisFlip(skinviewRight), javaRight)
+
+  const javaLeft = makeJavaRidingLegMatrix(-1)
+  const skinviewLeft = makeSkinviewRidingLegMatrix(-SKINVIEW_RIDING_LEG_Y, -SKINVIEW_RIDING_LEG_Z)
+  expectMatrixNear(conjugateYzAxisFlip(skinviewLeft), javaLeft)
+})
+
+test('animated riding legs match expected rotation matrices', () => {
+  const playerObject = makePlayerObject()
+  const animation = new WalkingGeneralSwing()
+  animation._captureDefaults(playerObject)
+  animation.isRiding = true
+  runAnimationFrame(animation, playerObject)
+
+  playerObject.skin.rightLeg.updateMatrix()
+  playerObject.skin.leftLeg.updateMatrix()
+
+  const rightRot = new THREE.Matrix4().extractRotation(playerObject.skin.rightLeg.matrix)
+  const leftRot = new THREE.Matrix4().extractRotation(playerObject.skin.leftLeg.matrix)
+
+  expectMatrixNear(rightRot, makeSkinviewRidingLegMatrix(SKINVIEW_RIDING_LEG_Y, SKINVIEW_RIDING_LEG_Z))
+  expectMatrixNear(leftRot, makeSkinviewRidingLegMatrix(-SKINVIEW_RIDING_LEG_Y, -SKINVIEW_RIDING_LEG_Z))
 })
 
 test('riding applies arm X delta relative to defaults', () => {
@@ -79,7 +131,7 @@ test('riding does not apply old arm Z spread', () => {
   expect(playerObject.skin.rightArm.rotation.z).toBeCloseTo(defaults.rightArm.z)
 })
 
-test('idle to riding to idle restores limb rotations', () => {
+test('idle to riding to idle restores limb rotations including order', () => {
   const playerObject = makePlayerObject()
   const animation = new WalkingGeneralSwing()
   animation._captureDefaults(playerObject)
@@ -101,15 +153,19 @@ test('idle to riding to idle restores limb rotations', () => {
   expect(restored.leftArm.x).toBeCloseTo(idleRotations.leftArm.x)
   expect(restored.leftArm.y).toBeCloseTo(idleRotations.leftArm.y)
   expect(restored.leftArm.z).toBeCloseTo(idleRotations.leftArm.z)
+  expect(restored.leftArm.order).toBe(idleRotations.leftArm.order)
   expect(restored.rightArm.x).toBeCloseTo(idleRotations.rightArm.x)
   expect(restored.rightArm.y).toBeCloseTo(idleRotations.rightArm.y)
   expect(restored.rightArm.z).toBeCloseTo(idleRotations.rightArm.z)
+  expect(restored.rightArm.order).toBe(idleRotations.rightArm.order)
   expect(restored.leftLeg.x).toBeCloseTo(defaults.leftLeg.x)
   expect(restored.leftLeg.y).toBeCloseTo(defaults.leftLeg.y)
   expect(restored.leftLeg.z).toBeCloseTo(defaults.leftLeg.z)
+  expect(restored.leftLeg.order).toBe(defaults.leftLeg.order)
   expect(restored.rightLeg.x).toBeCloseTo(defaults.rightLeg.x)
   expect(restored.rightLeg.y).toBeCloseTo(defaults.rightLeg.y)
   expect(restored.rightLeg.z).toBeCloseTo(defaults.rightLeg.z)
+  expect(restored.rightLeg.order).toBe(defaults.rightLeg.order)
 })
 
 test('multiple riding frames do not accumulate angles', () => {
@@ -129,9 +185,11 @@ test('multiple riding frames do not accumulate angles', () => {
   expect(lastFrame.leftLeg.x).toBeCloseTo(firstFrame.leftLeg.x)
   expect(lastFrame.leftLeg.y).toBeCloseTo(firstFrame.leftLeg.y)
   expect(lastFrame.leftLeg.z).toBeCloseTo(firstFrame.leftLeg.z)
+  expect(lastFrame.leftLeg.order).toBe(firstFrame.leftLeg.order)
   expect(lastFrame.rightLeg.x).toBeCloseTo(firstFrame.rightLeg.x)
   expect(lastFrame.rightLeg.y).toBeCloseTo(firstFrame.rightLeg.y)
   expect(lastFrame.rightLeg.z).toBeCloseTo(firstFrame.rightLeg.z)
+  expect(lastFrame.rightLeg.order).toBe(firstFrame.rightLeg.order)
   expect(lastFrame.leftArm.x).toBeCloseTo(firstFrame.leftArm.x)
   expect(lastFrame.rightArm.x).toBeCloseTo(firstFrame.rightArm.x)
 })
