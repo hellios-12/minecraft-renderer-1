@@ -22,6 +22,13 @@ import * as Entity from './entity/EntityMesh'
 import { setupBoatMesh, disposeBoatWaterPatch } from './entity/boatRenderSetup'
 import { getBoatMeshYawOffset, isBoatEntityName } from './entity/boatModelRotation'
 import { resolveBoatPassengerThirdPersonRotation, shouldApplyBoatPassengerThirdPersonRotation } from './entity/boatPassengerRotation'
+import {
+  createBoatPaddleAnimationState,
+  createBoatPaddlePivotScratch,
+  syncBoatPaddleAnimationTargets,
+  updateBoatPaddleAnimationState,
+  type BoatPaddleAnimationState
+} from './entity/boatPaddleAnimation'
 import { releaseVehiclePassengerPosition } from './entity/vehiclePassengerRendering'
 import { updateVehiclePassengerPositions as applyVehiclePassengerPositions } from './entity/vehiclePassengerUpdate'
 import { applyNetworkHeadPitch, storeNetworkHeadPitch } from './entity/networkHeadPitchRendering'
@@ -295,6 +302,7 @@ export class Entities {
   cachedMapsImages = {} as Record<number, string>
   itemFrameMaps = {} as Record<number, Array<THREE.Mesh<THREE.PlaneGeometry, THREE.MeshLambertMaterial>>>
   pendingModelOverrides = new Map<string, { parts: EntityModelOverridePart[] }>()
+  private boatPaddleScratch = createBoatPaddlePivotScratch()
 
   get entitiesByName(): Record<string, SceneEntity[]> {
     const byName: Record<string, SceneEntity[]> = {}
@@ -493,6 +501,28 @@ export class Entities {
 
     this.updateVehiclePassengerPositions()
     this.applyLocalThirdPersonPlayerRotation()
+    this.updateBoatPaddleAnimations(dt)
+  }
+
+  private updateBoatPaddleAnimations(dt: number) {
+    for (const entity of Object.values(this.entities)) {
+      if (!entity) continue
+      if (!isBoatEntityName(entity['realName'] as string | undefined)) continue
+
+      const mesh = entity.children.find(child => child.name === 'mesh')
+      if (!mesh) continue
+
+      let animState = mesh.userData.boatPaddleAnimation as BoatPaddleAnimationState | undefined
+      if (!animState) continue
+
+      updateBoatPaddleAnimationState(
+        animState,
+        dt,
+        mesh.userData.boatPaddleLeftPivot as THREE.Object3D | undefined,
+        mesh.userData.boatPaddleRightPivot as THREE.Object3D | undefined,
+        this.boatPaddleScratch
+      )
+    }
   }
 
   private applyLocalThirdPersonPlayerRotation() {
@@ -1329,6 +1359,16 @@ export class Entities {
     if (waterPatch) {
       waterPatch.visible = entity.renderHints?.boatWaterPatchVisible === true
     }
+
+    const hints = (e.userData.renderHints ?? entity.renderHints) as EntityRenderHints | undefined
+    const leftActive = hints?.boatPaddleLeft === true
+    const rightActive = hints?.boatPaddleRight === true
+    let animState = mesh.userData.boatPaddleAnimation as BoatPaddleAnimationState | undefined
+    if (!animState) {
+      animState = createBoatPaddleAnimationState()
+      mesh.userData.boatPaddleAnimation = animState
+    }
+    syncBoatPaddleAnimationTargets(animState, leftActive, rightActive)
   }
 
   updateEntityPosition(entity: SceneEntity['originalEntity'], justAdded: boolean, overrides: { rotation?: { head?: { y: number; x: number } } }) {

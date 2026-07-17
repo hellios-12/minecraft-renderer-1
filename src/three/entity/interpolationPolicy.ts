@@ -16,6 +16,8 @@ export type EntityRenderHints = {
   localVehicle?: boolean
   localVehicleVerticalCameraLock?: 'horse'
   boatWaterPatchVisible?: boolean
+  boatPaddleLeft?: boolean
+  boatPaddleRight?: boolean
   passengerIds?: number[]
   passengerLayout?: 'boat' | 'minecart' | 'horse'
   /** @deprecated Use passengerIds */
