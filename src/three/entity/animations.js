@@ -141,12 +141,16 @@ export class WalkingGeneralSwing extends PlayerAnimation {
     applyCrouchPose(player, this.isCrouched ? 1 : 0)
 
     if (this.isRiding) {
-      player.skin.leftLeg.rotation.x = -Math.PI * 0.55
-      player.skin.rightLeg.rotation.x = -Math.PI * 0.55
-      player.skin.leftArm.rotation.x = -Math.PI * 0.35
-      player.skin.rightArm.rotation.x = -Math.PI * 0.35
-      player.skin.leftArm.rotation.z = Math.PI * 0.08
-      player.skin.rightArm.rotation.z = -Math.PI * 0.08
+      player.skin.rightArm.rotation.x -= Math.PI / 5
+      player.skin.leftArm.rotation.x -= Math.PI / 5
+
+      player.skin.rightLeg.rotation.x = -1.4137167
+      player.skin.rightLeg.rotation.y = Math.PI / 10
+      player.skin.rightLeg.rotation.z = Math.PI / 40
+
+      player.skin.leftLeg.rotation.x = -1.4137167
+      player.skin.leftLeg.rotation.y = -Math.PI / 10
+      player.skin.leftLeg.rotation.z = -Math.PI / 40
     } else {
       const boundary = this.isRunning ? Math.cos(t) : Math.sin(t)
       if (Math.abs(boundary) < 0.02) {

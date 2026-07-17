@@ -78,6 +78,6 @@ test('minecart passenger anchor preserves head rotation', () => {
   simulateAnimationFrames(playerObject, userData, 4)
 
   expect(passenger.position.x).toBe(10)
-  expect(passenger.position.y).toBeCloseTo(63.5875)
+  expect(passenger.position.y).toBeCloseTo(63.65)
   expect(playerObject.skin.head.rotation.x).toBeCloseTo(-0.45)
 })

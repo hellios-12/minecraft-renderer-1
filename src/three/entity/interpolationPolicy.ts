@@ -95,10 +95,8 @@ export function resolveLocalVehicleWorldPosition(args: {
 
 const BOAT_PASSENGER_RIDING_OFFSET_Y = -0.1
 const PLAYER_RIDING_OFFSET_Y = -0.35
-/** Vanilla 1.17.1 EntityType minecart passengerAttachments(0.1875F) */
-export const MINECART_PASSENGER_ATTACHMENT_Y = 0.1875
-/** Vanilla 1.17.1 Player.DEFAULT_VEHICLE_ATTACHMENT.y */
-export const PLAYER_VEHICLE_ATTACHMENT_Y = 0.6
+/** Vanilla 1.17.1 AbstractMinecart#getPassengersRidingOffset() */
+const MINECART_PASSENGER_RIDING_OFFSET_Y = 0
 
 const RIDEABLE_MINECART_ENTITY_NAMES = new Set([
   'minecart',
@@ -141,7 +139,7 @@ export function getBoatPassengerWorldPosition(boatWorldPos: Vec3Like, boatYaw: n
 export function getMinecartPassengerWorldPosition(minecartWorldPos: Vec3Like): Vec3Like {
   return {
     x: minecartWorldPos.x,
-    y: minecartWorldPos.y + MINECART_PASSENGER_ATTACHMENT_Y - PLAYER_VEHICLE_ATTACHMENT_Y,
+    y: minecartWorldPos.y + MINECART_PASSENGER_RIDING_OFFSET_Y + PLAYER_RIDING_OFFSET_Y,
     z: minecartWorldPos.z
   }
 }

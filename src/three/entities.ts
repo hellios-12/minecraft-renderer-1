@@ -21,20 +21,17 @@ import { createItemMesh } from './itemMesh'
 import * as Entity from './entity/EntityMesh'
 import { setupBoatMesh, disposeBoatWaterPatch } from './entity/boatRenderSetup'
 import { getBoatMeshYawOffset, isBoatEntityName } from './entity/boatModelRotation'
-import { anchorVehiclePassengerPosition, releaseVehiclePassengerPosition } from './entity/vehiclePassengerRendering'
+import { releaseVehiclePassengerPosition } from './entity/vehiclePassengerRendering'
+import { updateVehiclePassengerPositions as applyVehiclePassengerPositions } from './entity/vehiclePassengerUpdate'
 import { applyNetworkHeadPitch, storeNetworkHeadPitch } from './entity/networkHeadPitchRendering'
 import {
   ENTITY_TWEEN_DURATION_MS,
-  getBoatPassengerWorldPosition,
   getEntityTweenDurationMs,
-  getHorsePassengerWorldPosition,
-  getMinecartPassengerWorldPosition,
-  isRideableHorseEntityName,
-  isRideableMinecartEntityName,
   resolveLocalVehicleWorldPosition,
   type EntityRenderHints,
   type Vec3Like,
-  usesCameraSyncedVehiclePosition
+  usesCameraSyncedVehiclePosition,
+  isRideableMinecartEntityName
 } from './entity/interpolationPolicy'
 import { getMesh } from './entity/EntityMesh'
 import { WalkingGeneralSwing } from './entity/animations'
@@ -529,47 +526,11 @@ export class Entities {
   }
 
   updateVehiclePassengerPositions() {
-    const attachedPassengers = new Set<SceneEntity>()
-
-    for (const vehicle of Object.values(this.entities)) {
-      const renderHints = vehicle.userData.renderHints as EntityRenderHints | undefined
-      const passengerIds = renderHints?.passengerIds ?? renderHints?.boatPassengerIds
-      if (!Array.isArray(passengerIds) || passengerIds.length === 0) continue
-
-      const vehicleName = vehicle['realName'] ?? vehicle.originalEntity.name
-      const layout = renderHints?.passengerLayout ?? (isBoatEntityName(vehicleName) ? 'boat' : undefined)
-      if (layout !== 'boat' && layout !== 'minecart' && layout !== 'horse') continue
-      if (layout === 'boat' && !isBoatEntityName(vehicleName)) continue
-      if (layout === 'minecart' && !isRideableMinecartEntityName(vehicleName)) continue
-      if (layout === 'horse' && !isRideableHorseEntityName(vehicleName)) continue
-
-      const vehicleWorldPos = this.worldRenderer.sceneOrigin.getWorldPosition(vehicle)
-      if (!vehicleWorldPos) continue
-      const vehicleId = String(vehicle.originalEntity.id)
-
-      for (const [passengerIndex, passengerId] of passengerIds.entries()) {
-        const isLocalPassenger = passengerId === this.playerEntity?.originalEntity.id
-        const passenger = isLocalPassenger ? this.playerEntity : this.entities[passengerId]
-        if (!passenger?.playerObject) continue
-        if (passenger === this.playerEntity && layout !== 'minecart') continue
-
-        const passengerWorldPos =
-          layout === 'minecart'
-            ? getMinecartPassengerWorldPosition(vehicleWorldPos)
-            : layout === 'horse'
-              ? getHorsePassengerWorldPosition(vehicleWorldPos, vehicleName, vehicle.originalEntity.height ?? 1.6)
-              : getBoatPassengerWorldPosition(vehicleWorldPos, vehicle.rotation.y, passengerIndex, passengerIds.length)
-
-        anchorVehiclePassengerPosition(passenger, passengerWorldPos, vehicleId)
-        attachedPassengers.add(passenger)
-      }
-    }
-
-    for (const passenger of [...Object.values(this.entities), ...(this.playerEntity ? [this.playerEntity] : [])]) {
-      const vehicleId = passenger.userData._passengerVehicleId ?? (passenger.userData._boatPassengerVehicleId as string | undefined)
-      if (vehicleId === undefined || attachedPassengers.has(passenger)) continue
-      releaseVehiclePassengerPosition(passenger, vehicleId, this.worldRenderer.sceneOrigin.getWorldPosition(passenger))
-    }
+    applyVehiclePassengerPositions({
+      entities: this.entities,
+      localPlayer: this.playerEntity,
+      getWorldPosition: target => this.worldRenderer.sceneOrigin.getWorldPosition(target as SceneEntity)
+    })
   }
 
   /** @deprecated Use updateVehiclePassengerPositions */

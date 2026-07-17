@@ -91,7 +91,7 @@ test('local third-person player follows interpolated minecart world position', (
 
   expect(sceneOrigin.getWorldPosition(localPlayer)).toEqual(movedSeat)
   expect(movedSeat.x).toBe(103)
-  expect(movedSeat.y).toBeCloseTo(64.0875)
+  expect(movedSeat.y).toBeCloseTo(64.15)
 })
 
 test('minecart seat places player waist-up inside the cart instead of on camera feet', () => {
@@ -169,13 +169,20 @@ test('minecart dismount releases local player anchor without snapping back', () 
   expect(sceneOrigin.getWorldPosition(localPlayer)).toEqual(detachedWorldPosition)
 })
 
-function shouldAnchorPassenger(passenger: PassengerLike | null | undefined, layout: 'boat' | 'minecart', isLocalPassenger: boolean): boolean {
+function shouldAnchorPassenger(passenger: PassengerLike | null | undefined, layout: 'boat' | 'minecart' | 'horse', isLocalPassenger: boolean): boolean {
   if (!passenger?.playerObject) return false
-  if (isLocalPassenger && layout !== 'minecart') return false
+  if (isLocalPassenger && layout === 'horse') return false
   return true
 }
 
-test('local player remains excluded from boat passenger anchoring', () => {
+test('local player is anchored for boat and minecart but skipped for horse', () => {
+  const localPlayer = makePassenger(LOCAL_PLAYER_ID)
+  expect(shouldAnchorPassenger(localPlayer, 'boat', true)).toBe(true)
+  expect(shouldAnchorPassenger(localPlayer, 'minecart', true)).toBe(true)
+  expect(shouldAnchorPassenger(localPlayer, 'horse', true)).toBe(false)
+})
+
+test('local boat passenger uses the same anchor as remote passenger', () => {
   const sceneOrigin = new SceneOrigin(new THREE.Scene())
   sceneOrigin.update(96, 60, 192)
 
@@ -184,17 +191,17 @@ test('local player remains excluded from boat passenger anchoring', () => {
   boat.position.set(100, 64, 200)
 
   const localPlayer = makePassenger(LOCAL_PLAYER_ID)
+  const remotePlayer = makePassenger(REMOTE_PLAYER_ID)
   sceneOrigin.track(localPlayer)
-  localPlayer.position.set(100, 62.38, 200)
+  sceneOrigin.track(remotePlayer)
 
   const boatSeat = getBoatPassengerWorldPosition(sceneOrigin.getWorldPosition(boat)!, boat.rotation.y, 0, 1)
-  const shouldAnchorLocalPlayer = shouldAnchorPassenger(localPlayer, 'boat', true)
-
-  expect(shouldAnchorLocalPlayer).toBe(false)
-  if (shouldAnchorLocalPlayer) {
+  if (shouldAnchorPassenger(localPlayer, 'boat', true)) {
     anchorVehiclePassengerPosition(localPlayer, boatSeat, '10')
   }
+  anchorVehiclePassengerPosition(remotePlayer, boatSeat, '10')
 
-  expect(localPlayer.userData._passengerVehicleId).toBeUndefined()
-  expect(sceneOrigin.getWorldPosition(localPlayer)?.y).toBe(62.38)
+  expect(localPlayer.userData._passengerVehicleId).toBe('10')
+  expect(sceneOrigin.getWorldPosition(localPlayer)).toEqual(sceneOrigin.getWorldPosition(remotePlayer))
+  expect(sceneOrigin.getWorldPosition(localPlayer)?.y).toBeCloseTo(63.55)
 })

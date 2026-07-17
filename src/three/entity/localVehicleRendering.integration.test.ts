@@ -143,7 +143,7 @@ test('minecart passenger uses vanilla 1.17.1 riding Y offset', () => {
   const minecart = { x: 10, y: 64, z: 20 }
   expect(getMinecartPassengerWorldPosition(minecart)).toEqual({
     x: 10,
-    y: 63.5875,
+    y: 63.65,
     z: 20
   })
 })
@@ -173,7 +173,7 @@ test('minecart passenger anchor follows vehicle world position without inheritin
 
   expect(sceneOrigin.getWorldPosition(passenger)).toEqual({
     x: 103,
-    y: 64.0875,
+    y: 64.15,
     z: 205
   })
   expect(passenger.rotation.y).toBe(anchoredYaw)
@@ -241,6 +241,6 @@ test('local minecart passenger anchors to camera-synced vehicle position', () =>
     expect(syncedMinecart.z - camera.z).toBeCloseTo(0, 5)
     expect(passengerWorld.x).toBe(syncedMinecart.x)
     expect(passengerWorld.z).toBe(syncedMinecart.z)
-    expect(passengerWorld.y).toBeCloseTo(63.5875)
+    expect(passengerWorld.y).toBeCloseTo(63.65)
   }
 })

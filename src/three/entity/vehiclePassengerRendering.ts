@@ -1,5 +1,15 @@
 import type { Vec3Like } from './interpolationPolicy'
 
+export type PassengerLayout = 'boat' | 'minecart' | 'horse'
+
+export function shouldSkipLocalPassengerAnchoring(layout: PassengerLayout): boolean {
+  return layout === 'horse'
+}
+
+export function isFiniteVec3(value: Vec3Like | undefined | null): value is Vec3Like {
+  return value != null && Number.isFinite(value.x) && Number.isFinite(value.y) && Number.isFinite(value.z)
+}
+
 export type VehiclePassengerRenderState = {
   position: {
     set: (x: number, y: number, z: number) => unknown
@@ -14,6 +24,7 @@ export type VehiclePassengerRenderState = {
 }
 
 export function anchorVehiclePassengerPosition(passenger: VehiclePassengerRenderState, passengerWorldPos: Vec3Like, vehicleId: string): void {
+  if (!isFiniteVec3(passengerWorldPos)) return
   passenger.userData._posTween?.stop()
   passenger.userData._posTween = undefined
   passenger.userData._tweenTarget ??= { ...passengerWorldPos }

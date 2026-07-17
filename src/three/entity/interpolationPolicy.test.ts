@@ -5,7 +5,9 @@ import {
   SPECTATING_CAMERA_TWEEN_DURATION_MS,
   getCameraMovementTweenDurationMs,
   getEntityTweenDurationMs,
+  getHorsePassengerWorldPosition,
   getLocalVehicleWorldPosition,
+  getMinecartPassengerWorldPosition,
   resolveLocalVehicleWorldPosition,
   samePosition,
   shouldRestartCameraPositionTween,
@@ -231,4 +233,19 @@ test('horse vertical camera lock falls back to raw Y when result is non-finite',
       verticalCameraLock: 'horse'
     })
   ).toEqual(getLocalVehicleWorldPosition(camera, rawVehicleY))
+})
+
+test('minecart passenger feet Y is vehicleY - 0.35', () => {
+  expect(getMinecartPassengerWorldPosition({ x: 0, y: 64, z: 0 }).y).toBeCloseTo(63.65, 5)
+})
+
+test.each([
+  ['horse', 1.6, 0.85],
+  ['zombie_horse', 1.6, 0.85],
+  ['donkey', 1.5, 0.525],
+  ['mule', 1.6, 0.6],
+  ['skeleton_horse', 1.6, 0.6625]
+])('horse variant %s feet offset matches vanilla 1.17.1', (name, height, expectedFeetOffset) => {
+  const seat = getHorsePassengerWorldPosition({ x: 0, y: 64, z: 0 }, name, height)
+  expect(seat.y).toBeCloseTo(64 + expectedFeetOffset, 5)
 })
