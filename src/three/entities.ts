@@ -21,6 +21,7 @@ import { createItemMesh } from './itemMesh'
 import * as Entity from './entity/EntityMesh'
 import { setupBoatMesh, disposeBoatWaterPatch } from './entity/boatRenderSetup'
 import { getBoatMeshYawOffset, isBoatEntityName } from './entity/boatModelRotation'
+import { resolveBoatPassengerThirdPersonRotation, shouldApplyBoatPassengerThirdPersonRotation } from './entity/boatPassengerRotation'
 import { releaseVehiclePassengerPosition } from './entity/vehiclePassengerRendering'
 import { updateVehiclePassengerPositions as applyVehiclePassengerPositions } from './entity/vehiclePassengerUpdate'
 import { applyNetworkHeadPitch, storeNetworkHeadPitch } from './entity/networkHeadPitchRendering'
@@ -485,23 +486,53 @@ export class Entities {
         entity.position.set(worldPos.x, worldPos.y, worldPos.z)
       }
 
-      if (entity.visible) {
+      if (entity.visible && !isPlayerEntity) {
         this.syncArmorPositions(entity)
-      }
-
-      if (isPlayerEntity && entity.visible) {
-        const rotation = this.worldRenderer.cameraShake.getBaseRotation()
-        entity.rotation.set(0, rotation.yaw, 0)
-
-        entity.traverse(c => {
-          if (c.name === 'head') {
-            c.rotation.set(-rotation.pitch, 0, 0)
-          }
-        })
       }
     }
 
     this.updateVehiclePassengerPositions()
+    this.applyLocalThirdPersonPlayerRotation()
+  }
+
+  private applyLocalThirdPersonPlayerRotation() {
+    const entity = this.playerEntity
+    if (!entity?.visible || !entity.playerObject) return
+
+    const rotation = this.worldRenderer.cameraShake.getBaseRotation()
+    const isAnchoredPassenger = entity.userData._passengerVehicleId != null || entity.userData._boatPassengerVehicleId != null
+    const anchoredVehicleId = entity.userData._passengerVehicleId ?? entity.userData._boatPassengerVehicleId
+    const vehicle = anchoredVehicleId != null ? this.entities[anchoredVehicleId] : undefined
+    const vehicleName = vehicle?.['realName'] ?? vehicle?.originalEntity.name
+    const vehicleYaw = vehicle?.rotation.y
+
+    if (
+      shouldApplyBoatPassengerThirdPersonRotation({
+        isThirdPerson: true,
+        isAnchoredPassenger,
+        vehicleName,
+        vehicleYaw
+      })
+    ) {
+      const resolved = resolveBoatPassengerThirdPersonRotation({
+        cameraYaw: rotation.yaw,
+        cameraPitch: rotation.pitch,
+        vehicleYaw: vehicleYaw!
+      })
+      entity.rotation.set(0, resolved.bodyYaw, 0)
+      entity.traverse(child => {
+        if (child.name !== 'head') return
+        child.rotation.set(resolved.headPitch, resolved.headYaw, 0)
+      })
+    } else {
+      entity.rotation.set(0, rotation.yaw, 0)
+      entity.traverse(child => {
+        if (child.name !== 'head') return
+        child.rotation.set(-rotation.pitch, 0, 0)
+      })
+    }
+
+    this.syncArmorPositions(entity)
   }
 
   private resolvePassengerEntity(passengerId: number): SceneEntity | undefined {
