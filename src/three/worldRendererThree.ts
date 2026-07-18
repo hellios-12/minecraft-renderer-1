@@ -20,6 +20,12 @@ import { disposeObject, loadThreeJsTextureFromBitmap } from './threeJsUtils'
 import { CursorBlock } from './world/cursorBlock'
 import { getItemUv } from './appShared'
 import { Entities } from './entities'
+import {
+  getCameraMovementTweenDurationMs,
+  shouldRestartCameraPositionTween,
+  type CameraMovementMode,
+  type UpdateCameraOptions
+} from './entity/interpolationPolicy'
 import { ThreeJsSound } from './threeJsSound'
 import { CameraShake } from './cameraShake'
 import { ThreeJsMedia } from './threeJsMedia'
@@ -159,6 +165,8 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   private currentPosTween?: tweenJs.Tween<{ x: number; y: number; z: number }>
   private currentRotTween?: tweenJs.Tween<{ pitch: number; yaw: number }>
+  private currentCameraTarget: { x: number; y: number; z: number } | null = null
+  private currentCameraMovementMode: CameraMovementMode | null = null
 
   // Pre-allocated objects for getThirdPersonCamera (avoid per-frame allocs)
   private readonly _tpDirection = new THREE.Vector3()
@@ -989,10 +997,10 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
   }
 
-  setFirstPersonCamera(pos: Vec3 | null, yaw: number, pitch: number) {
+  setFirstPersonCamera(pos: Vec3 | null, yaw: number, pitch: number, options?: UpdateCameraOptions) {
     const yOffset = this.playerStateReactive.eyeHeight
 
-    this.updateCamera(pos?.offset(0, yOffset, 0) ?? null, yaw, pitch)
+    this.updateCamera(pos?.offset(0, yOffset, 0) ?? null, yaw, pitch, options)
     // this.media.tryIntersectMedia()
     this.updateCameraSectionPos()
   }
@@ -1148,34 +1156,50 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
   }
 
-  updateCamera(pos: Vec3 | null, yaw: number, pitch: number): void {
+  updateCamera(pos: Vec3 | null, yaw: number, pitch: number, options?: UpdateCameraOptions): void {
     // Skip position/rotation updates if cinematic script is running
     if (this.cinimaticScript.running) {
       return
     }
-
-    // if (this.freeFlyMode) {
-    //   pos = this.freeFlyState.position
-    //   pitch = this.freeFlyState.pitch
-    //   yaw = this.freeFlyState.yaw
-    // }
 
     if (pos) {
       if (this.renderer.xr.isPresenting) {
         pos.y -= this.camera.position.y // Fix Y position of camera in world
       }
 
-      this.currentPosTween?.stop()
-      // Use instant camera updates (0 delay) in playground mode when camera controls are enabled
-      const tweenDelay = this.displayOptions.inWorldRenderingConfig.instantCameraUpdate ? 0 : this.playerStateUtils.isSpectatingEntity() ? 150 : 50
-      this.currentPosTween = new tweenJs.Tween(this.cameraWorldPos)
-        .to({ x: pos.x, y: pos.y, z: pos.z }, tweenDelay)
-        .onUpdate(() => {
-          this.sceneOrigin.update(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
+      const movementMode: CameraMovementMode = this.playerStateUtils.isSpectatingEntity() ? 'spectating' : (options?.movementMode ?? 'local-player')
+      const instant = options?.instant === true || this.displayOptions.inWorldRenderingConfig.instantCameraUpdate === true
+      const target = { x: pos.x, y: pos.y, z: pos.z }
+      const restartTween = shouldRestartCameraPositionTween({
+        target,
+        currentTarget: this.currentCameraTarget,
+        movementMode,
+        previousMovementMode: this.currentCameraMovementMode,
+        instant
+      })
+      const tweenDelay = getCameraMovementTweenDurationMs(movementMode, instant)
+
+      if (restartTween) {
+        this.currentCameraTarget = { ...target }
+        this.currentCameraMovementMode = movementMode
+        this.currentPosTween?.stop()
+        if (instant || tweenDelay === 0) {
+          this.cameraWorldPos.x = target.x
+          this.cameraWorldPos.y = target.y
+          this.cameraWorldPos.z = target.z
+          this.sceneOrigin.update(target.x, target.y, target.z)
           this.cameraObject.position.set(0, 0, 0)
-        })
-        .start()
-      // this.freeFlyState.position = pos
+          this.currentPosTween = undefined
+        } else {
+          this.currentPosTween = new tweenJs.Tween(this.cameraWorldPos)
+            .to(target, tweenDelay)
+            .onUpdate(() => {
+              this.sceneOrigin.update(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
+              this.cameraObject.position.set(0, 0, 0)
+            })
+            .start()
+        }
+      }
     }
 
     if (this.playerStateUtils.isSpectatingEntity()) {

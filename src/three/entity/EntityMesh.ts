@@ -13,6 +13,8 @@ import entities from './entities.json'
 import { externalModels } from './objModels'
 import externalTexturesJson from './externalTextures.json'
 import { createAnimatedObject } from './gltfAnimationUtils'
+import { BOAT_OBJ_OFFSET_Y } from './boatRenderSetup'
+import { VANILLA_117_HORSE_ENTITY_SCALES } from './horseEntityScale'
 
 interface ElemFace {
   dir: [number, number, number]
@@ -440,6 +442,7 @@ const getEntity = (name: string) => {
 }
 
 const scaleEntity: Record<string, number> = {
+  ...VANILLA_117_HORSE_ENTITY_SCALES,
   zombie: 1.85,
   husk: 1.85,
   arrow: 0.0025
@@ -448,7 +451,7 @@ const scaleEntity: Record<string, number> = {
 const offsetEntity: Record<string, Vec3> = {
   zombie: new Vec3(0, 1, 0),
   husk: new Vec3(0, 1, 0),
-  boat: new Vec3(0, -1, 0),
+  boat: new Vec3(0, BOAT_OBJ_OFFSET_Y, 0),
   arrow: new Vec3(0, -0.9, 0)
 }
 
@@ -626,7 +629,7 @@ export class EntityMesh {
       const obj = objLoader.parse(externalModels[type])
       const scale = scaleEntity[originalType] || scaleEntity[type]
       if (scale) obj.scale.set(scale, scale, scale)
-      const offset = offsetEntity[originalType]
+      const offset = offsetEntity[originalType] ?? offsetEntity[type]
       if (offset) obj.position.set(offset.x, offset.y, offset.z)
       obj.traverse(child => {
         if (child instanceof THREE.Mesh) {
