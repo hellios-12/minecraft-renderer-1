@@ -1,11 +1,7 @@
 import type * as THREE from 'three'
 import type { PlayerObjectType } from '../../lib/createPlayerObject'
 import { resolveBoatPassengerThirdPersonRotation, shouldApplyBoatPassengerRotation } from './boatPassengerRotation'
-import {
-  getNetworkHeadPitch,
-  restoreGenericRemotePlayerHeadRotation,
-  type NetworkHeadRotationState
-} from './networkHeadPitchRendering'
+import { getNetworkHeadPitch, restoreGenericRemotePlayerHeadRotation, type NetworkHeadRotationState } from './networkHeadPitchRendering'
 
 export type RemoteBoatPassengerEntity = {
   rotation: { y: number; set: (x: number, y: number, z: number) => unknown }
@@ -120,8 +116,7 @@ export function processRemoteBoatPassengerRotations(params: {
     if (!entity?.playerObject) continue
 
     const anchoredVehicleId = getAnchoredVehicleId(entity.userData)
-    const vehicle =
-      anchoredVehicleId != null ? (params.entities[anchoredVehicleId] as RemoteBoatPassengerVehicle | undefined) : undefined
+    const vehicle = anchoredVehicleId != null ? (params.entities[anchoredVehicleId] as RemoteBoatPassengerVehicle | undefined) : undefined
 
     processRemoteBoatPassengerRotation({
       passenger: entity,

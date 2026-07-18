@@ -37,10 +37,7 @@ export function applyNetworkHeadPitch(playerObject: PlayerObjectType, userData: 
   playerObject.skin.head.rotation.x = -pitch
 }
 
-export function restoreGenericRemotePlayerHeadRotation(
-  playerObject: PlayerObjectType,
-  userData: NetworkHeadRotationState
-): void {
+export function restoreGenericRemotePlayerHeadRotation(playerObject: PlayerObjectType, userData: NetworkHeadRotationState): void {
   playerObject.skin.head.rotation.y = 0
   applyNetworkHeadPitch(playerObject, userData)
 }

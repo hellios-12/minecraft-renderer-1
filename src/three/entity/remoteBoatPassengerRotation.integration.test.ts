@@ -2,11 +2,7 @@ import * as THREE from 'three'
 import { PlayerObject } from 'skinview3d'
 import { expect, test } from 'vitest'
 import type { PlayerObjectType } from '../../lib/createPlayerObject'
-import {
-  BOAT_PASSENGER_MAX_HEAD_YAW_RAD,
-  clampBoatPassengerRelativeHeadYaw,
-  normalizeYawDelta
-} from './boatPassengerRotation'
+import { BOAT_PASSENGER_MAX_HEAD_YAW_RAD, clampBoatPassengerRelativeHeadYaw, normalizeYawDelta } from './boatPassengerRotation'
 import { storeNetworkHeadPitch, storeNetworkHeadYaw } from './networkHeadPitchRendering'
 import {
   applyRemoteBoatPassengerRotation,
@@ -41,8 +37,7 @@ function makeRemotePassenger(id: number, lookYaw = BOAT_YAW) {
 }
 
 function makeBoat(passengerIds: number[], yaw = BOAT_YAW) {
-  const boat = new THREE.Group() as RemoteBoatPassengerVehicle &
-    THREE.Group & { originalEntity: { id: number; name: string; height: number } }
+  const boat = new THREE.Group() as RemoteBoatPassengerVehicle & THREE.Group & { originalEntity: { id: number; name: string; height: number } }
   boat.originalEntity = { id: BOAT_ID, name: 'oak_boat', height: 1.6 }
   boat.userData = {
     renderHints: {
@@ -99,9 +94,7 @@ test('remote anchored boat passenger uses boat yaw for body and relative head ya
 
   expect(passenger.userData._remoteBoatRotationApplied).toBe(true)
   expect(passenger.rotation.y).toBeCloseTo(BOAT_YAW)
-  expect(passenger.playerObject!.skin.head.rotation.y).toBeCloseTo(
-    clampBoatPassengerRelativeHeadYaw(normalizeYawDelta(BOAT_YAW, lookYaw))
-  )
+  expect(passenger.playerObject!.skin.head.rotation.y).toBeCloseTo(clampBoatPassengerRelativeHeadYaw(normalizeYawDelta(BOAT_YAW, lookYaw)))
   expect(boat.rotation.y).toBeCloseTo(BOAT_YAW)
 })
 
@@ -120,9 +113,7 @@ test('remote boat passenger head yaw updates when boat turns without new look pa
   runRemoteRotation()
 
   expect(passenger.rotation.y).toBeCloseTo(BOAT_YAW + 0.7)
-  expect(passenger.playerObject!.skin.head.rotation.y).toBeCloseTo(
-    clampBoatPassengerRelativeHeadYaw(normalizeYawDelta(BOAT_YAW + 0.7, lookYaw))
-  )
+  expect(passenger.playerObject!.skin.head.rotation.y).toBeCloseTo(clampBoatPassengerRelativeHeadYaw(normalizeYawDelta(BOAT_YAW + 0.7, lookYaw)))
 })
 
 test('two remote passengers keep independent head yaw on the same boat', () => {
@@ -138,12 +129,8 @@ test('two remote passengers keep independent head yaw on the same boat', () => {
   runPassengerUpdate()
   runRemoteRotation()
 
-  expect(passengerA.playerObject!.skin.head.rotation.y).toBeCloseTo(
-    clampBoatPassengerRelativeHeadYaw(normalizeYawDelta(BOAT_YAW, lookA))
-  )
-  expect(passengerB.playerObject!.skin.head.rotation.y).toBeCloseTo(
-    clampBoatPassengerRelativeHeadYaw(normalizeYawDelta(BOAT_YAW, lookB))
-  )
+  expect(passengerA.playerObject!.skin.head.rotation.y).toBeCloseTo(clampBoatPassengerRelativeHeadYaw(normalizeYawDelta(BOAT_YAW, lookA)))
+  expect(passengerB.playerObject!.skin.head.rotation.y).toBeCloseTo(clampBoatPassengerRelativeHeadYaw(normalizeYawDelta(BOAT_YAW, lookB)))
 })
 
 test('dismount restores generic remote body yaw and zero head yaw', () => {

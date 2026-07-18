@@ -55,12 +55,7 @@ export function shouldApplyBoatPassengerRotation(params: {
   vehicleName: string | undefined
   vehicleYaw: number | undefined
 }): boolean {
-  return (
-    params.isAnchoredPassenger &&
-    isBoatEntityName(params.vehicleName) &&
-    typeof params.vehicleYaw === 'number' &&
-    Number.isFinite(params.vehicleYaw)
-  )
+  return params.isAnchoredPassenger && isBoatEntityName(params.vehicleName) && typeof params.vehicleYaw === 'number' && Number.isFinite(params.vehicleYaw)
 }
 
 export function shouldApplyBoatPassengerThirdPersonRotation(params: {
