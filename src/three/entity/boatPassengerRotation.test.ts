@@ -6,6 +6,7 @@ import {
   normalizeYaw,
   normalizeYawDelta,
   resolveBoatPassengerThirdPersonRotation,
+  shouldApplyBoatPassengerRotation,
   shouldApplyBoatPassengerThirdPersonRotation
 } from './boatPassengerRotation'
 
@@ -76,6 +77,16 @@ test('head yaw sign follows normalize(cameraYaw - vehicleYaw) without inversion'
   })
   expect(positive.headYaw).toBeCloseTo(0.3)
   expect(negative.headYaw).toBeCloseTo(-0.3)
+})
+
+test('shouldApplyBoatPassengerRotation excludes minecart and horse without third-person requirement', () => {
+  const base = {
+    isAnchoredPassenger: true,
+    vehicleYaw: BOAT_YAW
+  }
+  expect(shouldApplyBoatPassengerRotation({ ...base, vehicleName: 'boat' })).toBe(true)
+  expect(shouldApplyBoatPassengerRotation({ ...base, vehicleName: 'minecart' })).toBe(false)
+  expect(shouldApplyBoatPassengerRotation({ ...base, vehicleName: 'horse' })).toBe(false)
 })
 
 test('shouldApplyBoatPassengerThirdPersonRotation excludes minecart and horse', () => {

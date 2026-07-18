@@ -50,19 +50,26 @@ export function resolveBoatPassengerThirdPersonRotation(params: {
   }
 }
 
+export function shouldApplyBoatPassengerRotation(params: {
+  isAnchoredPassenger: boolean
+  vehicleName: string | undefined
+  vehicleYaw: number | undefined
+}): boolean {
+  return (
+    params.isAnchoredPassenger &&
+    isBoatEntityName(params.vehicleName) &&
+    typeof params.vehicleYaw === 'number' &&
+    Number.isFinite(params.vehicleYaw)
+  )
+}
+
 export function shouldApplyBoatPassengerThirdPersonRotation(params: {
   isThirdPerson: boolean
   isAnchoredPassenger: boolean
   vehicleName: string | undefined
   vehicleYaw: number | undefined
 }): boolean {
-  return (
-    params.isThirdPerson &&
-    params.isAnchoredPassenger &&
-    isBoatEntityName(params.vehicleName) &&
-    typeof params.vehicleYaw === 'number' &&
-    Number.isFinite(params.vehicleYaw)
-  )
+  return params.isThirdPerson && shouldApplyBoatPassengerRotation(params)
 }
 
 export { isBoatEntityName }

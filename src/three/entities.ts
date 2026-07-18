@@ -31,7 +31,8 @@ import {
 } from './entity/boatPaddleAnimation'
 import { releaseVehiclePassengerPosition } from './entity/vehiclePassengerRendering'
 import { updateVehiclePassengerPositions as applyVehiclePassengerPositions } from './entity/vehiclePassengerUpdate'
-import { applyNetworkHeadPitch, storeNetworkHeadPitch } from './entity/networkHeadPitchRendering'
+import { applyNetworkHeadPitch, storeNetworkHeadPitch, storeNetworkHeadYaw } from './entity/networkHeadPitchRendering'
+import { processRemoteBoatPassengerRotations, type RemoteBoatPassengerEntity } from './entity/remoteBoatPassengerRotation'
 import {
   ENTITY_TWEEN_DURATION_MS,
   getEntityTweenDurationMs,
@@ -500,8 +501,16 @@ export class Entities {
     }
 
     this.updateVehiclePassengerPositions()
+    this.applyRemoteBoatPassengerRotations()
     this.applyLocalThirdPersonPlayerRotation()
     this.updateBoatPaddleAnimations(dt)
+  }
+
+  private applyRemoteBoatPassengerRotations() {
+    processRemoteBoatPassengerRotations({
+      entities: this.entities as Record<string, RemoteBoatPassengerEntity>,
+      syncArmor: entity => this.syncArmorPositions(entity as SceneEntity)
+    })
   }
 
   private updateBoatPaddleAnimations(dt: number) {
@@ -1422,11 +1431,15 @@ export class Entities {
 
     if (e?.playerObject && overrides?.rotation?.head) {
       const { playerObject } = e
+      const hy = overrides.rotation.head.y
+      storeNetworkHeadYaw(e.userData, hy, entity.yaw)
       playerObject.skin.head.rotation.y = 0
 
       const hp = overrides.rotation.head.x
       storeNetworkHeadPitch(e.userData, hp)
       applyNetworkHeadPitch(playerObject, e.userData)
+    } else if (e?.playerObject && typeof entity.yaw === 'number' && Number.isFinite(entity.yaw)) {
+      storeNetworkHeadYaw(e.userData, undefined, entity.yaw)
     }
   }
 
