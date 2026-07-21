@@ -137,12 +137,12 @@ export class CursorBlock {
   /**
    * Check if a block should be visible (not occluded by terrain between it and camera)
    */
-    /**
+  /**
    * Check if a block should be visible (not occluded by terrain between it and camera)
    */
   private isBlockOccluded(blockPos: Vec3, shape: BlockShape): boolean {
     const cameraPos = this.worldRenderer.getCameraPosition() // Kiểu Vector3 (Three.js)
-    
+
     // SỬA: Khởi tạo blockCenterPos bằng THREE.Vector3 thay vì Vec3 của Minecraft
     const blockCenterPos = new THREE.Vector3(
       blockPos.x + shape.position.x + shape.width / 2,
@@ -152,7 +152,7 @@ export class CursorBlock {
 
     // SỬA: Thực hiện phép trừ vector chuẩn bằng API của Three.js (.sub)
     const direction = blockCenterPos.clone().sub(cameraPos)
-    
+
     // SỬA: Hàm .length() giờ đây hoạt động hoàn hảo vì 'direction' đã là THREE.Vector3
     const distance = direction.length()
 
