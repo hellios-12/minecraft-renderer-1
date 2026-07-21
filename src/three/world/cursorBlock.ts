@@ -28,11 +28,7 @@ export class CursorBlock {
   }
 
   cursorLineMaterial!: LineMaterial
-  interactionLines: null | {
-    blockPos: Vec3
-    mesh: THREE.Group
-    shapePositions: BlocksShapes | undefined
-  } = null
+  interactionLines: null | { blockPos: Vec3; mesh: THREE.Group; shapePositions: BlocksShapes | undefined } = null
   prevColor: string | undefined
   blockBreakMesh: THREE.Mesh
   breakTextures: THREE.Texture[] = []
@@ -53,7 +49,7 @@ export class CursorBlock {
     ]
 
     for (let i = 0; i < 10; i++) {
-      void loadThreeJsTextureFromUrl(destroyStagesImages[i]).then((texture) => {
+      void loadThreeJsTextureFromUrl(destroyStagesImages[i]).then(texture => {
         texture.magFilter = THREE.NearestFilter
         texture.minFilter = THREE.NearestFilter
         this.breakTextures.push(texture)
@@ -79,11 +75,7 @@ export class CursorBlock {
     setTimeout(() => {
       this.updateLineMaterial()
       if (this.interactionLines) {
-        this.setHighlightCursorBlock(
-          this.interactionLines.blockPos,
-          this.interactionLines.shapePositions,
-          true
-        )
+        this.setHighlightCursorBlock(this.interactionLines.blockPos, this.interactionLines.shapePositions, true)
       }
     })
   }
@@ -114,11 +106,7 @@ export class CursorBlock {
     this.prevColor = this.worldRenderer.worldRendererConfig.highlightBlockColor
   }
 
-  updateBreakAnimation(
-    blockPosition: { x: number; y: number; z: number } | undefined,
-    stage: number | null,
-    mergedShape?: BlockShape
-  ) {
+  updateBreakAnimation(blockPosition: { x: number; y: number; z: number } | undefined, stage: number | null, mergedShape?: BlockShape) {
     this.hideBreakAnimation()
     if (stage === null || !blockPosition || !mergedShape) return
 
@@ -128,8 +116,7 @@ export class CursorBlock {
     position.add(new Vec3(blockPosition.x, blockPosition.y, blockPosition.z))
     this.blockBreakMesh.position.set(position.x, position.y, position.z)
     this.blockBreakMesh.visible = true
-    ;(this.blockBreakMesh.material as THREE.MeshBasicMaterial).map =
-      this.breakTextures[stage] ?? this.breakTextures.at(-1)
+    ;(this.blockBreakMesh.material as THREE.MeshBasicMaterial).map = this.breakTextures[stage] ?? this.breakTextures.at(-1)
     ;(this.blockBreakMesh.material as THREE.MeshBasicMaterial).needsUpdate = true
   }
 
@@ -200,11 +187,9 @@ export class CursorBlock {
     }
 
     const group = new THREE.Group()
-    for (const shape of shapePositions ?? []) {
-      const { position: _position, width, height, depth } = shape
-
+    for (const { position: _position, width, height, depth } of shapePositions ?? []) {
       // FIX: Skip rendering shapes that are occluded by terrain
-      if (this.isBlockOccluded(blockPos, shape)) {
+      if (this.isBlockOccluded(blockPos, { position: _position, width, height, depth })) {
         continue
       }
 
