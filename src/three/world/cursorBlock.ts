@@ -137,21 +137,28 @@ export class CursorBlock {
   /**
    * Check if a block should be visible (not occluded by terrain between it and camera)
    */
+    /**
+   * Check if a block should be visible (not occluded by terrain between it and camera)
+   */
   private isBlockOccluded(blockPos: Vec3, shape: BlockShape): boolean {
-    const cameraPos = this.worldRenderer.getCameraPosition()
-    const blockCenterPos = new Vec3(
+    const cameraPos = this.worldRenderer.getCameraPosition() // Kiểu Vector3 (Three.js)
+    
+    // SỬA: Khởi tạo blockCenterPos bằng THREE.Vector3 thay vì Vec3 của Minecraft
+    const blockCenterPos = new THREE.Vector3(
       blockPos.x + shape.position.x + shape.width / 2,
       blockPos.y + shape.position.y + shape.height / 2,
       blockPos.z + shape.position.z + shape.depth / 2
     )
 
-    const direction = blockCenterPos.clone().subtract(cameraPos)
-    const distanceSquared = direction.x * direction.x + direction.y * direction.y + direction.z * direction.z
-    const distance = Math.sqrt(distanceSquared)
+    // SỬA: Thực hiện phép trừ vector chuẩn bằng API của Three.js (.sub)
+    const direction = blockCenterPos.clone().sub(cameraPos)
+    
+    // SỬA: Hàm .length() giờ đây hoạt động hoàn hảo vì 'direction' đã là THREE.Vector3
+    const distance = direction.length()
 
     // Use raycaster to check if there's an occluding block between camera and target
     const raycaster = new THREE.Raycaster()
-    const rayDirection = new THREE.Vector3(direction.x, direction.y, direction.z).normalize()
+    const rayDirection = direction.clone().normalize() // Tối ưu: chuẩn hóa trực tiếp từ direction có sẵn
     raycaster.ray.origin.set(cameraPos.x, cameraPos.y, cameraPos.z)
     raycaster.ray.direction.copy(rayDirection)
 
