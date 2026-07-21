@@ -146,7 +146,8 @@ export class CursorBlock {
     )
 
     const direction = blockCenterPos.clone().subtract(cameraPos)
-    const distance = direction.length()
+    const distanceSquared = direction.x * direction.x + direction.y * direction.y + direction.z * direction.z
+    const distance = Math.sqrt(distanceSquared)
 
     // Use raycaster to check if there's an occluding block between camera and target
     const raycaster = new THREE.Raycaster()
