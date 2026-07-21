@@ -28,7 +28,11 @@ export class CursorBlock {
   }
 
   cursorLineMaterial!: LineMaterial
-  interactionLines: null | { blockPos: Vec3; mesh: THREE.Group; shapePositions: BlocksShapes | undefined } = null
+  interactionLines: null | {
+    blockPos: Vec3
+    mesh: THREE.Group
+    shapePositions: BlocksShapes | undefined
+  } = null
   prevColor: string | undefined
   blockBreakMesh: THREE.Mesh
   breakTextures: THREE.Texture[] = []
@@ -49,7 +53,7 @@ export class CursorBlock {
     ]
 
     for (let i = 0; i < 10; i++) {
-      void loadThreeJsTextureFromUrl(destroyStagesImages[i]).then(texture => {
+      void loadThreeJsTextureFromUrl(destroyStagesImages[i]).then((texture) => {
         texture.magFilter = THREE.NearestFilter
         texture.minFilter = THREE.NearestFilter
         this.breakTextures.push(texture)
@@ -75,7 +79,11 @@ export class CursorBlock {
     setTimeout(() => {
       this.updateLineMaterial()
       if (this.interactionLines) {
-        this.setHighlightCursorBlock(this.interactionLines.blockPos, this.interactionLines.shapePositions, true)
+        this.setHighlightCursorBlock(
+          this.interactionLines.blockPos,
+          this.interactionLines.shapePositions,
+          true
+        )
       }
     })
   }
@@ -106,7 +114,11 @@ export class CursorBlock {
     this.prevColor = this.worldRenderer.worldRendererConfig.highlightBlockColor
   }
 
-  updateBreakAnimation(blockPosition: { x: number; y: number; z: number } | undefined, stage: number | null, mergedShape?: BlockShape) {
+  updateBreakAnimation(
+    blockPosition: { x: number; y: number; z: number } | undefined,
+    stage: number | null,
+    mergedShape?: BlockShape
+  ) {
     this.hideBreakAnimation()
     if (stage === null || !blockPosition || !mergedShape) return
 
@@ -116,7 +128,8 @@ export class CursorBlock {
     position.add(new Vec3(blockPosition.x, blockPosition.y, blockPosition.z))
     this.blockBreakMesh.position.set(position.x, position.y, position.z)
     this.blockBreakMesh.visible = true
-    ;(this.blockBreakMesh.material as THREE.MeshBasicMaterial).map = this.breakTextures[stage] ?? this.breakTextures.at(-1)
+    ;(this.blockBreakMesh.material as THREE.MeshBasicMaterial).map =
+      this.breakTextures[stage] ?? this.breakTextures.at(-1)
     ;(this.blockBreakMesh.material as THREE.MeshBasicMaterial).needsUpdate = true
   }
 
@@ -144,19 +157,19 @@ export class CursorBlock {
       blockPos.y + shape.position.y + shape.height / 2,
       blockPos.z + shape.position.z + shape.depth / 2
     )
-    
+
     const direction = blockCenterPos.clone().subtract(cameraPos)
     const distance = direction.length()
-    
+
     // Use raycaster to check if there's an occluding block between camera and target
     const raycaster = new THREE.Raycaster()
     const rayDirection = new THREE.Vector3(direction.x, direction.y, direction.z).normalize()
     raycaster.ray.origin.set(cameraPos.x, cameraPos.y, cameraPos.z)
     raycaster.ray.direction.copy(rayDirection)
-    
+
     // Check intersections with terrain chunks
     const intersects = raycaster.intersectObjects(this.worldRenderer.scene.children, true)
-    
+
     // If there's an intersection closer than our target block, it's occluded
     if (intersects.length > 0) {
       const firstIntersection = intersects[0]
@@ -164,7 +177,7 @@ export class CursorBlock {
         return true
       }
     }
-    
+
     return false
   }
 
@@ -187,14 +200,14 @@ export class CursorBlock {
     }
 
     const group = new THREE.Group()
-    for (const shape of (shapePositions ?? [])) {
+    for (const shape of shapePositions ?? []) {
       const { position: _position, width, height, depth } = shape
-      
+
       // FIX: Skip rendering shapes that are occluded by terrain
       if (this.isBlockOccluded(blockPos, shape)) {
         continue
       }
-      
+
       const position = new Vec3(_position.x, _position.y, _position.z)
       const scale = [1.0001 * width, 1.0001 * height, 1.0001 * depth] as const
       const geometry = new THREE.BoxGeometry(...scale)
