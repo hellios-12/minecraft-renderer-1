@@ -28,5 +28,5 @@ jobs:
         run: npm -v
       - run: pnpx zardoy-release npm
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # ĐÃ SỬA: Dùng token mặc định của hệ thống
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
