@@ -6,7 +6,7 @@ on:
 
 permissions:
   id-token: write # Required for OIDC
-  contents: read
+  contents: write # ĐÃ SỬA: Đổi từ read thành write để cho phép tạo Release/Tag
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
@@ -28,5 +28,5 @@ jobs:
         run: npm -v
       - run: pnpx zardoy-release npm
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # ĐÃ SỬA: Dùng token mặc định của hệ thống
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
