@@ -26,7 +26,7 @@ jobs:
         run: node scripts/addTsNocheck.mjs
       - name: Print npm version
         run: npm -v
-      - run: pnpx zardoy-release npm --no-github-post-action
+      - run: pnpx zardoy-release npm
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # ĐÃ SỬA: Dùng token mặc định của hệ thống
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
