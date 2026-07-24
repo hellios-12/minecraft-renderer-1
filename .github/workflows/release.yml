@@ -26,7 +26,7 @@ jobs:
         run: node scripts/addTsNocheck.mjs
       - name: Print npm version
         run: npm -v
-      - run: pnpx zardoy-release npm
+      - run: pnpx hoang123-release npm
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
