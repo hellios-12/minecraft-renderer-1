@@ -41,6 +41,7 @@ export const getInitialPlayerState = (): PlayerStateReactive =>
     onFire: false,
     fovMultiplier: 1,
     cameraSpectatingEntity: undefined,
+    isMounted: false,
     team: undefined
   })
 
