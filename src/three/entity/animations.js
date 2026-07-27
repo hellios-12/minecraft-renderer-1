@@ -224,7 +224,6 @@ const HitAnimation = {
 }
 
 
-
 function applyRidePose(player, rideBlend) {
   const skin = player?.skin
   if (!skin) return
