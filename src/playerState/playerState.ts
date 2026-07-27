@@ -55,6 +55,7 @@ export const getInitialPlayerState = () =>
     fovMultiplier: 1,
 
     cameraSpectatingEntity: undefined as number | undefined,
+    isMounted: false,
 
     team: undefined as Team | undefined
   })
