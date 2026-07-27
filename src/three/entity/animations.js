@@ -32,10 +32,12 @@ export class WalkingGeneralSwing extends PlayerAnimation {
   isRunning = false
   isMoving = true
   isCrouched = false
+  isRiding = false
 
   _dt = 0
   _phase = 0
   _moveBlend = 0
+  _rideBlend = 0
 
   /** @type {number | null} */
   _swingTime = null
@@ -131,6 +133,10 @@ export class WalkingGeneralSwing extends PlayerAnimation {
     const kMove = Math.min(1, dt * 20)
     this._moveBlend += (targetMove - this._moveBlend) * kMove
 
+    const targetRide = this.isRiding ? 1 : 0
+    const kRide = Math.min(1, dt * 16)
+    this._rideBlend += (targetRide - this._rideBlend) * kRide
+
     const speed = this.isRunning ? 10 : 8
     this._phase += dt * speed * this._moveBlend
 
@@ -138,6 +144,7 @@ export class WalkingGeneralSwing extends PlayerAnimation {
     let reset = false
 
     applyCrouchPose(player, this.isCrouched ? 1 : 0)
+    applyRidePose(player, this._rideBlend)
 
     const boundary = this.isRunning ? Math.cos(t) : Math.sin(t)
     if (Math.abs(boundary) < 0.02) {
@@ -214,6 +221,34 @@ const HitAnimation = {
       player.skin.leftArm.position.x = 5 - swing * 0.05
     }
   }
+}
+
+function applyRidePose(player, rideBlend) {
+  const skin = player?.skin
+  if (!skin) return
+  const s = clamp01(rideBlend)
+  if (s <= 0.000001) return
+
+  // Sit the body lower and lean slightly back into the vehicle.
+  skin.body.rotation.x += -0.42 * s
+  skin.body.position.y += -1.1 * s
+  skin.body.position.z += 0.15 * s
+
+  skin.head.position.y += -1.0 * s
+  skin.head.rotation.x += 0.12 * s
+
+  skin.leftArm.rotation.x += -0.35 * s
+  skin.rightArm.rotation.x += -0.35 * s
+  skin.leftArm.rotation.z += 0.08 * s
+  skin.rightArm.rotation.z += -0.08 * s
+
+  // Fold legs forward into a seated pose.
+  skin.leftLeg.rotation.x += -1.18 * s
+  skin.rightLeg.rotation.x += -1.18 * s
+  skin.leftLeg.rotation.z += 0.05 * s
+  skin.rightLeg.rotation.z += -0.05 * s
+  skin.leftLeg.position.y += 0.25 * s
+  skin.rightLeg.position.y += 0.25 * s
 }
 
 function applyCrouchPose(player, crouchBlend) {

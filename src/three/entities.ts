@@ -440,6 +440,10 @@ export class Entities {
 
       const { playerObject } = entity
 
+      if (isPlayerEntity && playerObject?.animation instanceof WalkingGeneralSwing) {
+        playerObject.animation.isRiding = !!this.worldRenderer.playerStateReactive.isMounted
+      }
+
       if (playerObject?.animation) {
         playerObject.animation.update(playerObject, dt)
       }
