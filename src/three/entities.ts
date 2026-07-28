@@ -439,13 +439,14 @@ export class Entities {
       }
 
       const { playerObject } = entity
+      const animation = playerObject?.animation as WalkingGeneralSwing | undefined
 
-      if (isPlayerEntity && playerObject?.animation instanceof WalkingGeneralSwing) {
-        playerObject.animation.isRiding = !!this.worldRenderer.playerStateReactive.isMounted
+      if (isPlayerEntity && animation instanceof WalkingGeneralSwing) {
+        animation.isRiding = !!this.worldRenderer.playerStateReactive.isMounted
       }
 
-      if (playerObject?.animation) {
-        playerObject.animation.update(playerObject, dt)
+      if (animation) {
+        animation.update(playerObject, dt)
       }
 
       entity.traverse(child => {
