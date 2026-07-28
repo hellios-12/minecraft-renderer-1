@@ -64,9 +64,10 @@ export function createPlayerObject(options: { username?: string; uuid?: string; 
   wrapper.rotation.set(0, Math.PI, 0)
 
   // Set up animation
-  playerObject.animation = new WalkingGeneralSwing()
-  ;(playerObject.animation as WalkingGeneralSwing).isMoving = false
-  playerObject.animation.update(playerObject, 0)
+  const animation = new WalkingGeneralSwing()
+  animation.isMoving = false
+  playerObject.animation = animation
+  animation.update(playerObject, 0)
 
   return { playerObject, wrapper }
 }
