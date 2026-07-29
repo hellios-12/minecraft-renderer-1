@@ -989,8 +989,16 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
   }
 
+  private getActiveEyeHeight(): number {
+    // Mounted players sit lower in minecarts, horses, boats, and other rideable
+    // entities. Lowering the render camera here keeps first-person and the
+    // third-person pivot stable instead of snapping back to standing eye height.
+    const mountedEyeHeightOffset = this.playerStateReactive.isMounted ? 0.35 : 0
+    return Math.max(0, this.playerStateReactive.eyeHeight - mountedEyeHeightOffset)
+  }
+
   setFirstPersonCamera(pos: Vec3 | null, yaw: number, pitch: number) {
-    const yOffset = this.playerStateReactive.eyeHeight
+    const yOffset = this.getActiveEyeHeight()
 
     this.updateCamera(pos?.offset(0, yOffset, 0) ?? null, yaw, pitch)
     // this.media.tryIntersectMedia()
