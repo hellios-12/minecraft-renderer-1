@@ -1,3 +1,4 @@
+/// <reference path="./globals.d.ts" />
 import { AppViewer } from '../graphicsBackend'
 import { ThreeJsBackendMethods } from './graphicsBackendBase'
 
