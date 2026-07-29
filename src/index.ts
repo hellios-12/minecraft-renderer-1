@@ -1,4 +1,3 @@
-import './three/globals'
 /**
  * Minecraft Renderer
  *
