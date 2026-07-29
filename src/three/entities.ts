@@ -433,13 +433,14 @@ export class Entities {
         entity.visible = thirdPerson
 
         if (thirdPerson) {
-          const yOffset = this.worldRenderer.playerStateReactive.eyeHeight
+          const mountedEyeHeightOffset = this.worldRenderer.playerStateReactive.isMounted ? 0.35 : 0
+          const yOffset = Math.max(0, this.worldRenderer.playerStateReactive.eyeHeight - mountedEyeHeightOffset)
           entity.position.set(this.worldRenderer.cameraWorldPos.x, this.worldRenderer.cameraWorldPos.y - yOffset, this.worldRenderer.cameraWorldPos.z)
         }
       }
 
       const { playerObject } = entity
-      const animation = playerObject?.animation as WalkingGeneralSwing | undefined
+      const animation = playerObject?.animation
 
       if (isPlayerEntity && animation instanceof WalkingGeneralSwing) {
         animation.isRiding = !!this.worldRenderer.playerStateReactive.isMounted
