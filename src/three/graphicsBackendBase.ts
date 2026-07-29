@@ -1,3 +1,4 @@
+/// <reference path="./globals.d.ts" />
 /**
  * Graphics Backend Base - Shared functionality for Three.js backends.
  *
