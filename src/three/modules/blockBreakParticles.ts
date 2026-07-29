@@ -1,3 +1,4 @@
+/// <reference path="../globals.d.ts" />
 import * as THREE from 'three'
 import type { WorldRendererThree } from '../worldRendererThree'
 import type { RendererModuleController, RendererModuleManifest } from '../rendererModuleSystem'
