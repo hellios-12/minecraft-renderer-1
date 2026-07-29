@@ -1,6 +1,5 @@
 import { AppViewer } from '../graphicsBackend'
 import { ThreeJsBackendMethods } from './graphicsBackendBase'
-import './globals'
 
 /** @deprecated Use getDecoratedThreeJsRendererMethods instead */
 export function getThreeJsRendererMethods(): ThreeJsBackendMethods | undefined {
