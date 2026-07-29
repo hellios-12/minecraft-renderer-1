@@ -7,8 +7,8 @@ interface LongPressOptions {
 
 const useLongPress = (onLongPress: () => void, onClick: () => void, { shouldPreventDefault = false, delay = 300 }: LongPressOptions = {}) => {
   const [longPressTriggered, setLongPressTriggered] = useState(false)
-  const timeout = useRef<number | undefined>(null)
-  const target = useRef<EventTarget | null>(null)
+  const timeout = useRef<number | undefined>(undefined) as React.MutableRefObject<number | undefined>
+  const target = useRef<EventTarget | null>(null) as React.MutableRefObject<EventTarget | null>
 
   const start = useCallback(
     (event: React.MouseEvent | React.TouchEvent) => {
