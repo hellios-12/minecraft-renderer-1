@@ -439,7 +439,7 @@ export class Entities {
       }
 
       const { playerObject } = entity
-      const animation = playerObject?.animation as WalkingGeneralSwing | undefined
+      const animation = playerObject?.animation
 
       if (isPlayerEntity && animation instanceof WalkingGeneralSwing) {
         animation.isRiding = !!this.worldRenderer.playerStateReactive.isMounted
