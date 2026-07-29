@@ -1,3 +1,4 @@
+/// <reference path="../three/globals.d.ts" />
 import { Vec3 } from 'vec3'
 import * as THREE from 'three'
 import MinecraftData, { IndexedData } from 'minecraft-data'

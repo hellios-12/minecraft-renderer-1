@@ -1,3 +1,4 @@
+/// <reference path="../three/globals.d.ts" />
 /**
  * Minecraft Data Shim
  *

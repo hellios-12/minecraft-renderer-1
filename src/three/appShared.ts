@@ -1,3 +1,4 @@
+/// <reference path="./globals.d.ts" />
 import { BlockModel } from 'mc-assets/dist/types'
 import { ItemSpecificContextProperties } from '../playerState/types'
 import { PlayerStateRenderer } from '../playerState/playerState'
