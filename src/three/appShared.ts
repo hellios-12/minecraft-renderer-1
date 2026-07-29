@@ -4,6 +4,7 @@ import { PlayerStateRenderer } from '../playerState/playerState'
 import { GeneralInputItem, getItemModelName } from '../lib/items'
 import { ResourcesManagerTransferred } from '../resourcesManager'
 import { renderSlot } from './renderSlot'
+import './globals'
 
 export const getItemUv = (
   item: Record<string, any>,
