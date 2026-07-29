@@ -9,6 +9,7 @@ declare global {
   var appViewer: AppViewer
   var includedVersions: string[]
   var THREE: typeof ThreeTypes
+
   interface Window {
     loadedData: IndexedData
     mcData: IndexedData
