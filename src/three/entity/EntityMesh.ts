@@ -661,7 +661,8 @@ export class EntityMesh {
     }
 
     this.mesh = new THREE.Object3D()
-    for (const [name, jsonModel] of Object.entries(e.geometry)) {
+    for (const [name, rawJsonModel] of Object.entries(e.geometry)) {
+      const jsonModel = rawJsonModel as JsonModel
       const texture = overrides.textures?.[name] ?? e.textures[name]
       if (!texture) continue
       // console.log(JSON.stringify(jsonModel, null, 2))
