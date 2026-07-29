@@ -186,7 +186,7 @@ class MainScene extends BasePlaygroundScene {
       }
     } else {
       try {
-        block = this.Block.fromProperties(blockId ?? -1, this.blockProps, 0)
+        block = this.Block.fromProperties(blockId ?? -1, this.blockProps as Record<string, string | number>, 0)
       } catch (err) {
         console.error(err)
         block = this.Block.fromStateId(0, 0)
