@@ -447,7 +447,7 @@ export class Entities {
       }
 
       if (animation) {
-        animation.update(playerObject, dt)
+        animation.update(playerObject!, dt)
       }
 
       entity.traverse(child => {
