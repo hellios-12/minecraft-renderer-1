@@ -447,7 +447,7 @@ export class Entities {
       }
 
       if (animation) {
-        animation.update(playerObject, dt)
+        animation.update(playerObject!, dt)
       }
 
       entity.traverse(child => {
@@ -760,7 +760,7 @@ export class Entities {
       return
     }
 
-    anim.switchAnimationCallback = null
+    anim.switchAnimationCallback = undefined
     anim.isMoving = animation === 'walking' || animation === 'running' || animation === 'crouchWalking'
     anim.isRunning = animation === 'running'
     anim.isCrouched = animation === 'crouch' || animation === 'crouchWalking'

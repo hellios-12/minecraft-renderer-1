@@ -18,6 +18,16 @@ declare global {
     THREE: typeof ThreeTypes
     world?: WorldRendererThree
   }
+
+  namespace NodeJS {
+    interface Global {
+      loadedData: IndexedData
+      mcData: IndexedData
+      appViewer: AppViewer
+      includedVersions: string[]
+      THREE: typeof ThreeTypes
+    }
+  }
 }
 
 export {}

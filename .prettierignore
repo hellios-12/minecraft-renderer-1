@@ -15,3 +15,7 @@ src/three/entity/*.json
 src/wasm-mesher/runtime-build/
 wasm-mesher/pkg/
 wasm-mesher/target/
+
+# Build output directory (generated artifacts, not source).
+dist/
+build/
