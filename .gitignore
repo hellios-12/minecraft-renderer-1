@@ -1,7 +1,15 @@
 ```
+# Build artifacts
+dist/
+build/
+*.js.map
+
 # Dependencies
 node_modules/
-.pnpm-store/
+
+# Editors
+.vscode/
+.idea/
 
 # Logs and temp files
 *.log
@@ -11,15 +19,4 @@ node_modules/
 .env
 .env.local
 *.env.*
-
-# Editors
-.vscode/
-.idea/
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
 ```
