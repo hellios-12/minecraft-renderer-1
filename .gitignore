@@ -1,1 +1,39 @@
-Nothing should be ignored based on the provided file changes. The modification of `tsconfig.json` is a source configuration file that should be tracked in version control.
+```typescript
+// TypeScript declaration files
+*.d.ts
+
+// Build outputs
+dist/
+build/
+out/
+lib/
+
+// Dependencies
+node_modules/
+
+// Environment variables
+.env
+.env.*
+
+// IDE specific
+.vscode/
+.idea/
+*.swp
+*.swo
+
+// OS specific
+.DS_Store
+Thumbs.db
+
+// Logs
+*.log
+
+// Coverage
+coverage/
+htmlcov/
+*.coverage
+
+// Temporary files
+*.tmp
+*.temp
+```
