@@ -1,39 +1,116 @@
-```typescript
-// TypeScript declaration files
-*.d.ts
-
-// Build outputs
-dist/
-build/
-out/
-lib/
-
-// Dependencies
+```
+# Dependencies
 node_modules/
 
-// Environment variables
+# Build outputs
+dist/
+build/
+target/
+
+# TypeScript
+*.tsbuildinfo
+*.js.map
+*.d.ts.map
+
+# Logs
+*.log
+
+# Environment
 .env
+.env.local
 .env.*
 
-// IDE specific
+# Editor/IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*.tmp
 
-// OS specific
+# OS
 .DS_Store
 Thumbs.db
 
-// Logs
-*.log
-
-// Coverage
+# Coverage
 coverage/
 htmlcov/
 *.coverage
 
-// Temporary files
-*.tmp
-*.temp
+# Python (if present)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg-info/
+.eggs/
+
+# Java (if present)
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+
+# C/C++ (if present)
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.exe
+*.out
+
+# Go (if present)
+*.exe
+*.test
+*.prof
+*.zip
+
+# Rust (if present)
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.rlib
+target/
+
+# Gradle
+.gradle/
+build/
+
+# MyPy
+.mypy_cache/
+
+# PyTest
+.pytest_cache/
+
+# Compressed files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
 ```
