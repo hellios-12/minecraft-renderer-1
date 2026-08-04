@@ -16,7 +16,7 @@ import type { WorldRendererThree } from './worldRendererThree'
 // file shadows the real declaration instead of merging with it, which wipes
 // out every real IndexedData property. Use an intersection type instead, as
 // below.
-type AppLoadedData = IndexedData & { sounds: Record<string, { id: number, name: string }> }
+type AppLoadedData = IndexedData & { sounds: Record<string, { id: number; name: string }> }
 
 declare global {
   interface Window {
