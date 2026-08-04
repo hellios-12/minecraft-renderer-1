@@ -32,4 +32,13 @@ declare global {
   }
 }
 
+// Explicitly augment globalThis for TypeScript to recognize the properties
+declare global {
+  var loadedData: IndexedData
+  var mcData: IndexedData
+  var appViewer: AppViewer
+  var includedVersions: string[]
+  var THREE: typeof ThreeTypes
+}
+
 export {}
