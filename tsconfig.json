@@ -25,6 +25,6 @@
     "allowJs": true,
     "maxNodeModuleJsDepth": 1
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "src/three/globals.d.ts"],
   "exclude": ["node_modules", "dist", "**/*.js", "**/*.cjs", "src/sign-renderer/vite.config.ts"]
 }
