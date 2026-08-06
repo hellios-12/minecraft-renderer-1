@@ -107,6 +107,22 @@ function shortestYawRadians(fromYawRad: number, toYawRad: number): number {
   return norm > Math.PI ? norm - TAU_YAW : norm
 }
 
+/**
+ * Vanilla Minecraft ignores the networked yaw field for minecarts/boats and instead
+ * derives their facing from the direction they're actually travelling (see
+ * EntityMinecart/EntityBoat rotationYaw handling client-side). Doing the same here
+ * means carts visually follow curved rail without snapping or fighting the rail's
+ * "intended" yaw, which is what makes them look glued to the track in vanilla.
+ */
+function isMotionDrivenVehicleEntity(entity: { name?: string } | undefined): boolean {
+  const name = entity?.name
+  if (!name) return false
+  return name === 'minecart' || name.endsWith('_minecart') || name === 'boat' || name.endsWith('_boat')
+}
+
+/** Minimum horizontal movement (blocks) between updates before we trust it enough to re-derive yaw from it. */
+const VEHICLE_YAW_MOTION_EPSILON = 0.001
+
 function getUsernameTexture(
   { username, nameTagBackgroundColor = 'rgba(0, 0, 0, 0.3)', nameTagTextOpacity = 255 }: any,
   { fontFamily = 'mojangles' }: any,
@@ -1203,6 +1219,9 @@ export class Entities {
     const e = this.entities[entity.id]
     if (!e) return
     const ANIMATION_DURATION = justAdded ? 0 : TWEEN_DURATION
+    // Capture where the entity was heading *before* we overwrite the tween target below,
+    // so motion-driven vehicle yaw (see below) has a real "from" position to compare against.
+    const prevTweenTarget = e.userData._tweenTarget ? { x: e.userData._tweenTarget.x, z: e.userData._tweenTarget.z } : null
     if (entity.position) {
       // Initialize tween target from current world position
       const currentWorld = this.worldRenderer.sceneOrigin.getWorldPosition(e) ?? { x: entity.position.x, y: entity.position.y, z: entity.position.z }
@@ -1226,6 +1245,19 @@ export class Entities {
       const headYawWorld = typeof hy === 'number' && Number.isFinite(hy) ? hy : entity.yaw
       if (typeof headYawWorld === 'number' && Number.isFinite(headYawWorld)) {
         targetYaw = headYawWorld
+      }
+    } else if (isMotionDrivenVehicleEntity(entity) && entity.position && prevTweenTarget) {
+      // Match vanilla: minecarts/boats face the direction they're actually moving, not
+      // whatever yaw the network happened to send. This keeps them visually glued to
+      // curved rail instead of snapping to face a straight line through the curve.
+      const dx = entity.position.x - prevTweenTarget.x
+      const dz = entity.position.z - prevTweenTarget.z
+      if (dx * dx + dz * dz > VEHICLE_YAW_MOTION_EPSILON * VEHICLE_YAW_MOTION_EPSILON) {
+        targetYaw = Math.atan2(-dx, -dz)
+      } else if (typeof entity.yaw === 'number' && Number.isFinite(entity.yaw)) {
+        // Not moving (or barely) - e.g. a cart waiting at a station. Fall back to the
+        // networked yaw rather than freezing on whatever direction it last travelled.
+        targetYaw = entity.yaw
       }
     } else if (typeof entity.yaw === 'number' && Number.isFinite(entity.yaw)) {
       targetYaw = entity.yaw
