@@ -10,6 +10,7 @@ export class WalkingGeneralSwing extends PlayerAnimation {
   _phase: number
   _moveBlend: number
   _rideBlend: number
+  _rideJostlePhase: number
   _swingTime: number | null
   _swingDuration: number
   _defaults: {
