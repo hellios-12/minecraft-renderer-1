@@ -38,6 +38,7 @@ export class WalkingGeneralSwing extends PlayerAnimation {
   _phase = 0
   _moveBlend = 0
   _rideBlend = 0
+  _rideJostlePhase = 0
 
   /** @type {number | null} */
   _swingTime = null
@@ -137,14 +138,29 @@ export class WalkingGeneralSwing extends PlayerAnimation {
     const kRide = Math.min(1, dt * 16)
     this._rideBlend += (targetRide - this._rideBlend) * kRide
 
+    // Vanilla never plays the walk cycle while seated in a vehicle - riding a moving
+    // minecart/boat still counts as "moving" for other purposes (footstep-adjacent
+    // logic, etc.), but the limbs themselves just hold the seated pose. Fade the walk
+    // cycle's influence out as we settle into the ride pose so the two never fight -
+    // otherwise legs already folded by applyRidePose keep twitching through the
+    // leftover swing amplitude, which reads as the character kicking mid-seat.
+    const walkAmount = this._moveBlend * (1 - this._rideBlend)
+
     const speed = this.isRunning ? 10 : 8
-    this._phase += dt * speed * this._moveBlend
+    this._phase += dt * speed * walkAmount
 
     const t = this._phase + (this.isRunning ? Math.PI * 0.5 : 0)
     let reset = false
 
+    // Real carts jostle a little over rail joints even on straight track - a perfectly
+    // static seated pose reads as floating/attached-with-glue. This runs on wall-clock
+    // time (not travel phase) so it keeps going gently even while stopped, like a cart
+    // settling, but its amplitude is tied to _rideBlend so it never affects walking.
+    this._rideJostlePhase += dt * 5.2
+    const jostle = this._rideBlend > 0.001 ? Math.sin(this._rideJostlePhase) * 0.015 * this._rideBlend : 0
+
     applyCrouchPose(player, this.isCrouched ? 1 : 0)
-    applyRidePose(player, this._rideBlend)
+    applyRidePose(player, this._rideBlend, jostle)
 
     const boundary = this.isRunning ? Math.cos(t) : Math.sin(t)
     if (Math.abs(boundary) < 0.02) {
@@ -154,46 +170,49 @@ export class WalkingGeneralSwing extends PlayerAnimation {
     }
 
     if (this.isRunning) {
-      player.skin.leftLeg.rotation.x += Math.cos(t + Math.PI) * 1.3 * this._moveBlend
-      player.skin.rightLeg.rotation.x += Math.cos(t) * 1.3 * this._moveBlend
+      player.skin.leftLeg.rotation.x += Math.cos(t + Math.PI) * 1.3 * walkAmount
+      player.skin.rightLeg.rotation.x += Math.cos(t) * 1.3 * walkAmount
     } else {
-      player.skin.leftLeg.rotation.x += Math.sin(t) * 0.5 * this._moveBlend
-      player.skin.rightLeg.rotation.x += Math.sin(t + Math.PI) * 0.5 * this._moveBlend
+      player.skin.leftLeg.rotation.x += Math.sin(t) * 0.5 * walkAmount
+      player.skin.rightLeg.rotation.x += Math.sin(t + Math.PI) * 0.5 * walkAmount
     }
 
     if (this.isRunning) {
-      player.skin.leftArm.rotation.x += Math.cos(t) * 1.5 * this._moveBlend
-      player.skin.rightArm.rotation.x += Math.cos(t + Math.PI) * 1.5 * this._moveBlend
+      player.skin.leftArm.rotation.x += Math.cos(t) * 1.5 * walkAmount
+      player.skin.rightArm.rotation.x += Math.cos(t + Math.PI) * 1.5 * walkAmount
 
       const basicArmRotationZ = Math.PI * 0.1
-      player.skin.leftArm.rotation.z += (Math.cos(t) * 0.1 + basicArmRotationZ) * this._moveBlend
-      player.skin.rightArm.rotation.z += (Math.cos(t + Math.PI) * 0.1 - basicArmRotationZ) * this._moveBlend
+      player.skin.leftArm.rotation.z += (Math.cos(t) * 0.1 + basicArmRotationZ) * walkAmount
+      player.skin.rightArm.rotation.z += (Math.cos(t + Math.PI) * 0.1 - basicArmRotationZ) * walkAmount
     } else {
-      player.skin.leftArm.rotation.x += Math.sin(t + Math.PI) * 0.5 * this._moveBlend
-      player.skin.rightArm.rotation.x += Math.sin(t) * 0.5 * this._moveBlend
+      player.skin.leftArm.rotation.x += Math.sin(t + Math.PI) * 0.5 * walkAmount
+      player.skin.rightArm.rotation.x += Math.sin(t) * 0.5 * walkAmount
 
       const basicArmRotationZ = Math.PI * 0.02
-      player.skin.leftArm.rotation.z += (Math.cos(t) * 0.03 + basicArmRotationZ) * this._moveBlend
-      player.skin.rightArm.rotation.z += (Math.cos(t + Math.PI) * 0.03 - basicArmRotationZ) * this._moveBlend
+      player.skin.leftArm.rotation.z += (Math.cos(t) * 0.03 + basicArmRotationZ) * walkAmount
+      player.skin.rightArm.rotation.z += (Math.cos(t + Math.PI) * 0.03 - basicArmRotationZ) * walkAmount
     }
 
     if (this._swingTime !== null) {
       this._swingTime += dt
       const p = Math.min(this._swingTime / this._swingDuration, 1)
-      HitAnimation.animate(p, player, this.isMoving)
+      // Arm swings (attacking/using an item) still play while riding, matching vanilla,
+      // but skip the "not moving" idle-body-sway variant since the ride pose already
+      // supplies the body's resting state.
+      HitAnimation.animate(p, player, this.isMoving || this._rideBlend > 0.5)
       if (p >= 1) this._swingTime = null
     }
 
     if (this.isRunning) {
-      player.rotation.z = Math.cos(t + Math.PI) * 0.01 * this._moveBlend
+      player.rotation.z = Math.cos(t + Math.PI) * 0.01 * walkAmount
     }
 
     if (this.isRunning) {
       const basicCapeRotationX = Math.PI * 0.3
-      player.cape.rotation.x += (Math.sin(t * 2) * 0.1 + basicCapeRotationX) * this._moveBlend
+      player.cape.rotation.x += (Math.sin(t * 2) * 0.1 + basicCapeRotationX) * walkAmount
     } else {
       const basicCapeRotationX = Math.PI * 0.06
-      player.cape.rotation.x += (Math.sin(t / 1.5) * 0.06 + basicCapeRotationX) * this._moveBlend
+      player.cape.rotation.x += (Math.sin(t / 1.5) * 0.06 + basicCapeRotationX) * walkAmount
     }
 
     if (reset) {
@@ -223,19 +242,19 @@ const HitAnimation = {
   }
 }
 
-function applyRidePose(player, rideBlend) {
+function applyRidePose(player, rideBlend, jostle = 0) {
   const skin = player?.skin
   if (!skin) return
   const s = clamp01(rideBlend)
   if (s <= 0.000001) return
 
   // Sit the body lower and lean slightly back into the vehicle.
-  skin.body.rotation.x += -0.42 * s
-  skin.body.position.y += -1.1 * s
+  skin.body.rotation.x += -0.42 * s + jostle
+  skin.body.position.y += -1.1 * s + jostle * 0.6
   skin.body.position.z += 0.15 * s
 
-  skin.head.position.y += -1.0 * s
-  skin.head.rotation.x += 0.12 * s
+  skin.head.position.y += -1.0 * s + jostle * 0.6
+  skin.head.rotation.x += 0.12 * s + jostle * 0.5
 
   skin.leftArm.rotation.x += -0.35 * s
   skin.rightArm.rotation.x += -0.35 * s
